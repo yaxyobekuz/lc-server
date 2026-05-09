@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import { ALL_ROLES } from "../constants/roles.js";
 
-// Hozircha 3 ta statik rol — bu collectionda har rol uchun bitta yozuv (permission-larni saqlash uchun)
+// One row per role (3 static roles today) — exists to attach permissions
 const roleSchema = new mongoose.Schema(
   {
     value: { type: String, enum: ALL_ROLES, unique: true, required: true },

@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 
-// Refresh token DB'da hash bilan saqlanadi (sessiyani bekor qilish uchun)
+// Refresh tokens are stored hashed so a session can be revoked DB-side
 const refreshTokenSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
