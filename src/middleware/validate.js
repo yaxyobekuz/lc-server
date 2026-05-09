@@ -1,4 +1,4 @@
-// Zod sxemasi orqali req.body/query/params'ni tekshiradi va parslaydi
+// Validates and parses req.body/query/params via a Zod schema
 const validate = (schema) => (req, _res, next) => {
   try {
     const parsed = schema.parse({
