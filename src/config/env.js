@@ -22,6 +22,10 @@ const env = Object.freeze({
   COOKIE_DOMAIN: process.env.COOKIE_DOMAIN || "localhost",
 
   CLIENT_URL: process.env.CLIENT_URL || "http://localhost:5173",
+
+  TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || "",
+  TELEGRAM_BOT_ENABLED:
+    String(process.env.TELEGRAM_BOT_ENABLED || "false").toLowerCase() === "true",
 });
 
 export const isProd = env.NODE_ENV === "production";
