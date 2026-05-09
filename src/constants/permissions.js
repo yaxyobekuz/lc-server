@@ -1,4 +1,4 @@
-// Permission kalitlari (DB seedda ham shu kalitlar yoziladi)
+// Permission keys (the seed writes the same keys to the DB)
 export const PERMISSIONS = Object.freeze({
   STUDENTS_READ: "students.read",
   STUDENTS_CREATE: "students.create",

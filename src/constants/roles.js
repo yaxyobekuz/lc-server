@@ -1,4 +1,3 @@
-// Backend uchun statik rollar
 export const ROLES = Object.freeze({
   OWNER: "owner",
   TEACHER: "teacher",
