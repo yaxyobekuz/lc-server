@@ -1,4 +1,3 @@
-// Standart javob shakli
 export const ok = (res, data, message = "OK", meta) =>
   res.json({ success: true, data, message, ...(meta && { meta }) });
 
