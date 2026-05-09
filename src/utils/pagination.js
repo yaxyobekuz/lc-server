@@ -1,4 +1,3 @@
-// Sahifalash uchun yordamchi
 export const parsePagination = (query) => {
   const page = Math.max(1, Number(query.page) || 1);
   const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
