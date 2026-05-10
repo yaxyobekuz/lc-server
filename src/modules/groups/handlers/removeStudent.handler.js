@@ -1,0 +1,9 @@
+import asyncHandler from "../../../middleware/asyncHandler.js";
+import * as groupsService from "../services/groups.service.js";
+
+const removeStudent = asyncHandler(async (req, res) => {
+  await groupsService.removeStudent(req.params.id, req.params.studentId);
+  res.json({ success: true, message: "Talaba guruhdan chiqarildi" });
+});
+
+export default removeStudent;
