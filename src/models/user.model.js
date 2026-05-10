@@ -10,6 +10,24 @@ const userSchema = new mongoose.Schema(
     passwordHash: { type: String, required: true, select: false },
     role: { type: String, enum: ALL_ROLES, default: ROLES.STUDENT, required: true },
     isActive: { type: Boolean, default: true },
+
+    // Profil ma'lumotlari (ixtiyoriy)
+    birthDate: { type: Date, default: null },
+    gender: { type: String, enum: ["male", "female"], default: null },
+
+    // Faqat student rolidagi maydonlar
+    address: { type: String, trim: true, default: "" },
+    parentName: { type: String, trim: true, default: "" },
+    parentPhone: { type: String, trim: true, default: "" },
+    enrolledAt: { type: Date, default: null },
+    leadSource: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "LeadSource",
+      default: null,
+    },
+
+    // Faqat teacher rolidagi maydon
+    hiredAt: { type: Date, default: null },
   },
   { timestamps: true },
 );
