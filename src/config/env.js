@@ -26,6 +26,9 @@ const env = Object.freeze({
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || "",
   TELEGRAM_BOT_ENABLED:
     String(process.env.TELEGRAM_BOT_ENABLED || "false").toLowerCase() === "true",
+  TELEGRAM_BOT_WEBAPP_URL:
+    process.env.TELEGRAM_BOT_WEBAPP_URL ||
+    `${process.env.CLIENT_URL || "http://localhost:5173"}/bot-auth`,
 });
 
 export const isProd = env.NODE_ENV === "production";
