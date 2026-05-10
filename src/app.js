@@ -10,6 +10,7 @@ import apiRouter from "./routes/index.js";
 import notFound from "./middleware/notFound.js";
 import errorHandler from "./middleware/errorHandler.js";
 import { generalLimiter } from "./middleware/rateLimiter.js";
+import auditLog from "./middleware/auditLog.middleware.js";
 
 const app = express();
 
@@ -31,7 +32,7 @@ app.use(cookieParser(env.COOKIE_SECRET));
 if (!isProd) app.use(morgan("dev"));
 
 app.use(generalLimiter);
-app.use("/api", apiRouter);
+app.use("/api", auditLog, apiRouter);
 
 app.use(notFound);
 app.use(errorHandler);
