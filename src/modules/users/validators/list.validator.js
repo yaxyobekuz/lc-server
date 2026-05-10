@@ -1,0 +1,11 @@
+import { z } from "zod";
+import { ROLES } from "../../../constants/roles.js";
+
+export const listSchema = z.object({
+  query: z.object({
+    role: z.enum([ROLES.OWNER, ROLES.TEACHER, ROLES.STUDENT]).optional(),
+    search: z.string().optional(),
+    page: z.coerce.number().int().min(1).optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+  }),
+});
