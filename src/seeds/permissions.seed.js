@@ -22,22 +22,50 @@ const seed = async () => {
   }
   logger.info(`Permissions seed qilindi: ${Object.keys(permIds).length}`);
 
-  // Create every role; permissions stay empty unless attached manually
-  // Owner gets every permission via the code-base rule, not via this list
+  // Create every role; permissions stay empty unless attached manually.
+  // Owner permissions are reset on every seed so newly added permission keys
+  // are automatically attached.
   const labels = { owner: "Egasi", teacher: "O'qituvchi", student: "O'quvchi" };
   for (const value of ALL_ROLES) {
-    await Role.findOneAndUpdate(
-      { value },
-      {
-        $setOnInsert: {
-          value,
-          label: labels[value],
-          permissions:
-            value === ROLES.OWNER ? Object.values(permIds) : [],
+    if (value === ROLES.OWNER) {
+      await Role.findOneAndUpdate(
+        { value },
+        {
+          $setOnInsert: { value, label: labels[value] },
+          $set: { permissions: Object.values(permIds) },
         },
-      },
-      { upsert: true, new: true },
-    );
+        { upsert: true, new: true },
+      );
+    } else if (value === ROLES.TEACHER) {
+      // Teacher: default permissionlarni har seedda qo'shamiz (mavjudlarini buzmaymiz)
+      const teacherDefaults = [
+        permIds[PERMISSIONS.GROUPS_READ],
+        permIds[PERMISSIONS.USERS_READ],
+        permIds[PERMISSIONS.ATTENDANCE_READ],
+        permIds[PERMISSIONS.ATTENDANCE_RECORD],
+        permIds[PERMISSIONS.NOTIFICATIONS_SEND],
+      ].filter(Boolean);
+      await Role.findOneAndUpdate(
+        { value },
+        {
+          $setOnInsert: { value, label: labels[value] },
+          $addToSet: { permissions: { $each: teacherDefaults } },
+        },
+        { upsert: true, new: true },
+      );
+    } else {
+      await Role.findOneAndUpdate(
+        { value },
+        {
+          $setOnInsert: {
+            value,
+            label: labels[value],
+            permissions: [],
+          },
+        },
+        { upsert: true, new: true },
+      );
+    }
   }
   logger.info("Rollar seed qilindi");
 
