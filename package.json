@@ -8,7 +8,10 @@
     "start": "node src/index.js",
     "lint": "eslint .",
     "seed:permissions": "node src/seeds/permissions.seed.js",
-    "seed:owner": "node src/seeds/owner.seed.js"
+    "seed:owner": "node src/seeds/owner.seed.js",
+    "seed:payments": "node src/seeds/paymentDefaults.seed.js",
+    "seed:leads": "node src/seeds/leadDefaults.seed.js",
+    "seed:communication": "node src/seeds/communicationDefaults.seed.js"
   },
   "dependencies": {
     "agenda": "^5.0.0",
