@@ -1,0 +1,11 @@
+import { z } from "zod";
+
+export const recordSchema = z.object({
+  body: z.object({
+    invoiceId: z.string().min(1, "Hisob kerak"),
+    amount: z.coerce.number().positive("Summa musbat bo'lishi kerak"),
+    methodId: z.string().min(1, "To'lov usuli kerak"),
+    paidAt: z.coerce.date().optional(),
+    note: z.string().max(300).optional(),
+  }),
+});
