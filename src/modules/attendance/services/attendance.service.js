@@ -284,6 +284,116 @@ export const getStudentMonthly = async (studentId, { year, month }) => {
   return { studentId, year, month, groups };
 };
 
+// ─── guruh bo'yicha oylik matritsa (talaba × sana) ───
+export const getGroupMonthly = async (groupId, { year, month }) => {
+  const group = await ensureGroup(groupId);
+  const monthStart = startOfMonth(year, month);
+  const monthEnd = endOfMonth(year, month);
+
+  const scheduleDays = new Set((group.schedule || []).map((s) => s.day));
+
+  const dates = [];
+  const dateKeys = [];
+  const cur = new Date(monthStart);
+  while (cur.getTime() <= monthEnd.getTime()) {
+    const dow = dayOfWeekOf(cur);
+    const dKey = dateKeyOf(cur);
+    dates.push({
+      date: new Date(cur),
+      dateKey: dKey,
+      dayOfWeek: dow,
+      isClassDay: scheduleDays.has(dow),
+    });
+    dateKeys.push(dKey);
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+
+  const memberships = await GroupMembership.find({
+    group: groupId,
+    joinedAt: { $lte: monthEnd },
+    $or: [{ leftAt: null }, { leftAt: { $gte: monthStart } }],
+  }).populate("student", STUDENT_PROJECTION);
+
+  const activeMemberships = memberships.filter((m) => m.student);
+  const studentIds = activeMemberships.map((m) => m.student._id);
+
+  const [attendances, exemptions] = await Promise.all([
+    Attendance.find({
+      group: groupId,
+      student: { $in: studentIds },
+      dateKey: { $in: dateKeys },
+    }),
+    AttendanceExemption.find({
+      student: { $in: studentIds },
+      isActive: true,
+    }),
+  ]);
+
+  const attMap = new Map();
+  for (const a of attendances) {
+    attMap.set(`${String(a.student)}|${a.dateKey}`, a);
+  }
+  const exempMap = new Map();
+  for (const ex of exemptions) {
+    const key = String(ex.student);
+    if (!exempMap.has(key)) exempMap.set(key, []);
+    exempMap.get(key).push(ex);
+  }
+
+  const students = activeMemberships.map((m) => {
+    const sid = String(m.student._id);
+    const stuExemptions = exempMap.get(sid) || [];
+    const joinedTs = toUtcMidnight(m.joinedAt).getTime();
+    const leftTs = m.leftAt ? toUtcMidnight(m.leftAt).getTime() : null;
+
+    const cells = {};
+    for (const d of dates) {
+      const ts = d.date.getTime();
+      if (!d.isClassDay) {
+        cells[d.dateKey] = null;
+        continue;
+      }
+      if (ts < joinedTs || (leftTs !== null && ts > leftTs)) {
+        cells[d.dateKey] = null;
+        continue;
+      }
+      const att = attMap.get(`${sid}|${d.dateKey}`);
+      const def = defaultStatusFor(stuExemptions, d.date, d.dayOfWeek);
+      cells[d.dateKey] = att
+        ? {
+            status: att.status,
+            defaultStatus: def,
+            reason: att.reason || "",
+            lateMinutes: att.lateMinutes || 0,
+          }
+        : { status: null, defaultStatus: def, reason: "", lateMinutes: 0 };
+    }
+
+    return {
+      student: m.student.toJSON(),
+      cells,
+    };
+  });
+
+  students.sort((a, b) => {
+    const lnA = (a.student.lastName || "").toLowerCase();
+    const lnB = (b.student.lastName || "").toLowerCase();
+    if (lnA !== lnB) return lnA < lnB ? -1 : 1;
+    const fnA = (a.student.firstName || "").toLowerCase();
+    const fnB = (b.student.firstName || "").toLowerCase();
+    if (fnA === fnB) return 0;
+    return fnA < fnB ? -1 : 1;
+  });
+
+  return {
+    group: { _id: group._id, name: group.name, schedule: group.schedule },
+    year,
+    month,
+    dates,
+    students,
+  };
+};
+
 // ─── summary (talaba bo'yicha) ───
 const buildSummaryFromBuckets = (counts) => {
   const total =
