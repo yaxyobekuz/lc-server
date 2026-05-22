@@ -20,7 +20,11 @@ app.set("trust proxy", 1);
 app.use(helmet());
 app.use(
   cors({
-    origin: env.CLIENT_URL,
+    // Origin yo'q so'rovlar (Postman, server-server) ham, ruxsat etilgan domenlar ham o'tadi
+    origin: (origin, cb) => {
+      if (!origin || env.CLIENT_URLS.includes(origin)) return cb(null, true);
+      cb(new Error("CORS: ruxsat etilmagan domen"));
+    },
     credentials: true,
   }),
 );

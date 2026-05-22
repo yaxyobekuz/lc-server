@@ -7,6 +7,15 @@ const need = (key) => {
   return v;
 };
 
+// Vergul bilan ajratilgan domenlar ro'yxati -> tozalangan massiv
+const parseOrigins = (raw) =>
+  String(raw || "http://localhost:5173")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+const clientUrls = parseOrigins(process.env.CLIENT_URL);
+
 const env = Object.freeze({
   NODE_ENV: process.env.NODE_ENV || "development",
   PORT: Number(process.env.PORT || 5000),
@@ -21,14 +30,14 @@ const env = Object.freeze({
   COOKIE_SECRET: need("COOKIE_SECRET"),
   COOKIE_DOMAIN: process.env.COOKIE_DOMAIN || "localhost",
 
-  CLIENT_URL: process.env.CLIENT_URL || "http://localhost:5173",
+  CLIENT_URL: clientUrls[0],
+  CLIENT_URLS: clientUrls,
 
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || "",
   TELEGRAM_BOT_ENABLED:
     String(process.env.TELEGRAM_BOT_ENABLED || "false").toLowerCase() === "true",
   TELEGRAM_BOT_WEBAPP_URL:
-    process.env.TELEGRAM_BOT_WEBAPP_URL ||
-    `${process.env.CLIENT_URL || "http://localhost:5173"}/bot-auth`,
+    process.env.TELEGRAM_BOT_WEBAPP_URL || `${clientUrls[0]}/bot-auth`,
 });
 
 export const isProd = env.NODE_ENV === "production";
