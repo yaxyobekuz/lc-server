@@ -13,7 +13,7 @@ const refreshTokenSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-// TTL index — Mongo evicts expired tokens automatically
+// TTL index - Mongo evicts expired tokens automatically
 refreshTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 const RefreshToken = mongoose.model("RefreshToken", refreshTokenSchema);

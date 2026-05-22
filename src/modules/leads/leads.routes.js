@@ -36,7 +36,7 @@ import overdueReminders from "./handlers/overdueReminders.handler.js";
 
 const router = Router();
 
-// Aniq pathlar — :id parametrli routelardan oldin
+// Aniq pathlar - :id parametrli routelardan oldin
 router.get(
   "/dashboard",
   requireAuth,

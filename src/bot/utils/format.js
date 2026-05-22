@@ -11,7 +11,7 @@ const DAY_LABELS = {
 export const formatSchedule = (schedule = []) =>
   schedule
     .map((s) => `${DAY_LABELS[s.day] || s.day} ${s.startTime}–${s.endTime}`)
-    .join(", ") || "—";
+    .join(", ") || "-";
 
 export const formatMoney = (n) => {
   const num = Number(n) || 0;
@@ -20,6 +20,6 @@ export const formatMoney = (n) => {
 
 export const formatPhone = (raw) => {
   const digits = String(raw || "").replace(/\D+/g, "");
-  if (digits.length !== 12) return raw || "—";
+  if (digits.length !== 12) return raw || "-";
   return `+${digits.slice(0, 3)} (${digits.slice(3, 5)}) ${digits.slice(5, 8)}-${digits.slice(8, 10)}-${digits.slice(10, 12)}`;
 };

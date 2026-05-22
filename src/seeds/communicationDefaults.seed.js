@@ -66,7 +66,7 @@ const HOLIDAYS = [
     day: 8,
     audience: "all",
     message:
-      "8-mart — Xalqaro xotin-qizlar kuni muborak bo'lsin! Bayyina jamoasi.",
+      "8-mart - Xalqaro xotin-qizlar kuni muborak bo'lsin! Bayyina jamoasi.",
   },
   {
     name: "Navro'z",
@@ -83,7 +83,7 @@ const HOLIDAYS = [
     day: 9,
     audience: "all",
     message:
-      "9-may — Xotira va qadrlash kuni muborak. Bayyina jamoasi.",
+      "9-may - Xotira va qadrlash kuni muborak. Bayyina jamoasi.",
   },
   {
     name: "Mustaqillik kuni",

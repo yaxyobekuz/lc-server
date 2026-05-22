@@ -5,7 +5,7 @@ import { formatPhone } from "../utils/format.js";
 
 const formatDate = (d) => {
   const dd = new Date(d);
-  if (Number.isNaN(dd.getTime())) return "—";
+  if (Number.isNaN(dd.getTime())) return "-";
   const day = String(dd.getUTCDate()).padStart(2, "0");
   const mon = String(dd.getUTCMonth() + 1).padStart(2, "0");
   return `${day}.${mon}.${dd.getUTCFullYear()}`;

@@ -5,7 +5,7 @@ import verify from "./handlers/verify.handler.js";
 
 const router = Router();
 
-// Public — no auth (Telegram initData o'zi authentication)
+// Public - no auth (Telegram initData o'zi authentication)
 router.post("/verify", validate(verifySchema), verify);
 
 export default router;

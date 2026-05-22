@@ -496,7 +496,7 @@ export const getStudentSummary = async (
     counts.present + counts.absent + counts.excused + counts.late + counts.exempt;
   const unmarked = total - markedTotal;
   // Default-exempt unmarked'larni exempt sifatida hisobga olamiz
-  // exemptDefault — har class day uchun (multi-active student bo'lsa duplicate bo'lmaydi)
+  // exemptDefault - har class day uchun (multi-active student bo'lsa duplicate bo'lmaydi)
   // Lekin biz unmarked'lardan eng ko'pi exempt-default deymiz
   const exemptUnmarked = Math.min(unmarked, exemptDefault);
   counts.exempt += exemptUnmarked;

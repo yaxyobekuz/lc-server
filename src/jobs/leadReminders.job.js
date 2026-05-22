@@ -31,7 +31,7 @@ export default function defineLeadReminders(agenda) {
     let sent = 0;
     let skipped = 0;
 
-    // Lazy import — circular dependency oldini olish
+    // Lazy import - circular dependency oldini olish
     const { notifyAssignedStaff } = await import(
       "../bot/services/leadReminders.service.js"
     );

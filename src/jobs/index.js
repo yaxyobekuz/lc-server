@@ -38,18 +38,18 @@ export const startJobs = async () => {
   // Har kuni 09:00 da to'lov eslatmalarini yuborish
   await agenda.every("0 9 * * *", REMINDERS_JOB);
 
-  // Maoshlarni avto hisoblash — sozlamadagi kunda 02:30 da
+  // Maoshlarni avto hisoblash - sozlamadagi kunda 02:30 da
   const salarySettings = await getSalarySettings();
   await agenda.every(
     `30 2 ${salarySettings.autoCalculateOnDay} * *`,
     SALARY_JOB,
   );
 
-  // Lid eslatmalari — har kuni sozlamadagi soatda
+  // Lid eslatmalari - har kuni sozlamadagi soatda
   const leadSettings = await getLeadSettings();
   await agenda.every(`0 ${leadSettings.remindHourOfDay} * * *`, LEAD_REMINDERS_JOB);
 
-  // Bayram tabriklari — har kuni 09:00 da
+  // Bayram tabriklari - har kuni 09:00 da
   await agenda.every("0 9 * * *", HOLIDAY_JOB);
 
   logger.info("Agenda ishga tushirildi");

@@ -1,4 +1,4 @@
-// Davomat helper — class day computation, dateKey, exemption overlay
+// Davomat helper - class day computation, dateKey, exemption overlay
 
 const DAY_INDEX = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 

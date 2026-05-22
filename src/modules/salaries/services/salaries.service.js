@@ -209,7 +209,7 @@ export const calculateForAll = async ({ year, month }, currentUser) => {
     }
   }
 
-  // Notify (lazy import — circular avoidance)
+  // Notify (lazy import - circular avoidance)
   if (settings.notifyOnCalculated) {
     try {
       const { notifyCalculated } = await import(
@@ -283,7 +283,7 @@ export const cancel = async (salaryId, body, currentUser) => {
   if (payoutsCount > 0) {
     throw new ApiError(
       409,
-      "To'lovlar bor — avval to'lovlarni o'chiring yoki yangi oylik yarating",
+      "To'lovlar bor - avval to'lovlarni o'chiring yoki yangi oylik yarating",
     );
   }
   salary.status = "cancelled";
@@ -609,7 +609,7 @@ export const getMyCurrentMonth = async (teacherId) => {
   return { salary, payouts, period: { year: y, month: m } };
 };
 
-// Teacher panel — tarix
+// Teacher panel - tarix
 export const getMyHistory = async (teacherId, { page = 1, limit = 20 } = {}) => {
   const filter = { teacher: teacherId };
   const skip = (page - 1) * limit;

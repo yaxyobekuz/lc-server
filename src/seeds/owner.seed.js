@@ -5,7 +5,7 @@ import { ROLES } from "../constants/roles.js";
 import { hashPassword } from "../helpers/password.helper.js";
 import logger from "../config/logger.js";
 
-// Default owner user — DEVELOPMENT ONLY
+// Default owner user - DEVELOPMENT ONLY
 const OWNER = {
   username: "owner",
   firstName: "Bosh",

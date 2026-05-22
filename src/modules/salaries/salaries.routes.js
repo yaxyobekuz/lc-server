@@ -40,7 +40,7 @@ import myHistory from "./handlers/myHistory.handler.js";
 
 const router = Router();
 
-// Aniq pathlar — :id parametrli routelardan oldin
+// Aniq pathlar - :id parametrli routelardan oldin
 router.get(
   "/dashboard",
   requireAuth,
@@ -80,7 +80,7 @@ router.post(
   calculate,
 );
 
-// Payouts (delete by payoutId — alohida path)
+// Payouts (delete by payoutId - alohida path)
 router.delete(
   "/payouts/:payoutId",
   requireAuth,

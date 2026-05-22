@@ -58,7 +58,7 @@ const getMondayOfThisWeek = (now = new Date()) => {
 };
 
 const formatSlot = (slot, groupName) =>
-  `  • ${slot.startTime}–${slot.endTime} — ${groupName}`;
+  `  • ${slot.startTime}–${slot.endTime} - ${groupName}`;
 
 const buildScheduleText = (groups, monday) => {
   const lines = ["📅 Bu haftaning jadvali:", ""];

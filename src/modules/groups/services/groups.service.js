@@ -302,7 +302,7 @@ export const transferStudent = async (groupId, studentId, targetGroupId) => {
       session.endSession();
     }
     if (err instanceof ApiError) throw err;
-    // Standalone Mongo (no transaction support) — fallback
+    // Standalone Mongo (no transaction support) - fallback
     return transferSequential(groupId, studentId, targetGroupId);
   }
 };

@@ -71,8 +71,8 @@ const mySalaryHandler = async (bot, msg) => {
     lines.push("\nSo'nggi to'lovlar:");
     for (const p of payouts.slice(0, 5)) {
       const d = new Date(p.paidAt).toLocaleDateString("uz-UZ");
-      const method = p.method?.name || "—";
-      lines.push(`• ${d} — ${formatMoney(p.amount)} (${method})`);
+      const method = p.method?.name || "-";
+      lines.push(`• ${d} - ${formatMoney(p.amount)} (${method})`);
     }
   }
 

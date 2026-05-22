@@ -23,13 +23,13 @@ const myGroupsHandler = async (bot, msg) => {
   groups.forEach((g, i) => {
     lines.push(
       [
-        `${i + 1}) ${g.name} — ${g.studentsCount || 0} talaba`,
+        `${i + 1}) ${g.name} - ${g.studentsCount || 0} talaba`,
         `   Dars: ${formatSchedule(g.schedule)}`,
         `   Narx: ${formatMoney(g.monthlyPrice)}`,
       ].join("\n"),
     );
     buttons.push([
-      { text: `${g.name} — talabalar`, callback_data: `students:${g._id}` },
+      { text: `${g.name} - talabalar`, callback_data: `students:${g._id}` },
     ]);
   });
 

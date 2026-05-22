@@ -118,6 +118,48 @@ export const me = async (user) => {
   };
 };
 
+export const updateProfile = async (currentUser, body) => {
+  const user = await User.findById(currentUser._id);
+  if (!user) throw new ApiError(404, "Foydalanuvchi topilmadi");
+
+  if (body.phone !== undefined) {
+    const phone = body.phone ? normalizePhone(body.phone) : null;
+    if (body.phone && !phone) throw new ApiError(400, "Telefon raqam noto'g'ri");
+    if (phone && phone !== user.phone) {
+      const taken = await User.findOne({ phone, _id: { $ne: user._id } });
+      if (taken) throw new ApiError(409, "Bu telefon raqam band");
+    }
+    user.phone = phone || undefined;
+  }
+
+  if (body.firstName !== undefined) user.firstName = body.firstName.trim();
+  if (body.lastName !== undefined) user.lastName = body.lastName.trim();
+  if (body.birthDate !== undefined) {
+    user.birthDate = body.birthDate ? new Date(body.birthDate) : null;
+  }
+  if (body.gender !== undefined) user.gender = body.gender || null;
+
+  await user.save();
+  return sanitizeUser(user);
+};
+
+export const changePassword = async (currentUser, { currentPassword, newPassword }) => {
+  const user = await User.findById(currentUser._id).select("+passwordHash");
+  if (!user) throw new ApiError(404, "Foydalanuvchi topilmadi");
+
+  const ok = await comparePassword(currentPassword, user.passwordHash);
+  if (!ok) throw new ApiError(400, "Joriy parol noto'g'ri");
+
+  user.passwordHash = await hashPassword(newPassword);
+  await user.save();
+
+  // Parol o'zgargach barcha eski sessiyalarni bekor qilamiz
+  await RefreshToken.updateMany(
+    { user: user._id, revokedAt: null },
+    { $set: { revokedAt: new Date() } },
+  );
+};
+
 export const registerUser = async (body) => {
   const phone = body.phone ? normalizePhone(body.phone) : null;
   if (body.phone && !phone) throw new ApiError(400, "Telefon raqam noto'g'ri");

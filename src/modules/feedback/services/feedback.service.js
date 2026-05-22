@@ -144,7 +144,7 @@ const notifyStatusChangeAsync = async (feedback, action, currentUser) => {
       currentUser,
     );
   } catch {
-    /* silent — notification fail bo'lsa feedback amal qaytmasin */
+    /* silent - notification fail bo'lsa feedback amal qaytmasin */
   }
 };
 

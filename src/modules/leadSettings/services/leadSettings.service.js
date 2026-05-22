@@ -40,7 +40,7 @@ export const update = async (body) => {
       );
       await rescheduleLeadReminders(doc.remindHourOfDay);
     } catch {
-      /* noop — Agenda hali ishga tushmagan bo'lishi mumkin */
+      /* noop - Agenda hali ishga tushmagan bo'lishi mumkin */
     }
   }
   return doc;

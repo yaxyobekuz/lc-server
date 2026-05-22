@@ -41,7 +41,7 @@ export const update = async (body) => {
       const { rescheduleSalaryJob } = await import("../../../jobs/index.js");
       await rescheduleSalaryJob(doc.autoCalculateOnDay);
     } catch {
-      /* noop — Agenda hali ishga tushmagan bo'lishi mumkin */
+      /* noop - Agenda hali ishga tushmagan bo'lishi mumkin */
     }
   }
   return doc;

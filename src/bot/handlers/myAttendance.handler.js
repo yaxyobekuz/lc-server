@@ -42,7 +42,7 @@ const myAttendanceHandler = async (bot, msg) => {
 
   const lines = [
     `Joriy oy davomati:`,
-    `Foiz: ${summary.attendanceRate !== null ? summary.attendanceRate + "%" : "—"}`,
+    `Foiz: ${summary.attendanceRate !== null ? summary.attendanceRate + "%" : "-"}`,
     `Jami darslar: ${summary.totalClasses}`,
     `${STATUS_EMOJI.present} ${STATUS_LABEL.present}: ${summary.present}`,
     `${STATUS_EMOJI.absent} ${STATUS_LABEL.absent}: ${summary.absent}`,

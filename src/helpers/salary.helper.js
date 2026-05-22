@@ -1,4 +1,4 @@
-// Salary helper — period range, group breakdown computation, payment aggregation
+// Salary helper - period range, group breakdown computation, payment aggregation
 import mongoose from "mongoose";
 import Payment from "../models/payment.model.js";
 import Invoice from "../models/invoice.model.js";
@@ -10,7 +10,7 @@ export const monthRange = (year, month) => {
   const y = Number(year);
   const m = Number(month);
   const start = new Date(Date.UTC(y, m - 1, 1, 0, 0, 0, 0));
-  // Keyingi oy boshi — ekskluziv chegara
+  // Keyingi oy boshi - ekskluziv chegara
   const end = new Date(Date.UTC(y, m, 1, 0, 0, 0, 0));
   return { start, end };
 };
@@ -70,7 +70,7 @@ export const aggregateGroupPayments = async (groupId, period) => {
 // Period: { year, month }
 export const computeGroupBreakdown = async (rate, group, period) => {
   const { start, end } = monthRange(period.year, period.month);
-  // Class days — schedule asosida (oxirgi sana ekskluziv, shuning uchun -1ms)
+  // Class days - schedule asosida (oxirgi sana ekskluziv, shuning uchun -1ms)
   const lastIncl = new Date(end.getTime() - 1);
   const classDays = getClassDaysInRange(group, start, lastIncl);
   const sessionsCount = classDays.length;

@@ -4,35 +4,35 @@ import { ROLES } from "../../constants/roles.js";
 const STUDENT_HELP = [
   "📚 Talaba paneli imkoniyatlari:",
   "",
-  "• Mening to'lovlarim — joriy qarz, jami to'langan, ochiq hisoblar",
-  "• Dars jadvali — bu haftaning jadvali",
-  "• Davomatim — joriy oy davomati statistikasi",
-  "• Feedback — taklif, shikoyat yoki murojaat yuborish",
-  "• 🚀 Mini ilova — to'liq panelga avto-kirish",
+  "• Mening to'lovlarim - joriy qarz, jami to'langan, ochiq hisoblar",
+  "• Dars jadvali - bu haftaning jadvali",
+  "• Davomatim - joriy oy davomati statistikasi",
+  "• Feedback - taklif, shikoyat yoki murojaat yuborish",
+  "• 🚀 Mini ilova - to'liq panelga avto-kirish",
   "",
-  "Buyruqlar: /start — qayta ishga tushirish, /cancel — joriy amalni bekor qilish.",
+  "Buyruqlar: /start - qayta ishga tushirish, /cancel - joriy amalni bekor qilish.",
 ];
 
 const TEACHER_HELP = [
   "👨‍🏫 O'qituvchi paneli imkoniyatlari:",
   "",
-  "• Mening guruhlarim — guruhlar va o'quvchilar ro'yxati",
-  "• Dars jadvali — bu haftaning jadvali",
-  "• Davomat — bugungi guruhlar va davomat holati",
-  "• Oyligim — joriy oy maoshi va to'lov holati",
-  "• Feedback — admin bilan bog'lanish",
-  "• 🚀 Mini ilova — to'liq panelga avto-kirish",
+  "• Mening guruhlarim - guruhlar va o'quvchilar ro'yxati",
+  "• Dars jadvali - bu haftaning jadvali",
+  "• Davomat - bugungi guruhlar va davomat holati",
+  "• Oyligim - joriy oy maoshi va to'lov holati",
+  "• Feedback - admin bilan bog'lanish",
+  "• 🚀 Mini ilova - to'liq panelga avto-kirish",
   "",
-  "Buyruqlar: /start — qayta ishga tushirish, /cancel — joriy amalni bekor qilish.",
+  "Buyruqlar: /start - qayta ishga tushirish, /cancel - joriy amalni bekor qilish.",
 ];
 
 const OWNER_HELP = [
   "🏢 Egasi paneli:",
   "",
-  "• 🚀 Mini ilova — barcha boshqaruv funksiyalari uchun panel",
-  "• Feedback — taklif yoki shikoyat",
+  "• 🚀 Mini ilova - barcha boshqaruv funksiyalari uchun panel",
+  "• Feedback - taklif yoki shikoyat",
   "",
-  "Buyruqlar: /start — qayta ishga tushirish, /cancel — joriy amalni bekor qilish.",
+  "Buyruqlar: /start - qayta ishga tushirish, /cancel - joriy amalni bekor qilish.",
 ];
 
 const UNLINKED_HELP = [

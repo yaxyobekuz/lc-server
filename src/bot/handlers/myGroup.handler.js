@@ -21,7 +21,7 @@ const myGroupHandler = async (bot, msg) => {
   const { group } = data;
   const teachers = (group.teachers || [])
     .map((t) => `${t.firstName} ${t.lastName}`)
-    .join(", ") || "—";
+    .join(", ") || "-";
 
   const text = [
     `Guruh: ${group.name}`,

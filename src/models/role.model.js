@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import { ALL_ROLES } from "../constants/roles.js";
 
-// One row per role (3 static roles today) — exists to attach permissions
+// One row per role (3 static roles today) - exists to attach permissions
 const roleSchema = new mongoose.Schema(
   {
     value: { type: String, enum: ALL_ROLES, unique: true, required: true },

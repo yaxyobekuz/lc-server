@@ -4,13 +4,13 @@ import { formatMoney } from "../utils/format.js";
 import * as paymentsService from "../../modules/payments/services/payments.service.js";
 
 const formatPeriod = (period) => {
-  if (!period) return "—";
+  if (!period) return "-";
   const m = String(period.month).padStart(2, "0");
   return `${m}.${period.year}`;
 };
 
 const formatDate = (d) => {
-  if (!d) return "—";
+  if (!d) return "-";
   const date = new Date(d);
   return date.toLocaleDateString("uz-UZ", {
     year: "numeric",

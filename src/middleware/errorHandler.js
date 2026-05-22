@@ -4,7 +4,7 @@ import ApiError from "../utils/ApiError.js";
 import logger from "../config/logger.js";
 import { isProd } from "../config/env.js";
 
-// Central error handler — every error funnels through here
+// Central error handler - every error funnels through here
 // eslint-disable-next-line no-unused-vars
 const errorHandler = (err, req, res, _next) => {
   let statusCode = 500;

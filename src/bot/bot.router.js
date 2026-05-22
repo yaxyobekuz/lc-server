@@ -86,7 +86,7 @@ export const registerHandlers = (bot) => {
     // /command'lar yuqorida onText orqali ushlanadi
     if (typeof msg.text === "string" && msg.text.startsWith("/")) return;
 
-    // Reply keyboard tugmasi bo'lmagan oddiy matn — flowState text step
+    // Reply keyboard tugmasi bo'lmagan oddiy matn - flowState text step
     if (msg.text && !KNOWN_BUTTONS.has(msg.text.trim())) {
       try {
         const handled = await feedbackTextHandler(bot, msg);

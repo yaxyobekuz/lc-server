@@ -172,7 +172,7 @@ export const resolveAudience = async (audience, currentUser) => {
 // Bot push (transaction tashqarisida)
 const dispatchBotPush = async (notification, recipientIds) => {
   let deliveredCount = 0;
-  // Lazy import — circular dep oldini olish
+  // Lazy import - circular dep oldini olish
   const { deliverToUser } = await import(
     "../../../bot/services/notificationDeliver.service.js"
   );

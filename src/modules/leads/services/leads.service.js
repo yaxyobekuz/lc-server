@@ -118,7 +118,7 @@ export const list = async ({
   if (hasFollowUp) filter.followUpDate = { $ne: null };
   if (overdue) {
     filter.followUpDate = { ...(filter.followUpDate || {}), $lt: utcDayStart() };
-    // Open leads only — final bo'lmaganlar
+    // Open leads only - final bo'lmaganlar
   }
   if (fromDate || toDate) {
     filter.createdAt = {};
@@ -381,7 +381,7 @@ export const convertToStudent = async (id, userBody, currentUser) => {
       );
     }
 
-    // User yaratish (auth.service orqali — username/phone unique tekshiruvi shu yerda)
+    // User yaratish (auth.service orqali - username/phone unique tekshiruvi shu yerda)
     const user = await authRegisterUser({
       ...userBody,
       role: ROLES.STUDENT,

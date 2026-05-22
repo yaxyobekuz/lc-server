@@ -55,7 +55,7 @@ export const buildUserProfile = async (userInput) => {
 
   if (user.role === ROLES.STUDENT) {
     const activeGroups = await findAllActiveForStudent(user._id);
-    // Lazy import — circular dependency oldini olish
+    // Lazy import - circular dependency oldini olish
     const { getStudentSummary } = await import(
       "../modules/payments/services/payments.service.js"
     );
@@ -117,7 +117,7 @@ export const buildUserProfile = async (userInput) => {
     };
   }
 
-  // Owner yoki boshqa rollar — minimal profile
+  // Owner yoki boshqa rollar - minimal profile
   return {
     ...base,
     age: calcYears(user.birthDate),

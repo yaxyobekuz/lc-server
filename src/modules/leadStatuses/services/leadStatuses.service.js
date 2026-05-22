@@ -65,7 +65,7 @@ const assertInvariants = async (excludeId = null) => {
   const filter = { isActive: true };
   if (excludeId) filter._id = { $ne: excludeId };
 
-  // Hisob qilingandan keyingi holat — caller tomonidan ko'rsatilgan kombinatsiya
+  // Hisob qilingandan keyingi holat - caller tomonidan ko'rsatilgan kombinatsiya
   // Bu yerda biz boshqa active record'larni sanaymiz, va caller flag'larini
   // alohida hisobga oladi (assertInvariantsAfter ichida yoki cycler tarafida).
   return LeadStatus.find(filter);
@@ -135,13 +135,13 @@ export const softRemove = async (id) => {
   if (doc.isInitial && !others.some((d) => d.isInitial)) {
     throw new ApiError(
       400,
-      "Bu yagona 'Yangi' (isInitial=true) status — o'chirib bo'lmaydi",
+      "Bu yagona 'Yangi' (isInitial=true) status - o'chirib bo'lmaydi",
     );
   }
   if (doc.isConverted && !others.some((d) => d.isConverted)) {
     throw new ApiError(
       400,
-      "Bu yagona 'O'quvchiga aylangan' (isConverted=true) status — o'chirib bo'lmaydi",
+      "Bu yagona 'O'quvchiga aylangan' (isConverted=true) status - o'chirib bo'lmaydi",
     );
   }
 

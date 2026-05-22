@@ -1,4 +1,4 @@
-# Backend — Bayyina (server/)
+# Backend - Bayyina (server/)
 
 Node.js + Express + MongoDB (Mongoose) + Agenda + JWT (access + refresh).
 
@@ -114,23 +114,23 @@ Error (emitted by the central `errorHandler`):
 
 ## Auth flow
 
-- `POST /api/auth/login` — `{ login, password }` -> `accessToken` + refresh httpOnly cookie.
-- `POST /api/auth/refresh` — refresh cookie -> new access + a rotated new refresh.
-- `POST /api/auth/logout` — refresh is removed from the DB + the cookie is cleared.
-- `GET /api/auth/me` — protected by `requireAuth`, returns `{ user, role, permissions }`.
+- `POST /api/auth/login` - `{ login, password }` -> `accessToken` + refresh httpOnly cookie.
+- `POST /api/auth/refresh` - refresh cookie -> new access + a rotated new refresh.
+- `POST /api/auth/logout` - refresh is removed from the DB + the cookie is cleared.
+- `GET /api/auth/me` - protected by `requireAuth`, returns `{ user, role, permissions }`.
 
 ## Role and permission
 
 - `User.role: "owner" | "teacher" | "student"` (static enum).
-- Owner — always has every permission (hard rule in the code base).
+- Owner - always has every permission (hard rule in the code base).
 - `Permission` collection: `{ key, label, group }`.
 - Permissions are attached to a role via `Role.permissions: ObjectId[]`.
 - Middleware: `requireAuth -> (requireRole("owner") | requirePermission("students.create"))`.
 
 ## Agenda
 
-- `config/agenda.js` — instance.
-- `jobs/index.js` — `agenda.define("job-name", handler)` + `await agenda.start()`.
+- `config/agenda.js` - instance.
+- `jobs/index.js` - `agenda.define("job-name", handler)` + `await agenda.start()`.
 - Graceful shutdown: in `app.js`, on SIGTERM/SIGINT call `await agenda.stop()`.
 
 ## Commands
@@ -143,5 +143,5 @@ npm run lint
 
 ## Language rules
 
-- Code and technical values — English.
-- The `message` returned to the user — Uzbek (`"Tizimga xush kelibsiz"`, `"Login yoki parol noto'g'ri"`).
+- Code and technical values - English.
+- The `message` returned to the user - Uzbek (`"Tizimga xush kelibsiz"`, `"Login yoki parol noto'g'ri"`).

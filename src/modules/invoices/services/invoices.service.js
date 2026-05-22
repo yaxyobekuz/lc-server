@@ -72,7 +72,7 @@ export const ensureInvoiceFor = async (
       createdBy,
     });
   } catch (e) {
-    // E11000 — boshqa ishlovchi yaratib ulgurgan
+    // E11000 - boshqa ishlovchi yaratib ulgurgan
     if (e.code === 11000) {
       return Invoice.findOne({
         student: studentId,
