@@ -15,6 +15,9 @@ const parseOrigins = (raw) =>
     .filter(Boolean);
 
 const clientUrls = parseOrigins(process.env.CLIENT_URL);
+const allowAllOrigins = clientUrls.includes("*");
+const realUrls = clientUrls.filter((u) => u !== "*");
+const primaryUrl = realUrls[0] || "http://localhost:5173";
 
 const env = Object.freeze({
   NODE_ENV: process.env.NODE_ENV || "development",
@@ -30,14 +33,15 @@ const env = Object.freeze({
   COOKIE_SECRET: need("COOKIE_SECRET"),
   COOKIE_DOMAIN: process.env.COOKIE_DOMAIN || "localhost",
 
-  CLIENT_URL: clientUrls[0],
-  CLIENT_URLS: clientUrls,
+  CLIENT_URL: primaryUrl,
+  CLIENT_URLS: realUrls,
+  ALLOW_ALL_ORIGINS: allowAllOrigins,
 
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || "",
   TELEGRAM_BOT_ENABLED:
     String(process.env.TELEGRAM_BOT_ENABLED || "false").toLowerCase() === "true",
   TELEGRAM_BOT_WEBAPP_URL:
-    process.env.TELEGRAM_BOT_WEBAPP_URL || `${clientUrls[0]}/bot-auth`,
+    process.env.TELEGRAM_BOT_WEBAPP_URL || `${primaryUrl}/bot-auth`,
 });
 
 export const isProd = env.NODE_ENV === "production";
