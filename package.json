@@ -11,7 +11,8 @@
     "seed:owner": "node src/seeds/owner.seed.js",
     "seed:payments": "node src/seeds/paymentDefaults.seed.js",
     "seed:leads": "node src/seeds/leadDefaults.seed.js",
-    "seed:communication": "node src/seeds/communicationDefaults.seed.js"
+    "seed:communication": "node src/seeds/communicationDefaults.seed.js",
+    "seed:fake-data": "node src/seeds/fakeData.seed.js"
   },
   "dependencies": {
     "agenda": "^5.0.0",
@@ -32,6 +33,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@faker-js/faker": "^10.4.0",
     "eslint": "^9.13.0",
     "nodemon": "^3.1.7"
   }
