@@ -116,6 +116,7 @@ export const record = async (
 ) => {
   const amt = Number(amount);
   if (!amt || amt <= 0) throw new ApiError(400, "Summa noto'g'ri");
+  if (!Number.isInteger(amt)) throw new ApiError(400, "Summa butun son bo'lishi kerak");
 
   return runWithSession(async (session) => {
     const opts = session ? { session } : {};
@@ -123,6 +124,18 @@ export const record = async (
     if (!invoice) throw new ApiError(404, "Hisob topilmadi");
     if (invoice.status === "cancelled") {
       throw new ApiError(400, "Bekor qilingan hisobga to'lov yozib bo'lmaydi");
+    }
+
+    // Joriy net paid'ni transaksiya ichida o'qib, qoldiq'ni hisoblaymiz —
+    // overpayment'ni rad etamiz (parallel race: ikkala request ham bir xil
+    // netPaid'ni ko'rmaydi, chunki recomputeInvoice transaksiya yakunida ishlaydi).
+    const netPaid = await computeNetPaid(invoice._id, session);
+    const remaining = Math.max(0, invoice.totalDue - netPaid);
+    if (amt > remaining) {
+      throw new ApiError(
+        400,
+        `To'lov summasi qarzdan ko'p: qoldiq ${remaining}`,
+      );
     }
 
     await ensureMethod(methodId);
@@ -151,6 +164,10 @@ export const record = async (
 export const refund = async (paymentId, { amount, reason }, currentUser) => {
   const amt = Number(amount);
   if (!amt || amt <= 0) throw new ApiError(400, "Summa noto'g'ri");
+  if (!Number.isInteger(amt)) throw new ApiError(400, "Summa butun son bo'lishi kerak");
+  if (!String(reason || "").trim()) {
+    throw new ApiError(400, "Qaytarish sababi majburiy");
+  }
 
   return runWithSession(async (session) => {
     const opts = session ? { session } : {};

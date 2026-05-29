@@ -182,9 +182,9 @@ export const bulkRecord = async (
   }
   for (const item of items) validateItem(item);
 
-  return runWithSession(async (session) => {
+  const results = await runWithSession(async (session) => {
     const opts = session ? { session } : {};
-    const results = [];
+    const docs = [];
     for (const item of items) {
       const update = {
         $set: {
@@ -207,10 +207,14 @@ export const bulkRecord = async (
         update,
         { upsert: true, new: true, setDefaultsOnInsert: true, ...opts },
       );
-      results.push(doc);
+      docs.push(doc);
     }
-    return results;
+    return docs;
   });
+
+  // Davomat o'zgardi → correlation cache'ni shu oy uchun bekor qilamiz
+  correlationCacheInvalidate(date.getUTCFullYear(), date.getUTCMonth() + 1);
+  return results;
 };
 
 // ─── monthly + summary ───
@@ -594,8 +598,14 @@ export const getDashboardStats = async ({ fromDate, toDate }) => {
   const groupBreakdown = [];
   const studentRates = new Map();
 
-  for (const g of groups) {
-    const gs = await getGroupSummary(g._id, { fromDate: from, toDate: to });
+  // Guruh summary'larini parallel olib kelamiz (sequential O(N) -> O(1) wall-clock)
+  const groupSummaries = await Promise.all(
+    groups.map((g) =>
+      getGroupSummary(g._id, { fromDate: from, toDate: to }).then((gs) => ({ g, gs })),
+    ),
+  );
+
+  for (const { g, gs } of groupSummaries) {
     aggregate.present += gs.aggregate.present;
     aggregate.absent += gs.aggregate.absent;
     aggregate.excused += gs.aggregate.excused;
@@ -666,27 +676,68 @@ export const getDashboardStats = async ({ fromDate, toDate }) => {
 };
 
 // ─── correlation ───
+// In-memory cache (year-month -> { data, expires }). TTL: 5 minutes.
+// Davomat yoki invoice o'zgarsa, correlationCacheInvalidate() chaqirilishi kerak.
+const correlationCache = new Map();
+const CORRELATION_TTL_MS = 5 * 60 * 1000;
+const CORRELATION_BATCH = 25;
+
+export const correlationCacheInvalidate = (year, month) => {
+  if (year && month) {
+    correlationCache.delete(`${year}-${month}`);
+  } else {
+    correlationCache.clear();
+  }
+};
+
 export const correlationReport = async ({ year, month }) => {
+  const cacheKey = `${year}-${month}`;
+  const cached = correlationCache.get(cacheKey);
+  if (cached && cached.expires > Date.now()) return cached.data;
+
   const monthStart = startOfMonth(year, month);
   const monthEnd = endOfMonth(year, month);
 
-  // Shu oy uchun barcha non-cancelled invoices
-  const invoices = await Invoice.find({
-    "period.year": Number(year),
-    "period.month": Number(month),
-    status: { $ne: "cancelled" },
-  })
+  // Shu oy uchun barcha non-cancelled invoices — minimal proyeksiya
+  const invoices = await Invoice.find(
+    {
+      "period.year": Number(year),
+      "period.month": Number(month),
+      status: { $ne: "cancelled" },
+    },
+    "student group totalDue paidAmount status",
+  )
     .populate("student", STUDENT_PROJECTION)
-    .populate("group", { name: 1 });
+    .populate("group", { name: 1 })
+    .lean();
 
-  const result = [];
-  for (const inv of invoices) {
-    if (!inv.student || !inv.group) continue;
-    const summary = await getStudentSummary(inv.student._id, {
-      fromDate: monthStart,
-      toDate: monthEnd,
-    });
-    result.push({
+  // Studentlarning summary'larini batch'larda parallel hisoblash.
+  // Avval invoices'ni filtrlab, bekor nullable'larni olib tashlash.
+  const valid = invoices.filter((inv) => inv.student && inv.group);
+
+  // Bir studentning bir oy ichidagi summary'si bir xil — duplikatlarni dedupe qilamiz
+  const uniqueStudentIds = Array.from(
+    new Set(valid.map((inv) => String(inv.student._id))),
+  );
+  const summaryByStudent = new Map();
+  for (let i = 0; i < uniqueStudentIds.length; i += CORRELATION_BATCH) {
+    const batch = uniqueStudentIds.slice(i, i + CORRELATION_BATCH);
+    const summaries = await Promise.all(
+      batch.map((sid) =>
+        getStudentSummary(sid, { fromDate: monthStart, toDate: monthEnd }),
+      ),
+    );
+    batch.forEach((sid, idx) => summaryByStudent.set(sid, summaries[idx]));
+  }
+
+  const result = valid.map((inv) => {
+    const summary = summaryByStudent.get(String(inv.student._id)) || {
+      attendanceRate: null,
+      totalClasses: 0,
+      present: 0,
+      late: 0,
+    };
+    return {
       studentId: inv.student._id,
       firstName: inv.student.firstName,
       lastName: inv.student.lastName,
@@ -699,8 +750,13 @@ export const correlationReport = async ({ year, month }) => {
       paid: inv.paidAmount,
       debt: Math.max(0, inv.totalDue - inv.paidAmount),
       status: inv.status,
-    });
-  }
+    };
+  });
+
+  correlationCache.set(cacheKey, {
+    data: result,
+    expires: Date.now() + CORRELATION_TTL_MS,
+  });
   return result;
 };
 

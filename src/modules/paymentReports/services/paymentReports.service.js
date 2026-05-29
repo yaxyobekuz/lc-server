@@ -5,6 +5,22 @@ import GroupMembership from "../../../models/groupMembership.model.js";
 
 const NON_CANCELLED = { $ne: "cancelled" };
 
+// Bekor qilingan hisoblarning to'lovlarini chiqarib tashlaydigan umumiy pipeline qismi.
+// Payment yozuvlari saqlanadi (audit), lekin reports / dashboard ularni hisoblamaydi.
+const EXCLUDE_CANCELLED_INVOICE_PAYMENTS = [
+  {
+    $lookup: {
+      from: "invoices",
+      localField: "invoice",
+      foreignField: "_id",
+      as: "_inv",
+      pipeline: [{ $project: { status: 1 } }],
+    },
+  },
+  { $unwind: { path: "$_inv", preserveNullAndEmptyArrays: true } },
+  { $match: { "_inv.status": { $ne: "cancelled" } } },
+];
+
 const startOfMonth = (year, month) =>
   new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
 const endOfMonth = (year, month) =>
@@ -44,6 +60,7 @@ export const summary = async ({ year, month }) => {
           paidAt: { $gte: monthStart, $lte: monthEnd },
         },
       },
+      ...EXCLUDE_CANCELLED_INVOICE_PAYMENTS,
       { $group: { _id: null, sum: { $sum: "$amount" } } },
     ]),
     Payment.aggregate([
@@ -53,10 +70,12 @@ export const summary = async ({ year, month }) => {
           paidAt: { $gte: monthStart, $lte: monthEnd },
         },
       },
+      ...EXCLUDE_CANCELLED_INVOICE_PAYMENTS,
       { $group: { _id: null, sum: { $sum: "$amount" } } },
     ]),
     Payment.aggregate([
       { $match: { paidAt: { $gte: monthStart, $lte: monthEnd } } },
+      ...EXCLUDE_CANCELLED_INVOICE_PAYMENTS,
       {
         $group: {
           _id: { method: "$method", type: "$type" },
@@ -208,6 +227,7 @@ export const topPayers = async ({ limit = 10 }) => {
 
   const items = await Payment.aggregate([
     { $match: { paidAt: { $gte: since } } },
+    ...EXCLUDE_CANCELLED_INVOICE_PAYMENTS,
     {
       $group: {
         _id: { student: "$student", type: "$type" },
@@ -280,6 +300,7 @@ export const daily = async ({ date }) => {
 
   const items = await Payment.aggregate([
     { $match: { paidAt: { $gte: dayStart, $lte: dayEnd } } },
+    ...EXCLUDE_CANCELLED_INVOICE_PAYMENTS,
     {
       $group: {
         _id: { method: "$method", type: "$type" },

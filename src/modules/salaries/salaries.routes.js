@@ -98,11 +98,18 @@ router.get(
   list,
 );
 
-// Resource by ID
-router.get("/:id", requireAuth, validate(idSchema), getById);
+// Resource by ID — owner yoki teacher (handler ichida teacher faqat o'zinikini ko'radi)
+router.get(
+  "/:id",
+  requireAuth,
+  requireRole(ROLES.OWNER, ROLES.TEACHER),
+  validate(idSchema),
+  getById,
+);
 router.get(
   "/:id/payouts",
   requireAuth,
+  requireRole(ROLES.OWNER, ROLES.TEACHER),
   validate(idSchema),
   getPayouts,
 );

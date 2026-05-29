@@ -41,8 +41,26 @@ const groupSchema = new mongoose.Schema(
 
 groupSchema.index({ name: 1 });
 
+const DAY_LABELS_UZ = {
+  mon: "Dushanba",
+  tue: "Seshanba",
+  wed: "Chorshanba",
+  thu: "Payshanba",
+  fri: "Juma",
+  sat: "Shanba",
+  sun: "Yakshanba",
+};
+
 groupSchema.pre("validate", function (next) {
+  const seen = new Set();
   for (const item of this.schedule || []) {
+    if (seen.has(item.day)) {
+      const label = DAY_LABELS_UZ[item.day] || item.day;
+      return next(
+        new Error(`Bir kun jadvalda faqat bir marta bo'lishi mumkin (${label})`),
+      );
+    }
+    seen.add(item.day);
     if (item.startTime >= item.endTime) {
       return next(
         new Error(`Tugash vaqti boshlanish vaqtidan keyin bo'lishi kerak (${item.day})`),

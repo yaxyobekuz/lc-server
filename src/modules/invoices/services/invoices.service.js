@@ -289,7 +289,11 @@ export const update = async (id, body) => {
     const v = Math.max(0, Math.min(invoice.baseAmount, Number(body.discountAmount)));
     invoice.discountAmount = v;
     invoice.totalDue = Math.max(0, invoice.baseAmount - v);
-    invoice.status = computeStatus(invoice.totalDue, invoice.paidAmount);
+    // paidAmount'ni HAQIQIY to'lov yozuvlaridan qayta hisoblaymiz —
+    // stale paidAmount bilan status sakrab ketmasligi uchun
+    const realPaid = await computeNetPaid(invoice._id);
+    invoice.paidAmount = realPaid;
+    invoice.status = computeStatus(invoice.totalDue, realPaid);
   }
   if (body.dueDate !== undefined) {
     invoice.dueDate = new Date(body.dueDate);
@@ -304,10 +308,18 @@ export const cancel = async (id, { reason = "" } = {}, currentUser) => {
   if (!invoice) throw new ApiError(404, "Hisob topilmadi");
   if (invoice.status === "cancelled") return invoice;
 
+  if (!String(reason || "").trim()) {
+    throw new ApiError(400, "Bekor qilish sababi majburiy");
+  }
+
   invoice.status = "cancelled";
   invoice.cancelledAt = new Date();
   invoice.cancelledReason = reason;
   invoice.cancelledBy = currentUser?._id || null;
+  // Bekor qilingan hisob to'lovlar hisobotlarida hisoblanmasligi uchun
+  // paidAmount nolga keltiriladi (mavjud Payment yozuvlari saqlanadi
+  // audit uchun, lekin reports/dashboard bu hisobni filtrlaydi).
+  invoice.paidAmount = 0;
   await invoice.save();
   return invoice;
 };

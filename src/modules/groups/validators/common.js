@@ -14,6 +14,24 @@ export const scheduleItem = z
     path: ["endTime"],
   });
 
+// Jadvalda bir kun faqat bir marta — duplikat day'larni rad qiladi
+export const scheduleArray = z
+  .array(scheduleItem)
+  .superRefine((arr, ctx) => {
+    const seen = new Map();
+    arr.forEach((item, idx) => {
+      if (seen.has(item.day)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Bu kun jadvalda allaqachon mavjud",
+          path: [idx, "day"],
+        });
+      } else {
+        seen.set(item.day, idx);
+      }
+    });
+  });
+
 export const idParam = z.object({ id: z.string().min(1) });
 export const idStudentParams = z.object({
   id: z.string().min(1),
