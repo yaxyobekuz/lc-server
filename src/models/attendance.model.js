@@ -59,15 +59,7 @@ attendanceSchema.index(
 attendanceSchema.index({ student: 1, date: 1 });
 attendanceSchema.index({ group: 1, date: 1 });
 
-attendanceSchema.pre("validate", function (next) {
-  if (this.status === "late" && (!this.lateMinutes || this.lateMinutes <= 0)) {
-    return next(new Error("Kechikkanlar uchun minutlar majburiy"));
-  }
-  if (this.status === "excused" && !String(this.reason || "").trim()) {
-    return next(new Error("Sababli kelmaslik uchun sabab majburiy"));
-  }
-  next();
-});
+// Kechikdi uchun minut, sababli uchun sabab ixtiyoriy - status o'zi yetarli
 
 attendanceSchema.set("toJSON", {
   transform: (_doc, ret) => {

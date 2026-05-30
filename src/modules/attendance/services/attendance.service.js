@@ -117,12 +117,7 @@ const validateItem = (item) => {
   if (!["present", "absent", "excused", "late", "exempt"].includes(item.status)) {
     throw new ApiError(400, "Holat noto'g'ri");
   }
-  if (item.status === "late" && (!item.lateMinutes || item.lateMinutes <= 0)) {
-    throw new ApiError(400, "Kechikkanlar uchun minutlar majburiy");
-  }
-  if (item.status === "excused" && !String(item.reason || "").trim()) {
-    throw new ApiError(400, "Sababli kelmaslik uchun sabab majburiy");
-  }
+  // Kechikdi/Sababli uchun minut va sabab ixtiyoriy - status tanlanishi yetarli
 };
 
 const runWithSession = async (fn) => {
