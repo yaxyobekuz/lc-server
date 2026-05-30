@@ -1,17 +1,20 @@
 import BotUser from "../../../models/botUser.model.js";
+import User from "../../../models/user.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import env from "../../../config/env.js";
 import { verifyInitData } from "../../../bot/utils/initData.js";
+import { comparePassword } from "../../../helpers/password.helper.js";
+import { normalizePhone, isPhoneLike } from "../../../utils/phone.js";
 import {
   issueTokens,
   sanitizeUser,
 } from "../../auth/services/auth.service.js";
 
-export const verifyAndIssue = async ({ initData, userAgent, ip }) => {
+// initData ni tekshiradi va Telegram foydalanuvchisini qaytaradi
+const requireTgUser = (initData) => {
   if (!env.TELEGRAM_BOT_TOKEN) {
     throw new ApiError(503, "Bot konfiguratsiyalanmagan");
   }
-
   const result = verifyInitData(initData, env.TELEGRAM_BOT_TOKEN);
   if (!result.ok) {
     if (result.reason === "expired") {
@@ -19,8 +22,35 @@ export const verifyAndIssue = async ({ initData, userAgent, ip }) => {
     }
     throw new ApiError(401, "Telegram ma'lumotlari tasdiqlanmadi");
   }
+  return result.user;
+};
 
-  const tgUser = result.user;
+// Telegram ID ni User akkauntiga bog'laydi (BotUser bo'lmasa yaratadi)
+const linkTelegram = async (tgUser, userId) => {
+  // Bitta akkaunt faqat bitta Telegramga bog'lansin - eski bog'lanishni uzamiz
+  await BotUser.updateMany(
+    { user: userId, telegramId: { $ne: tgUser.id } },
+    { $set: { user: null } },
+  );
+
+  await BotUser.findOneAndUpdate(
+    { telegramId: tgUser.id },
+    {
+      $set: {
+        username: tgUser.username ? String(tgUser.username).toLowerCase() : null,
+        firstName: tgUser.first_name || "",
+        lastName: tgUser.last_name || "",
+        languageCode: tgUser.language_code || "uz",
+        user: userId,
+      },
+      $setOnInsert: { telegramId: tgUser.id, chatId: tgUser.id },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
+};
+
+export const verifyAndIssue = async ({ initData, userAgent, ip }) => {
+  const tgUser = requireTgUser(initData);
   const botUser = await BotUser.findOne({ telegramId: tgUser.id }).populate(
     "user",
   );
@@ -43,4 +73,32 @@ export const verifyAndIssue = async ({ initData, userAgent, ip }) => {
     refreshToken,
     user: sanitizeUser(botUser.user),
   };
+};
+
+// Telefon/login + parol bilan kirish va Telegram ID ni avtomatik bog'lash
+export const loginAndLink = async ({ login, password, initData, userAgent, ip }) => {
+  const tgUser = requireTgUser(initData);
+
+  const trimmed = String(login || "").trim();
+  if (!trimmed) throw new ApiError(400, "Login kerak");
+
+  const phone = isPhoneLike(trimmed) ? normalizePhone(trimmed) : null;
+  const filters = [{ username: trimmed.toLowerCase() }];
+  if (phone) filters.push({ phone });
+
+  const user = await User.findOne({ $or: filters }).select("+passwordHash");
+  if (!user || !user.isActive) {
+    throw new ApiError(401, "Login yoki parol noto'g'ri");
+  }
+
+  const ok = await comparePassword(password, user.passwordHash);
+  if (!ok) throw new ApiError(401, "Login yoki parol noto'g'ri");
+
+  await linkTelegram(tgUser, user._id);
+
+  const { accessToken, refreshToken } = await issueTokens(user, {
+    userAgent,
+    ip,
+  });
+  return { accessToken, refreshToken, user: sanitizeUser(user) };
 };

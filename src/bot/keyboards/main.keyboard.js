@@ -2,7 +2,7 @@ import env from "../../config/env.js";
 import { ROLES } from "../../constants/roles.js";
 
 const webAppButton = {
-  text: "🚀 Mini ilova",
+  text: "🔐 Tizimga kirish",
   web_app: { url: env.TELEGRAM_BOT_WEBAPP_URL },
 };
 

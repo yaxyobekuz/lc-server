@@ -1,9 +1,11 @@
 import User from "../../../models/user.model.js";
 import GroupMembership from "../../../models/groupMembership.model.js";
 import LeadSource from "../../../models/leadSource.model.js";
+import RefreshToken from "../../../models/refreshToken.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import { ROLES } from "../../../constants/roles.js";
 import { normalizePhone } from "../../../utils/phone.js";
+import { hashPassword } from "../../../helpers/password.helper.js";
 import { buildUserProfile } from "../../../helpers/userProfile.helper.js";
 
 const STUDENT_ONLY_FIELDS = [
@@ -132,6 +134,35 @@ export const update = async (id, body) => {
 
   await user.save();
   return user;
+};
+
+// Owner uchun: foydalanuvchining ochiq parolini ko'rsatish
+export const getPassword = async (id) => {
+  const user = await User.findById(id).select("+plainPassword username role");
+  if (!user) throw new ApiError(404, "Foydalanuvchi topilmadi");
+  if (user.role === ROLES.OWNER) {
+    throw new ApiError(403, "Owner parolini ko'rib bo'lmaydi");
+  }
+  return { username: user.username, password: user.plainPassword || "" };
+};
+
+// Owner uchun: foydalanuvchiga yangi parol o'rnatish
+export const setPassword = async (id, newPassword) => {
+  const user = await getById(id);
+  if (user.role === ROLES.OWNER) {
+    throw new ApiError(403, "Owner parolini o'zgartirib bo'lmaydi");
+  }
+  user.passwordHash = await hashPassword(newPassword);
+  user.plainPassword = newPassword;
+  await user.save();
+
+  // Parol o'zgargach barcha eski sessiyalarni bekor qilamiz
+  await RefreshToken.updateMany(
+    { user: user._id, revokedAt: null },
+    { $set: { revokedAt: new Date() } },
+  );
+
+  return { username: user.username, password: newPassword };
 };
 
 export const softRemove = async (id) => {

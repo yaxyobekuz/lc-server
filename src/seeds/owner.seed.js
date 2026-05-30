@@ -26,6 +26,7 @@ const seed = async () => {
       lastName: OWNER.lastName,
       username: OWNER.username,
       passwordHash,
+      plainPassword: OWNER.password,
       role: ROLES.OWNER,
       isActive: true,
     });

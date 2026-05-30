@@ -7,11 +7,14 @@ import { ROLES } from "../../constants/roles.js";
 import { PERMISSIONS } from "../../constants/permissions.js";
 import { listSchema } from "./validators/list.validator.js";
 import { updateSchema, idSchema } from "./validators/update.validator.js";
+import { setPasswordSchema } from "./validators/password.validator.js";
 import list from "./handlers/list.handler.js";
 import getById from "./handlers/getById.handler.js";
 import update from "./handlers/update.handler.js";
 import remove from "./handlers/remove.handler.js";
 import groupHistory from "./handlers/groupHistory.handler.js";
+import getPassword from "./handlers/getPassword.handler.js";
+import setPassword from "./handlers/setPassword.handler.js";
 
 const router = Router();
 
@@ -35,6 +38,20 @@ router.get(
   requirePermission(PERMISSIONS.USERS_READ),
   validate(idSchema),
   groupHistory,
+);
+router.get(
+  "/:id/password",
+  requireAuth,
+  requireRole(ROLES.OWNER),
+  validate(idSchema),
+  getPassword,
+);
+router.patch(
+  "/:id/password",
+  requireAuth,
+  requireRole(ROLES.OWNER),
+  validate(setPasswordSchema),
+  setPassword,
 );
 router.patch(
   "/:id",

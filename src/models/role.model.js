@@ -1,5 +1,7 @@
 import mongoose from "mongoose";
 import { ALL_ROLES } from "../constants/roles.js";
+// Permission modeli ref ishlatiladi - populate uchun registratsiya shart
+import "./permission.model.js";
 
 // One row per role (3 static roles today) - exists to attach permissions
 const roleSchema = new mongoose.Schema(
