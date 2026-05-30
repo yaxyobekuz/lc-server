@@ -47,6 +47,10 @@ const invoiceSchema = new mongoose.Schema(
     discountAmount: { type: Number, default: 0, min: 0 },
     discountSnapshot: { type: [discountSnapshotSchema], default: [] },
     totalDue: { type: Number, required: true, min: 0 },
+    // Talaba balansidan avtomatik yechilgan summa (paidAmount tarkibida)
+    appliedBalance: { type: Number, default: 0, min: 0 },
+    // O'qituvchi kelmagan kunlar uchun jami chegirma (totalDue dan ayriladi)
+    teacherAbsenceDeduction: { type: Number, default: 0, min: 0 },
     paidAmount: { type: Number, default: 0 },
     status: {
       type: String,

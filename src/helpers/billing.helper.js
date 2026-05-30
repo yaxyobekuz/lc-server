@@ -1,6 +1,37 @@
 import { getActiveForStudent } from "../modules/discounts/services/discounts.service.js";
+import { getClassDaysInRange } from "./attendance.helper.js";
 
 const daysInMonth = (year, month) => new Date(year, month, 0).getUTCDate();
+
+// Guruhning o'sha oydagi dars kunlari soni (schedule asosida)
+export const lessonsInMonth = (group, year, month) => {
+  const start = new Date(Date.UTC(year, month - 1, 1));
+  const end = new Date(Date.UTC(year, month, 0));
+  return getClassDaysInRange(group, start, end).length;
+};
+
+// O'qituvchi kelmagan kun chegirmasi sozlamasi: guruh override → global default.
+export const resolveAbsenceConfig = (group, settings) => {
+  const gMode = group?.teacherAbsenceMode;
+  if (gMode && gMode !== "inherit") {
+    return { mode: gMode, amount: Number(group?.teacherAbsenceAmount) || 0 };
+  }
+  return {
+    mode: settings?.teacherAbsenceMode || "auto",
+    amount: Number(settings?.teacherAbsenceAmount) || 0,
+  };
+};
+
+// O'qituvchi kelmagan 1 kun uchun o'quvchidan ayiriladigan summa.
+// auto → oylik narx / oydagi darslar soni; fixed → belgilangan summa; none → 0.
+export const computePerLessonAmount = (group, { year, month }, settings) => {
+  const { mode, amount } = resolveAbsenceConfig(group, settings);
+  if (mode === "none") return 0;
+  if (mode === "fixed") return Math.max(0, Math.round(amount));
+  const lessons = lessonsInMonth(group, year, month);
+  if (lessons <= 0) return 0;
+  return Math.max(0, Math.round((Number(group.monthlyPrice) || 0) / lessons));
+};
 
 export const computeDueDate = ({ year, month }, dayOfMonth) => {
   const day = Math.min(Math.max(1, Number(dayOfMonth) || 1), daysInMonth(year, month));

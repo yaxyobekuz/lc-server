@@ -6,7 +6,7 @@ const create = asyncHandler(async (req, res) => {
   res.status(201).json({
     success: true,
     data,
-    message: "Ozod davri yaratildi",
+    message: "Davomatdan ozod davri yaratildi",
   });
 });
 

@@ -2,6 +2,7 @@ import AttendanceExemption from "../../../models/attendanceExemption.model.js";
 import User from "../../../models/user.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import { ROLES } from "../../../constants/roles.js";
+import { ensureActiveGroup } from "../../../helpers/membership.helper.js";
 
 const ensureStudent = async (studentId) => {
   const u = await User.findById(studentId);
@@ -35,6 +36,7 @@ export const list = async ({
 
 export const create = async (body, currentUser) => {
   await ensureStudent(body.student);
+  await ensureActiveGroup(body.student);
 
   const doc = {
     student: body.student,
@@ -55,7 +57,7 @@ export const create = async (body, currentUser) => {
 
 export const getById = async (id) => {
   const doc = await AttendanceExemption.findById(id);
-  if (!doc) throw new ApiError(404, "Ozod davri topilmadi");
+  if (!doc) throw new ApiError(404, "Davomatdan ozod davri topilmadi");
   return doc;
 };
 

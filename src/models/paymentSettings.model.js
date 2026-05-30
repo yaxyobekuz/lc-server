@@ -8,6 +8,13 @@ const paymentSettingsSchema = new mongoose.Schema(
     repeatAfterOverdueDays: { type: Number, min: 0, default: 3 },
     reminderEnabled: { type: Boolean, default: true },
     centerName: { type: String, default: "Bayyina" },
+    // O'qituvchi kelmagan kun uchun o'quvchidan ayiriladigan dars haqi (global default)
+    teacherAbsenceMode: {
+      type: String,
+      enum: ["auto", "fixed", "none"],
+      default: "auto",
+    },
+    teacherAbsenceAmount: { type: Number, default: 0, min: 0 },
   },
   { timestamps: true, _id: false },
 );

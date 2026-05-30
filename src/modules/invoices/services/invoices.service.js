@@ -25,6 +25,28 @@ const startOfMonth = (year, month) =>
 const endOfMonth = (year, month) =>
   new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
 
+// Yangi hisobni talaba balansidan to'ldiradi (yetganicha; chala bo'lsa qisman).
+// Function declaration — hoisting tufayli ensureInvoiceFor ichidan chaqiriladi.
+async function applyStudentBalance(invoice) {
+  if (!invoice || invoice.totalDue <= 0) return invoice;
+
+  const student = await User.findById(invoice.student);
+  const balance = Number(student?.balance) || 0;
+  if (!student || balance <= 0) return invoice;
+
+  const apply = Math.min(balance, invoice.totalDue);
+  if (apply <= 0) return invoice;
+
+  invoice.appliedBalance = apply;
+  invoice.paidAmount = apply;
+  invoice.status = apply >= invoice.totalDue ? "paid" : "partial";
+  await invoice.save();
+
+  student.balance = balance - apply;
+  await student.save();
+  return invoice;
+}
+
 export const ensureInvoiceFor = async (
   studentId,
   groupId,
@@ -57,7 +79,7 @@ export const ensureInvoiceFor = async (
   const dueDate = computeDueDate({ year, month }, settings.dueDayOfMonth);
 
   try {
-    return await Invoice.create({
+    const invoice = await Invoice.create({
       student: studentId,
       group: groupId,
       membership: membershipId || null,
@@ -71,6 +93,9 @@ export const ensureInvoiceFor = async (
       dueDate,
       createdBy,
     });
+    // Yangi hisob: talaba balansidan avtomatik yechib qo'yamiz
+    await applyStudentBalance(invoice);
+    return invoice;
   } catch (e) {
     // E11000 - boshqa ishlovchi yaratib ulgurgan
     if (e.code === 11000) {
@@ -129,6 +154,7 @@ const STUDENT_PROJECTION = {
   username: 1,
   phone: 1,
   parentPhone: 1,
+  balance: 1,
 };
 const GROUP_PROJECTION = { name: 1, monthlyPrice: 1, schedule: 1 };
 
@@ -202,11 +228,86 @@ export const recompute = async (invoiceId, session = null) => {
     if (g._id === "refund") refunded = g.sum;
   }
   const net = Math.max(0, paid - refunded);
+  // To'langan = haqiqiy to'lovlar + balansdan yechilgan summa.
+  // Qarzdan ortig'i balansga ketgani uchun paidAmount totalDue bilan cheklanadi.
+  const credited = net + (invoice.appliedBalance || 0);
 
-  invoice.paidAmount = net;
-  invoice.status = computeStatus(invoice.totalDue, net);
+  invoice.paidAmount = Math.min(invoice.totalDue, credited);
+  invoice.status = computeStatus(invoice.totalDue, credited);
   await invoice.save(opts);
   return invoice;
+};
+
+// O'qituvchi kelmagan kun chegirmasini qo'llaydi (amount > 0). Hisob totalDue
+// kamayadi; ortiqcha to'langan summa talaba balansiga o'tadi.
+// Returns { deducted, balanceCredited, appliedBalanceReduced } — teskari qilish uchun.
+export const applyAbsenceDeduction = async (invoiceId, amount, session = null) => {
+  const opts = session ? { session } : {};
+  const invoice = await Invoice.findById(invoiceId, null, opts);
+  if (!invoice || invoice.status === "cancelled") {
+    return { deducted: 0, balanceCredited: 0, appliedBalanceReduced: 0 };
+  }
+
+  const before = invoice.teacherAbsenceDeduction || 0;
+  const after = Math.max(0, before + amount);
+  const deducted = after - before;
+  invoice.teacherAbsenceDeduction = after;
+  invoice.totalDue = Math.max(
+    0,
+    (invoice.baseAmount || 0) - (invoice.discountAmount || 0) - after,
+  );
+
+  const net = await computeNetPaid(invoice._id, session);
+  const credited = net + (invoice.appliedBalance || 0);
+  let balanceCredited = 0;
+  let appliedBalanceReduced = 0;
+  if (credited > invoice.totalDue) {
+    const overflow = credited - invoice.totalDue;
+    appliedBalanceReduced = Math.min(overflow, invoice.appliedBalance || 0);
+    invoice.appliedBalance = (invoice.appliedBalance || 0) - appliedBalanceReduced;
+    balanceCredited = overflow;
+    const student = await User.findById(invoice.student, null, opts);
+    if (student) {
+      student.balance = (Number(student.balance) || 0) + overflow;
+      await student.save(opts);
+    }
+  }
+  await invoice.save(opts);
+  await recompute(invoice._id, session);
+  return { deducted, balanceCredited, appliedBalanceReduced };
+};
+
+// applyAbsenceDeduction ning aniq teskarisi (o'qituvchi qaytadan "keldi" bo'lganda).
+export const reverseAbsenceDeduction = async (invoiceId, app, session = null) => {
+  const opts = session ? { session } : {};
+  const invoice = await Invoice.findById(invoiceId, null, opts);
+  if (!invoice || invoice.status === "cancelled") return;
+
+  invoice.teacherAbsenceDeduction = Math.max(
+    0,
+    (invoice.teacherAbsenceDeduction || 0) - (app.deducted || 0),
+  );
+  invoice.totalDue = Math.max(
+    0,
+    (invoice.baseAmount || 0) -
+      (invoice.discountAmount || 0) -
+      invoice.teacherAbsenceDeduction,
+  );
+  invoice.appliedBalance =
+    (invoice.appliedBalance || 0) + (app.appliedBalanceReduced || 0);
+  await invoice.save(opts);
+
+  if (app.balanceCredited > 0) {
+    const student = await User.findById(invoice.student, null, opts);
+    if (student) {
+      student.balance = Math.max(
+        0,
+        (Number(student.balance) || 0) - app.balanceCredited,
+      );
+      await student.save(opts);
+    }
+  }
+  await recompute(invoice._id, session);
 };
 
 export const computeNetPaid = async (invoiceId, session = null) => {
@@ -260,7 +361,7 @@ export const create = async (body, currentUser) => {
     ? new Date(body.dueDate)
     : computeDueDate(body.period, settings.dueDayOfMonth);
 
-  return Invoice.create({
+  const invoice = await Invoice.create({
     student: body.student,
     group: body.group,
     membership: body.membership || null,
@@ -274,6 +375,9 @@ export const create = async (body, currentUser) => {
     createdBy: currentUser?._id || null,
     notes: body.notes || "",
   });
+  // Yangi hisob: talaba balansidan avtomatik yechib qo'yamiz
+  await applyStudentBalance(invoice);
+  return invoice;
 };
 
 export const update = async (id, body) => {
@@ -310,6 +414,16 @@ export const cancel = async (id, { reason = "" } = {}, currentUser) => {
 
   if (!String(reason || "").trim()) {
     throw new ApiError(400, "Bekor qilish sababi majburiy");
+  }
+
+  // Balansdan yechilgan bo'lsa — talaba balansiga qaytaramiz
+  if (invoice.appliedBalance > 0) {
+    const student = await User.findById(invoice.student);
+    if (student) {
+      student.balance = (Number(student.balance) || 0) + invoice.appliedBalance;
+      await student.save();
+    }
+    invoice.appliedBalance = 0;
   }
 
   invoice.status = "cancelled";

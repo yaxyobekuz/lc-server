@@ -1,6 +1,12 @@
 import mongoose from "mongoose";
 
-export const CALCULATION_TYPES = ["fixed", "hourly", "percentage", "mixed"];
+export const CALCULATION_TYPES = [
+  "fixed",
+  "hourly",
+  "percentage",
+  "per_student",
+  "mixed",
+];
 
 const teacherGroupRateSchema = new mongoose.Schema(
   {
@@ -25,8 +31,12 @@ const teacherGroupRateSchema = new mongoose.Schema(
     hourlyRate: { type: Number, default: 0, min: 0 },
     hoursPerSession: { type: Number, default: 2, min: 0 },
     percentageRate: { type: Number, default: 0, min: 0, max: 100 },
+    // Har bir o'quvchidan olinadigan summa (per_student)
+    amountPerStudent: { type: Number, default: 0, min: 0 },
     minMonthlyAmount: { type: Number, default: 0, min: 0 },
     effectiveFrom: { type: Date, default: Date.now },
+    // O'qituvchi shu guruhda to'xtagan sana (almashtirilganda). null → hali faol.
+    effectiveTo: { type: Date, default: null },
     isActive: { type: Boolean, default: true },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     notes: { type: String, default: "" },
@@ -47,6 +57,7 @@ teacherGroupRateSchema.pre("validate", function (next) {
   const hasFixed = this.fixedAmount > 0;
   const hasHourly = this.hourlyRate > 0;
   const hasPercentage = this.percentageRate > 0;
+  const hasPerStudent = this.amountPerStudent > 0;
 
   if (t === "fixed" && !hasFixed) {
     return next(new Error("Belgilangan summa 0 dan katta bo'lishi kerak"));
@@ -57,7 +68,12 @@ teacherGroupRateSchema.pre("validate", function (next) {
   if (t === "percentage" && !hasPercentage) {
     return next(new Error("Foiz ulushi 0 dan katta bo'lishi kerak"));
   }
-  if (t === "mixed" && !hasFixed && !hasHourly && !hasPercentage) {
+  if (t === "per_student" && !hasPerStudent) {
+    return next(
+      new Error("Har bir o'quvchidan summa 0 dan katta bo'lishi kerak"),
+    );
+  }
+  if (t === "mixed" && !hasFixed && !hasHourly && !hasPercentage && !hasPerStudent) {
     return next(
       new Error("Aralash uchun kamida bitta komponent kiritilishi kerak"),
     );

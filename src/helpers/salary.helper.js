@@ -2,8 +2,13 @@
 import mongoose from "mongoose";
 import Payment from "../models/payment.model.js";
 import Invoice from "../models/invoice.model.js";
+import GroupMembership from "../models/groupMembership.model.js";
 import ApiError from "../utils/ApiError.js";
 import { getClassDaysInRange } from "./attendance.helper.js";
+
+// Guruhdagi faol o'quvchilar soni (per_student hisob uchun)
+const countActiveStudents = async (groupId) =>
+  GroupMembership.countDocuments({ group: groupId, leftAt: null });
 
 // Oyning UTC midnight intervalini qaytaradi
 export const monthRange = (year, month) => {
@@ -26,8 +31,8 @@ export const previousMonthOf = (date = new Date()) => {
 
 // Shu guruh va vaqt diapazonida talabalardan kelgan to'lovlar yig'indisi
 // (`payment` − `refund`). Cash-flow asosida.
-export const aggregateGroupPayments = async (groupId, period) => {
-  const { start, end } = monthRange(period.year, period.month);
+export const aggregateGroupPayments = async (groupId, period, range) => {
+  const { start, end } = range || monthRange(period.year, period.month);
   const gid = new mongoose.Types.ObjectId(String(groupId));
 
   // Payment + Invoice join (Invoice.group = G)
@@ -70,39 +75,70 @@ export const aggregateGroupPayments = async (groupId, period) => {
 // Period: { year, month }
 export const computeGroupBreakdown = async (rate, group, period) => {
   const { start, end } = monthRange(period.year, period.month);
-  // Class days - schedule asosida (oxirgi sana ekskluziv, shuning uchun -1ms)
-  const lastIncl = new Date(end.getTime() - 1);
-  const classDays = getClassDaysInRange(group, start, lastIncl);
+  const monthLastIncl = new Date(end.getTime() - 1);
+
+  // O'qituvchining shu oydagi faol davri: [effectiveFrom, effectiveTo) ∩ oy.
+  // Almashtirilgan o'qituvchi faqat o'zi ishlagan davr darslari uchun pul oladi.
+  const effFrom = rate.effectiveFrom ? new Date(rate.effectiveFrom) : start;
+  const effToExcl = rate.effectiveTo ? new Date(rate.effectiveTo) : end;
+  const rangeStart = effFrom > start ? effFrom : start;
+  const rangeEndExcl = effToExcl < end ? effToExcl : end;
+  const isActiveInRange = rangeStart < rangeEndExcl;
+  const rangeLastIncl = new Date(rangeEndExcl.getTime() - 1);
+
+  // Dars kunlari: to'liq oy (proratsiya maxraji) va o'qituvchi davri
+  const monthSessions = getClassDaysInRange(group, start, monthLastIncl).length;
+  const classDays = isActiveInRange
+    ? getClassDaysInRange(group, rangeStart, rangeLastIncl)
+    : [];
   const sessionsCount = classDays.length;
+  // fixed/per_student uchun ulush (o'tgan darslar nisbati).
+  // Jadval yo'q (dars kuni 0) bo'lsa — davrida faol bo'lsa to'liq olinadi.
+  const fraction =
+    monthSessions > 0 ? sessionsCount / monthSessions : isActiveInRange ? 1 : 0;
 
   const hoursPerSession = rate.hoursPerSession || 0;
   const totalHours = sessionsCount * hoursPerSession;
 
+  const t = rate.calculationType;
+  const isMixed = t === "mixed";
+
+  // fixed - o'qituvchi davridagi darslar ulushiga proratsiya qilinadi
   const fixedAmount =
-    rate.calculationType === "fixed" || rate.calculationType === "mixed"
-      ? rate.fixedAmount || 0
-      : 0;
+    t === "fixed" || isMixed ? (rate.fixedAmount || 0) * fraction : 0;
 
   const hourlyAmount =
-    (rate.calculationType === "hourly" || rate.calculationType === "mixed") &&
-    rate.hourlyRate > 0
+    (t === "hourly" || isMixed) && rate.hourlyRate > 0
       ? totalHours * rate.hourlyRate
       : 0;
 
+  // percentage - faqat o'qituvchi davrida kelgan to'lovlardan
   let studentPaymentsTotal = 0;
   let percentageAmount = 0;
   if (
-    (rate.calculationType === "percentage" ||
-      rate.calculationType === "mixed") &&
-    rate.percentageRate > 0
+    (t === "percentage" || isMixed) &&
+    rate.percentageRate > 0 &&
+    isActiveInRange
   ) {
-    studentPaymentsTotal = await aggregateGroupPayments(group._id, period);
+    studentPaymentsTotal = await aggregateGroupPayments(group._id, period, {
+      start: rangeStart,
+      end: rangeEndExcl,
+    });
     percentageAmount = (studentPaymentsTotal * rate.percentageRate) / 100;
   }
 
-  const componentSum = fixedAmount + hourlyAmount + percentageAmount;
-  const minMonthlyAmount = rate.minMonthlyAmount || 0;
-  const subtotal = Math.max(componentSum, minMonthlyAmount);
+  // Har bir o'quvchidan summa × faol o'quvchilar, davr ulushiga proratsiya
+  let studentsCount = 0;
+  let perStudentAmount = 0;
+  if ((t === "per_student" || isMixed) && rate.amountPerStudent > 0) {
+    studentsCount = await countActiveStudents(group._id);
+    perStudentAmount = studentsCount * rate.amountPerStudent * fraction;
+  }
+
+  // Minimal kafolat o'qituvchining UMUMIY oyligiga qo'llanadi (service'da),
+  // shuning uchun bu yerda subtotal = xom komponentlar yig'indisi
+  const subtotal =
+    fixedAmount + hourlyAmount + percentageAmount + perStudentAmount;
 
   return {
     group: group._id,
@@ -117,7 +153,10 @@ export const computeGroupBreakdown = async (rate, group, period) => {
     studentPaymentsTotal: Math.round(studentPaymentsTotal),
     percentageRate: rate.percentageRate || 0,
     percentageAmount: Math.round(percentageAmount),
-    minMonthlyAmount: Math.round(minMonthlyAmount),
+    studentsCount,
+    amountPerStudent: Math.round(rate.amountPerStudent || 0),
+    perStudentAmount: Math.round(perStudentAmount),
+    minMonthlyAmount: Math.round(rate.minMonthlyAmount || 0),
     subtotal: Math.round(subtotal),
   };
 };
@@ -163,7 +202,7 @@ export const assertCanRecompute = (salary) => {
   }
 };
 
-export const assertCanReceivePayout = (salary, amount) => {
+export const assertCanReceivePayout = (salary) => {
   if (salary.status === "calculated") {
     throw new ApiError(409, "Avval oylikni tasdiqlang");
   }
@@ -173,10 +212,7 @@ export const assertCanReceivePayout = (salary, amount) => {
   if (salary.status === "cancelled") {
     throw new ApiError(409, "Bekor qilingan oylikga to'lov kiritib bo'lmaydi");
   }
-  const remaining = (salary.finalAmount || 0) - (salary.paidAmount || 0);
-  if (amount > remaining + 0.01) {
-    throw new ApiError(400, "To'lov summasi qoldiqdan oshib ketdi");
-  }
+  // Ortiqcha to'lovga ruxsat: ortiqcha qism keyingi oy avansiga yoziladi
 };
 
 // Payouts ro'yxatidan paidAmount va status hisoblash

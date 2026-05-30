@@ -13,6 +13,7 @@ export const safeUserProjection = {
   phone: 1,
   role: 1,
   isActive: 1,
+  balance: 1,
 };
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -167,6 +168,8 @@ export const create = async (body) => {
     teachers: body.teachers || [],
     monthlyPrice: body.monthlyPrice ?? 0,
     direction: body.direction || null,
+    teacherAbsenceMode: body.teacherAbsenceMode ?? "inherit",
+    teacherAbsenceAmount: body.teacherAbsenceAmount ?? 0,
   });
 };
 
@@ -184,6 +187,12 @@ export const update = async (id, body) => {
   if (body.name !== undefined) group.name = body.name.trim();
   if (body.schedule !== undefined) group.schedule = body.schedule;
   if (body.monthlyPrice !== undefined) group.monthlyPrice = body.monthlyPrice;
+  if (body.teacherAbsenceMode !== undefined) {
+    group.teacherAbsenceMode = body.teacherAbsenceMode;
+  }
+  if (body.teacherAbsenceAmount !== undefined) {
+    group.teacherAbsenceAmount = body.teacherAbsenceAmount;
+  }
 
   await group.save();
   return group;
@@ -213,10 +222,14 @@ export const addStudent = async (groupId, studentId) => {
     group: groupId,
     student: studentId,
   });
+
+  // Talaba yana o'qishni boshladi — "chiqib ketgan" holatini tozalaymiz
+  await User.findByIdAndUpdate(studentId, { leaveStatus: null });
+
   return membership;
 };
 
-export const removeStudent = async (groupId, studentId) => {
+export const removeStudent = async (groupId, studentId, leaveStatus) => {
   const membership = await GroupMembership.findOneAndUpdate(
     { group: groupId, student: studentId, leftAt: null },
     { $set: { leftAt: new Date(), leftReason: "removed" } },
@@ -225,6 +238,16 @@ export const removeStudent = async (groupId, studentId) => {
   if (!membership) {
     throw new ApiError(404, "Faol a'zolik topilmadi");
   }
+
+  // Oxirgi guruhdan chiqdimi? — chiqib ketish holatini belgilaymiz
+  const stillActive = await GroupMembership.exists({
+    student: studentId,
+    leftAt: null,
+  });
+  if (!stillActive && (leaveStatus === "left_unpaid" || leaveStatus === "left_paid")) {
+    await User.findByIdAndUpdate(studentId, { leaveStatus });
+  }
+
   return membership;
 };
 

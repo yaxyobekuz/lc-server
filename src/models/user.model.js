@@ -13,6 +13,13 @@ const userSchema = new mongoose.Schema(
     role: { type: String, enum: ALL_ROLES, default: ROLES.STUDENT, required: true },
     isActive: { type: Boolean, default: true },
 
+    // Talaba guruhlardan chiqib ketganda: qarzi bilan yoki to'lab chiqqani
+    leaveStatus: {
+      type: String,
+      enum: ["left_unpaid", "left_paid"],
+      default: null,
+    },
+
     // Profil ma'lumotlari (ixtiyoriy)
     birthDate: { type: Date, default: null },
     gender: { type: String, enum: ["male", "female"], default: null },
@@ -22,6 +29,8 @@ const userSchema = new mongoose.Schema(
     parentName: { type: String, trim: true, default: "" },
     parentPhone: { type: String, trim: true, default: "" },
     enrolledAt: { type: Date, default: null },
+    // Talaba oldindan/ortiqcha to'lagan pul (keyingi oy hisoblaridan yechiladi)
+    balance: { type: Number, default: 0, min: 0 },
     leadSource: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "LeadSource",

@@ -17,6 +17,10 @@ export const updateSchema = z.object({
         .min(0, "0 dan kichik bo'lmasin")
         .optional(),
       direction: z.string().min(1).nullable().optional(),
+      teacherAbsenceMode: z
+        .enum(["inherit", "auto", "fixed", "none"])
+        .optional(),
+      teacherAbsenceAmount: z.coerce.number().min(0).optional(),
     })
     .refine((b) => Object.keys(b).length > 0, {
       message: "Hech bo'lmaganda bitta maydon kerak",

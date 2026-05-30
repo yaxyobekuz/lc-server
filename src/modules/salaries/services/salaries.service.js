@@ -128,22 +128,28 @@ export const calculateForTeacher = async (
   const teacher = await ensureTeacher(teacherId);
   const period = { year: Number(year), month: Number(month) };
 
-  // Active rates va guruhlar
+  // Shu oyda sana bo'yicha faol bo'lgan stavkalar — almashtirilgan
+  // (effectiveTo qo'yilgan) o'qituvchi ham o'z davri uchun alohida oylik oladi.
+  const { start: pStart, end: pEnd } = monthRange(period.year, period.month);
   const rates = await TeacherGroupRate.find({
     teacher: teacher._id,
-    isActive: true,
+    effectiveFrom: { $lt: pEnd },
+    $or: [{ effectiveTo: null }, { effectiveTo: { $gt: pStart } }],
   });
 
   const breakdowns = [];
-  let baseAmount = 0;
+  let componentsSum = 0;
+  let minTotal = 0;
   for (const rate of rates) {
     const group = await Group.findById(rate.group);
     if (!group) continue;
     const bd = await computeGroupBreakdown(rate, group, period);
     breakdowns.push(bd);
-    baseAmount += bd.subtotal;
+    componentsSum += bd.subtotal;
+    minTotal += rate.minMonthlyAmount || 0;
   }
-  baseAmount = Math.round(baseAmount);
+  // Minimal kafolatli oylik: jami summa minimaldan past bo'lmasin
+  const baseAmount = Math.round(Math.max(componentsSum, minTotal));
 
   // Mavjud non-cancelled salaryni topamiz
   const existing = await Salary.findOne({
@@ -235,22 +241,29 @@ export const recompute = async (salaryId, currentUser) => {
   if (!salary) throw new ApiError(404, "Oylik topilmadi");
   assertCanRecompute(salary);
 
+  const { start: pStart, end: pEnd } = monthRange(
+    salary.period.year,
+    salary.period.month,
+  );
   const rates = await TeacherGroupRate.find({
     teacher: salary.teacher,
-    isActive: true,
+    effectiveFrom: { $lt: pEnd },
+    $or: [{ effectiveTo: null }, { effectiveTo: { $gt: pStart } }],
   });
   const breakdowns = [];
-  let baseAmount = 0;
+  let componentsSum = 0;
+  let minTotal = 0;
   for (const rate of rates) {
     const group = await Group.findById(rate.group);
     if (!group) continue;
     const bd = await computeGroupBreakdown(rate, group, salary.period);
     breakdowns.push(bd);
-    baseAmount += bd.subtotal;
+    componentsSum += bd.subtotal;
+    minTotal += rate.minMonthlyAmount || 0;
   }
 
   salary.groupBreakdowns = breakdowns;
-  salary.baseAmount = Math.round(baseAmount);
+  salary.baseAmount = Math.round(Math.max(componentsSum, minTotal));
   salary.calculatedAt = new Date();
   salary.calculatedBy = currentUser?._id || null;
   recomputeFinal(salary);
@@ -333,23 +346,60 @@ export const removeAdjustment = async (salaryId, adjustmentId, currentUser) => {
   return salary;
 };
 
+const nextPeriodOf = ({ year, month }) =>
+  month === 12 ? { year: year + 1, month: 1 } : { year, month: month + 1 };
+
+// Ortiqcha to'lovni keyingi oy avansiga (advance adjustment) yozadi
+const carryExcessToNextMonth = async (salary, excess, currentUser) => {
+  const next = nextPeriodOf(salary.period);
+  const { salary: nextSalary } = await calculateForTeacher(
+    salary.teacher,
+    next,
+    currentUser,
+  );
+  if (
+    !nextSalary ||
+    nextSalary.status === "paid" ||
+    nextSalary.status === "cancelled"
+  ) {
+    return;
+  }
+  nextSalary.adjustments.push({
+    type: "advance",
+    amount: Math.round(excess),
+    reason: "Oldingi oy oyligidan ortiqcha to'lov (avans)",
+    createdBy: currentUser?._id || null,
+    createdAt: new Date(),
+  });
+  recomputeFinal(nextSalary);
+  await nextSalary.save();
+};
+
 export const recordPayout = async (salaryId, body, currentUser) => {
   const amount = Number(body.amount);
   if (!amount || amount <= 0) throw new ApiError(400, "Summa noto'g'ri");
+  await ensureMethod(body.methodId);
 
-  return runWithSession(async (session) => {
+  const { created, salary, excess } = await runWithSession(async (session) => {
     const opts = session ? { session } : {};
     const salary = await Salary.findById(salaryId, null, opts);
     if (!salary) throw new ApiError(404, "Oylik topilmadi");
-    assertCanReceivePayout(salary, amount);
-    await ensureMethod(body.methodId);
+    assertCanReceivePayout(salary);
+
+    const remaining = Math.max(
+      0,
+      (salary.finalAmount || 0) - (salary.paidAmount || 0),
+    );
+    // Shu oylik faqat qoldiq qadar to'lanadi, ortiqchasi avansga ketadi
+    const payoutForThis = Math.round(Math.min(amount, remaining));
+    const excess = Math.round(amount - payoutForThis);
 
     const created = await SalaryPayout.create(
       [
         {
           salary: salary._id,
           teacher: salary.teacher,
-          amount,
+          amount: payoutForThis,
           method: body.methodId,
           paidAt: body.paidAt ? new Date(body.paidAt) : new Date(),
           paidBy: currentUser._id,
@@ -359,25 +409,36 @@ export const recordPayout = async (salaryId, body, currentUser) => {
       session ? { session } : undefined,
     );
 
-    salary.paidAmount = Math.round((salary.paidAmount || 0) + amount);
+    salary.paidAmount = Math.round((salary.paidAmount || 0) + payoutForThis);
     salary.status = computePaymentStatus(salary.finalAmount, salary.paidAmount);
     await salary.save(opts);
 
-    // Notify (lazy import)
-    try {
-      const settings = await getSettings();
-      if (settings.notifyOnPaid) {
-        const { notifyPaid } = await import(
-          "../../../bot/services/salaryNotify.service.js"
-        );
-        await notifyPaid(salary.teacher, created[0], salary);
-      }
-    } catch {
-      /* noop */
-    }
-
-    return created[0];
+    return { created: created[0], salary, excess };
   });
+
+  // Ortiqcha to'lov -> keyingi oy avansiga (transaksiyadan tashqari, best-effort)
+  if (excess > 0) {
+    try {
+      await carryExcessToNextMonth(salary, excess, currentUser);
+    } catch {
+      /* keyingi oy avansini yozib bo'lmadi - asosiy to'lov saqlandi */
+    }
+  }
+
+  // Notify (lazy import)
+  try {
+    const settings = await getSettings();
+    if (settings.notifyOnPaid) {
+      const { notifyPaid } = await import(
+        "../../../bot/services/salaryNotify.service.js"
+      );
+      await notifyPaid(salary.teacher, created, salary);
+    }
+  } catch {
+    /* noop */
+  }
+
+  return { payout: created, carriedToAdvance: excess > 0 ? excess : 0 };
 };
 
 export const removePayout = async (payoutId, currentUser) => {

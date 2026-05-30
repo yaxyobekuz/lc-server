@@ -14,5 +14,7 @@ export const createSchema = z.object({
       .min(0, "0 dan kichik bo'lmasin")
       .default(0),
     direction: z.string().min(1).nullable().optional(),
+    teacherAbsenceMode: z.enum(["inherit", "auto", "fixed", "none"]).optional(),
+    teacherAbsenceAmount: z.coerce.number().min(0).optional(),
   }),
 });

@@ -9,6 +9,7 @@ import {
   computeNetPaid,
 } from "../../invoices/services/invoices.service.js";
 import { get as getSettings } from "../../paymentSettings/services/paymentSettings.service.js";
+import { ensureActiveGroup } from "../../../helpers/membership.helper.js";
 
 const STUDENT_PROJECTION = {
   firstName: 1,
@@ -126,19 +127,20 @@ export const record = async (
       throw new ApiError(400, "Bekor qilingan hisobga to'lov yozib bo'lmaydi");
     }
 
-    // Joriy net paid'ni transaksiya ichida o'qib, qoldiq'ni hisoblaymiz —
-    // overpayment'ni rad etamiz (parallel race: ikkala request ham bir xil
-    // netPaid'ni ko'rmaydi, chunki recomputeInvoice transaksiya yakunida ishlaydi).
-    const netPaid = await computeNetPaid(invoice._id, session);
-    const remaining = Math.max(0, invoice.totalDue - netPaid);
-    if (amt > remaining) {
-      throw new ApiError(
-        400,
-        `To'lov summasi qarzdan ko'p: qoldiq ${remaining}`,
-      );
-    }
+    // Faqat faol guruhdagi talabaga to'lov yozish mumkin
+    await ensureActiveGroup(invoice.student, session);
 
     await ensureMethod(methodId);
+
+    // Qarzdan ortiq summa talaba balansiga o'tadi. To'lov yozuvi to'liq
+    // summada saqlanadi (audit + kunlik hisobot), hisob paidAmount esa
+    // recompute'da totalDue bilan cheklanadi.
+    const netPaid = await computeNetPaid(invoice._id, session);
+    const remaining = Math.max(
+      0,
+      invoice.totalDue - netPaid - (invoice.appliedBalance || 0),
+    );
+    const overflow = Math.max(0, amt - remaining);
 
     const created = await Payment.create(
       [
@@ -157,6 +159,16 @@ export const record = async (
     );
 
     await recomputeInvoice(invoice._id, session);
+
+    // Qarzdan ortiq summa — balansga (keyingi oy hisobidan yechiladi)
+    if (overflow > 0) {
+      const student = await User.findById(invoice.student, null, opts);
+      if (student) {
+        student.balance = (Number(student.balance) || 0) + overflow;
+        await student.save(opts);
+      }
+    }
+
     return created[0];
   });
 };
@@ -222,25 +234,27 @@ export const buildReceipt = async (paymentId) => {
 export const getStudentSummary = async (studentId) => {
   const sid = new mongoose.Types.ObjectId(String(studentId));
 
-  const [paid, refunded, openInvoices, lastPayment] = await Promise.all([
-    Payment.aggregate([
-      { $match: { student: sid, type: "payment" } },
-      { $group: { _id: null, sum: { $sum: "$amount" } } },
-    ]),
-    Payment.aggregate([
-      { $match: { student: sid, type: "refund" } },
-      { $group: { _id: null, sum: { $sum: "$amount" } } },
-    ]),
-    Invoice.find({
-      student: sid,
-      status: { $in: ["unpaid", "partial"] },
-    })
-      .sort({ "period.year": 1, "period.month": 1 })
-      .select({ totalDue: 1, paidAmount: 1, period: 1 }),
-    Payment.findOne({ student: sid, type: "payment" })
-      .sort({ paidAt: -1 })
-      .select({ paidAt: 1 }),
-  ]);
+  const [paid, refunded, openInvoices, lastPayment, student] =
+    await Promise.all([
+      Payment.aggregate([
+        { $match: { student: sid, type: "payment" } },
+        { $group: { _id: null, sum: { $sum: "$amount" } } },
+      ]),
+      Payment.aggregate([
+        { $match: { student: sid, type: "refund" } },
+        { $group: { _id: null, sum: { $sum: "$amount" } } },
+      ]),
+      Invoice.find({
+        student: sid,
+        status: { $in: ["unpaid", "partial"] },
+      })
+        .sort({ "period.year": 1, "period.month": 1 })
+        .select({ totalDue: 1, paidAmount: 1, period: 1 }),
+      Payment.findOne({ student: sid, type: "payment" })
+        .sort({ paidAt: -1 })
+        .select({ paidAt: 1 }),
+      User.findById(sid).select({ balance: 1 }),
+    ]);
 
   const totalPaid = (paid[0]?.sum || 0) - (refunded[0]?.sum || 0);
   const currentDebt = openInvoices.reduce(
@@ -252,6 +266,7 @@ export const getStudentSummary = async (studentId) => {
   return {
     totalPaid,
     currentDebt,
+    balance: Number(student?.balance) || 0,
     lastPaymentAt: lastPayment?.paidAt || null,
     oldestUnpaidPeriod,
     openInvoicesCount: openInvoices.length,

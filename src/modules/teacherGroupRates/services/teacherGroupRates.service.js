@@ -71,13 +71,22 @@ const buildPayload = (body) => ({
   hoursPerSession:
     body.hoursPerSession !== undefined ? Number(body.hoursPerSession) : 2,
   percentageRate: Number(body.percentageRate || 0),
+  amountPerStudent: Number(body.amountPerStudent || 0),
   minMonthlyAmount: Number(body.minMonthlyAmount || 0),
   notes: body.notes || "",
 });
 
 export const create = async (body, currentUser) => {
   await ensureTeacher(body.teacher);
-  await ensureGroup(body.group);
+  const group = await ensureGroup(body.group);
+
+  // Stavka faqat o'qituvchi biriktirilgan guruh uchun ochilishi mumkin
+  const teachesGroup = (group.teachers || []).some(
+    (t) => String(t) === String(body.teacher),
+  );
+  if (!teachesGroup) {
+    throw new ApiError(400, "Bu guruh o'qituvchiga biriktirilmagan");
+  }
 
   const existing = await TeacherGroupRate.findOne({
     teacher: body.teacher,
@@ -126,6 +135,10 @@ export const update = async (id, body, currentUser) => {
       body.percentageRate !== undefined
         ? body.percentageRate
         : old.percentageRate,
+    amountPerStudent:
+      body.amountPerStudent !== undefined
+        ? body.amountPerStudent
+        : old.amountPerStudent,
     minMonthlyAmount:
       body.minMonthlyAmount !== undefined
         ? body.minMonthlyAmount

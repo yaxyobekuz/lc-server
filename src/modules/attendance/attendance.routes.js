@@ -14,9 +14,15 @@ import {
   groupRangeSchema,
 } from "./validators/range.validator.js";
 import { correlationSchema } from "./validators/correlation.validator.js";
+import {
+  teacherStatusSchema,
+  teacherSetSchema,
+} from "./validators/teacherAttendance.validator.js";
 
 import listForGroupOnDate from "./handlers/listForGroupOnDate.handler.js";
 import bulkRecord from "./handlers/bulkRecord.handler.js";
+import teacherAttendanceStatus from "./handlers/teacherAttendanceStatus.handler.js";
+import teacherAttendanceSet from "./handlers/teacherAttendanceSet.handler.js";
 import studentMonthly from "./handlers/studentMonthly.handler.js";
 import groupMonthly from "./handlers/groupMonthly.handler.js";
 import studentSummary from "./handlers/studentSummary.handler.js";
@@ -92,6 +98,23 @@ router.post(
   requirePermission(PERMISSIONS.ATTENDANCE_RECORD),
   validate(bulkRecordSchema),
   bulkRecord,
+);
+
+// O'qituvchi davomati (keldi/kelmadi) — kelmagan kun uchun o'quvchilarga dars haqi qaytariladi
+router.get(
+  "/groups/:groupId/teacher",
+  requireAuth,
+  requirePermission(PERMISSIONS.ATTENDANCE_READ),
+  validate(teacherStatusSchema),
+  teacherAttendanceStatus,
+);
+
+router.post(
+  "/groups/:groupId/teacher",
+  requireAuth,
+  requirePermission(PERMISSIONS.ATTENDANCE_RECORD),
+  validate(teacherSetSchema),
+  teacherAttendanceSet,
 );
 
 export default router;

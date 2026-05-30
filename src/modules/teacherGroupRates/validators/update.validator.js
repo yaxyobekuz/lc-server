@@ -5,12 +5,13 @@ export const updateSchema = z.object({
   body: z
     .object({
       calculationType: z
-        .enum(["fixed", "hourly", "percentage", "mixed"])
+        .enum(["fixed", "hourly", "percentage", "per_student", "mixed"])
         .optional(),
       fixedAmount: z.coerce.number().min(0).optional(),
       hourlyRate: z.coerce.number().min(0).optional(),
       hoursPerSession: z.coerce.number().min(0).optional(),
       percentageRate: z.coerce.number().min(0).max(100).optional(),
+      amountPerStudent: z.coerce.number().min(0).optional(),
       minMonthlyAmount: z.coerce.number().min(0).optional(),
       notes: z.string().max(300).optional(),
     })

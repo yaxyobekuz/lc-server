@@ -3,6 +3,7 @@ import DiscountKind from "../../../models/discountKind.model.js";
 import User from "../../../models/user.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import { ROLES } from "../../../constants/roles.js";
+import { ensureActiveGroup } from "../../../helpers/membership.helper.js";
 
 const ensureStudent = async (studentId) => {
   const u = await User.findById(studentId);
@@ -42,6 +43,7 @@ export const list = async ({
 
 export const create = async (body) => {
   await ensureStudent(body.student);
+  await ensureActiveGroup(body.student);
   await ensureKind(body.kind);
 
   if (body.valueType === "percent" && (body.value < 0 || body.value > 100)) {
@@ -49,14 +51,28 @@ export const create = async (body) => {
   }
   if (body.value < 0) throw new ApiError(400, "Qiymat manfiy bo'lmasin");
 
+  const startDate = body.startDate ? new Date(body.startDate) : new Date();
+  const endDate = body.endDate ? new Date(body.endDate) : null;
+
+  // Boshlanish sanasi bugundan oldin bo'lishi mumkin emas
+  const startOfToday = new Date();
+  startOfToday.setUTCHours(0, 0, 0, 0);
+  if (startDate < startOfToday) {
+    throw new ApiError(400, "Boshlanish sanasi bugundan oldin bo'lishi mumkin emas");
+  }
+  // endDate berilsa, boshlanishdan oldin bo'lmasligi kerak (null — muddatsiz/cheksiz)
+  if (endDate && endDate < startDate) {
+    throw new ApiError(400, "Tugash sanasi boshlanish sanasidan oldin bo'lmasin");
+  }
+
   const doc = {
     student: body.student,
     kind: body.kind,
     valueType: body.valueType,
     value: body.value,
     reason: body.reason || "",
-    startDate: body.startDate ? new Date(body.startDate) : new Date(),
-    endDate: body.endDate ? new Date(body.endDate) : null,
+    startDate,
+    endDate,
     isActive: body.isActive !== undefined ? !!body.isActive : true,
   };
   return Discount.create(doc);

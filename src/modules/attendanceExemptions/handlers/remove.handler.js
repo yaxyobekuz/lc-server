@@ -3,7 +3,7 @@ import * as service from "../services/attendanceExemptions.service.js";
 
 const remove = asyncHandler(async (req, res) => {
   await service.remove(req.params.id);
-  res.json({ success: true, message: "Ozod davri o'chirildi" });
+  res.json({ success: true, message: "Davomatdan ozod davri o'chirildi" });
 });
 
 export default remove;

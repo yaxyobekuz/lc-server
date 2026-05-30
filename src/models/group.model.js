@@ -34,6 +34,13 @@ const groupSchema = new mongoose.Schema(
       index: true,
     },
     monthlyPrice: { type: Number, default: 0, min: 0 },
+    // O'qituvchi kelmagan kun chegirmasi (guruh override). "inherit" → global sozlama.
+    teacherAbsenceMode: {
+      type: String,
+      enum: ["inherit", "auto", "fixed", "none"],
+      default: "inherit",
+    },
+    teacherAbsenceAmount: { type: Number, default: 0, min: 0 },
     isActive: { type: Boolean, default: true, index: true },
   },
   { timestamps: true },

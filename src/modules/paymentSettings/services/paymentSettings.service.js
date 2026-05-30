@@ -39,6 +39,12 @@ export const update = async (body) => {
   if (body.centerName !== undefined) {
     doc.centerName = String(body.centerName).trim() || "Bayyina";
   }
+  if (body.teacherAbsenceMode !== undefined) {
+    doc.teacherAbsenceMode = body.teacherAbsenceMode;
+  }
+  if (body.teacherAbsenceAmount !== undefined) {
+    doc.teacherAbsenceAmount = Math.max(0, Number(body.teacherAbsenceAmount) || 0);
+  }
 
   await doc.save();
   return doc;

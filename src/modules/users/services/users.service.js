@@ -14,6 +14,7 @@ const STUDENT_ONLY_FIELDS = [
   "parentPhone",
   "enrolledAt",
   "leadSource",
+  "leaveStatus",
 ];
 const TEACHER_ONLY_FIELDS = ["hiredAt"];
 
@@ -118,6 +119,9 @@ export const update = async (id, body) => {
       } else {
         user.leadSource = null;
       }
+    }
+    if (body.leaveStatus !== undefined) {
+      user.leaveStatus = body.leaveStatus || null;
     }
   }
 
