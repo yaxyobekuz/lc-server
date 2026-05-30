@@ -57,7 +57,7 @@ export const verifyAndIssue = async ({ initData, userAgent, ip }) => {
   if (!botUser || !botUser.user) {
     throw new ApiError(
       404,
-      "Hisob bog'lanmagan. Avval botda /start ni bosing va telefon raqamingizni yuboring",
+      "Hisob bog'lanmagan. Login va parol bilan kirib, akkauntingizni bog'lang",
     );
   }
   if (!botUser.user.isActive) {

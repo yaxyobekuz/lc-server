@@ -1,31 +1,29 @@
-import { upsertFromTelegram, getLinkedUser } from "../services/botUser.service.js";
-import { mainMenuFor } from "../keyboards/main.keyboard.js";
-import { requestContactKeyboard } from "../keyboards/contact.keyboard.js";
+import env from "../../config/env.js";
 
 const startHandler = async (bot, msg) => {
   const chatId = msg.chat.id;
-  await upsertFromTelegram(msg.from, chatId);
-
-  const linked = await getLinkedUser(msg.from.id);
-
-  if (linked) {
-    await bot.sendMessage(
-      chatId,
-      `Assalomu alaykum, ${linked.firstName}!\n"Bayyina" o'quv markazi botiga xush kelibsiz.`,
-      mainMenuFor(linked.role),
-    );
-    return;
-  }
-
   const name = msg.from?.first_name || "foydalanuvchi";
+
   await bot.sendMessage(
     chatId,
     [
       `Assalomu alaykum, ${name}!`,
       "",
-      "Profilingizni bog'lash uchun telefon raqamingizni yuboring.",
+      '"Bayyina" o\'quv markazi tizimiga xush kelibsiz.',
+      "Davom etish uchun pastdagi tugmani bosing.",
     ].join("\n"),
-    requestContactKeyboard,
+    {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: "🔐 Tizimga kirish",
+              web_app: { url: env.TELEGRAM_BOT_WEBAPP_URL },
+            },
+          ],
+        ],
+      },
+    },
   );
 };
 
