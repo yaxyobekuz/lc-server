@@ -40,7 +40,7 @@ export const registerUserSchema = z.object({
             ctx.addIssue({
               code: z.ZodIssueCode.custom,
               path: [f],
-              message: `Bu maydon (${f}) faqat talaba uchun`,
+              message: `Bu maydon (${f}) faqat o'quvchi uchun`,
             });
           }
         }

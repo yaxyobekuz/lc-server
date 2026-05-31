@@ -29,7 +29,7 @@ export const previousMonthOf = (date = new Date()) => {
   return { year: y, month: m };
 };
 
-// Shu guruh va vaqt diapazonida talabalardan kelgan to'lovlar yig'indisi
+// Shu guruh va vaqt diapazonida o'quvchilardan kelgan to'lovlar yig'indisi
 // (`payment` − `refund`). Cash-flow asosida.
 export const aggregateGroupPayments = async (groupId, period, range) => {
   const { start, end } = range || monthRange(period.year, period.month);
@@ -203,9 +203,7 @@ export const assertCanRecompute = (salary) => {
 };
 
 export const assertCanReceivePayout = (salary) => {
-  if (salary.status === "calculated") {
-    throw new ApiError(409, "Avval oylikni tasdiqlang");
-  }
+  // Tasdiqlash shart emas - hisoblangan oylik ham to'g'ridan-to'g'ri to'lanadi
   if (salary.status === "paid") {
     throw new ApiError(409, "Oylik allaqachon to'liq to'langan");
   }

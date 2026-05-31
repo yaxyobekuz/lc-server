@@ -127,12 +127,12 @@ export const record = async (
       throw new ApiError(400, "Bekor qilingan hisobga to'lov yozib bo'lmaydi");
     }
 
-    // Faqat faol guruhdagi talabaga to'lov yozish mumkin
+    // Faqat faol guruhdagi o'quvchiga to'lov yozish mumkin
     await ensureActiveGroup(invoice.student, session);
 
     await ensureMethod(methodId);
 
-    // Qarzdan ortiq summa talaba balansiga o'tadi. To'lov yozuvi to'liq
+    // Qarzdan ortiq summa o'quvchi balansiga o'tadi. To'lov yozuvi to'liq
     // summada saqlanadi (audit + kunlik hisobot), hisob paidAmount esa
     // recompute'da totalDue bilan cheklanadi.
     const netPaid = await computeNetPaid(invoice._id, session);
@@ -230,7 +230,7 @@ export const buildReceipt = async (paymentId) => {
   };
 };
 
-// Talaba bo'yicha to'lov xulosasi (userProfile.helper.js + bot foydalanadi)
+// O'quvchi bo'yicha to'lov xulosasi (userProfile.helper.js + bot foydalanadi)
 export const getStudentSummary = async (studentId) => {
   const sid = new mongoose.Types.ObjectId(String(studentId));
 

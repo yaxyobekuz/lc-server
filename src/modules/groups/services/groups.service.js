@@ -37,7 +37,7 @@ const ensureGroup = async (groupId) => {
 const ensureStudent = async (studentId) => {
   const user = await User.findById(studentId);
   if (!user || user.role !== ROLES.STUDENT || !user.isActive) {
-    throw new ApiError(400, "Talaba topilmadi");
+    throw new ApiError(400, "O'quvchi topilmadi");
   }
   return user;
 };
@@ -215,7 +215,7 @@ export const addStudent = async (groupId, studentId) => {
     leftAt: null,
   });
   if (existing) {
-    throw new ApiError(409, "Talaba allaqachon shu guruhda");
+    throw new ApiError(409, "O'quvchi allaqachon shu guruhda");
   }
 
   const membership = await GroupMembership.create({
@@ -223,7 +223,7 @@ export const addStudent = async (groupId, studentId) => {
     student: studentId,
   });
 
-  // Talaba yana o'qishni boshladi — "chiqib ketgan" holatini tozalaymiz
+  // O'quvchi yana o'qishni boshladi — "chiqib ketgan" holatini tozalaymiz
   await User.findByIdAndUpdate(studentId, { leaveStatus: null });
 
   return membership;
@@ -371,7 +371,7 @@ export const findActiveForStudent = async (studentId) => {
   };
 };
 
-// Talabaning BARCHA active a'zoliklari (multi-active)
+// O'quvchining BARCHA active a'zoliklari (multi-active)
 export const findAllActiveForStudent = async (studentId) => {
   const memberships = await GroupMembership.find({
     student: studentId,

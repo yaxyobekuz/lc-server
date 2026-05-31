@@ -24,6 +24,7 @@ import DiscountKind from "../models/discountKind.model.js";
 import Feedback from "../models/feedback.model.js";
 import FeedbackType from "../models/feedbackType.model.js";
 import Expense from "../models/expense.model.js";
+import ExpenseType from "../models/expenseType.model.js";
 
 const TEACHER_COUNT = 40;
 const STUDENT_COUNT = 800;
@@ -709,27 +710,39 @@ const seed = async () => {
   await Lead.insertMany(leadDocs);
   logger.info(`${leadDocs.length} ta lid yaratildi`);
 
+  // Xarajat turlari (dinamik lug'at) — avval yaratamiz, keyin xarajatlar ularga havola qiladi
+  const EXPENSE_TYPE_NAMES = ["Oylik", "Ijara", "Kommunal", "Reklama", "Boshqa"];
+  const expenseTypeByName = new Map();
+  for (const name of EXPENSE_TYPE_NAMES) {
+    const t = await ExpenseType.findOneAndUpdate(
+      { name, isActive: true },
+      { $setOnInsert: { name, isActive: true } },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
+    expenseTypeByName.set(name, t._id);
+  }
+
   // Expense: 12 oy davomida har oy ijara, kommunal, reklama + ad-hoc
   const expenseDocs = [];
   for (const { year, month } of MONTHS) {
     const mStart = monthStart(year, month);
     const mEnd = monthEnd(year, month);
     expenseDocs.push({
-      category: "rent",
+      type: expenseTypeByName.get("Ijara"),
       amount: 10_000_000,
       date: new Date(year, month - 1, 1),
       description: `${year}-${String(month).padStart(2, "0")} oy uchun ijara`,
       createdBy: owner._id,
     });
     expenseDocs.push({
-      category: "utility",
+      type: expenseTypeByName.get("Kommunal"),
       amount: randInt(120, 220) * 10000,
       date: new Date(year, month - 1, 10),
       description: "Kommunal to'lov (svet, suv, internet)",
       createdBy: owner._id,
     });
     expenseDocs.push({
-      category: "ads",
+      type: expenseTypeByName.get("Reklama"),
       amount: randInt(20, 50) * 100000,
       date: randDate(mStart, mEnd),
       description: pick([
@@ -742,7 +755,7 @@ const seed = async () => {
     });
     if (Math.random() < 0.5) {
       expenseDocs.push({
-        category: "other",
+        type: expenseTypeByName.get("Boshqa"),
         amount: randInt(30, 150) * 10000,
         date: randDate(mStart, mEnd),
         description: pick([

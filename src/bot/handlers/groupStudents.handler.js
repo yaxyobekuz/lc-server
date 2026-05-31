@@ -39,11 +39,11 @@ const groupStudentsHandler = async (bot, query) => {
   await bot.answerCallbackQuery(query.id);
 
   if (!group.students || group.students.length === 0) {
-    await bot.sendMessage(chatId, `${group.name} - talabalar yo'q.`);
+    await bot.sendMessage(chatId, `${group.name} - o'quvchilar yo'q.`);
     return;
   }
 
-  const lines = [`${group.name} - talabalar:`];
+  const lines = [`${group.name} - o'quvchilar:`];
   group.students.forEach((s, i) => {
     lines.push(`${i + 1}) ${s.firstName} ${s.lastName} - ${formatPhone(s.phone)}`);
   });

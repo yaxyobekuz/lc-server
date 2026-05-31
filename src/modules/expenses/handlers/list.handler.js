@@ -5,7 +5,7 @@ import { parsePagination, buildMeta } from "../../../utils/pagination.js";
 const list = asyncHandler(async (req, res) => {
   const { page, limit } = parsePagination(req.query);
   const { items, total } = await service.list({
-    category: req.query.category,
+    type: req.query.type,
     fromDate: req.query.fromDate,
     toDate: req.query.toDate,
     page,

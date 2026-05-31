@@ -7,7 +7,7 @@ const removeStudent = asyncHandler(async (req, res) => {
     req.params.studentId,
     req.body?.leaveStatus,
   );
-  res.json({ success: true, message: "Talaba guruhdan chiqarildi" });
+  res.json({ success: true, message: "O'quvchi guruhdan chiqarildi" });
 });
 
 export default removeStudent;

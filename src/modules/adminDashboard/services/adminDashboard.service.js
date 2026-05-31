@@ -116,7 +116,7 @@ const computeCurrentMonthDebt = async (year, month) => {
 };
 
 const computeMostPopularDirection = async () => {
-  // Faol talabalar joylashgan guruhlar bo'yicha groupBy direction
+  // Faol o'quvchilar joylashgan guruhlar bo'yicha groupBy direction
   const result = await GroupMembership.aggregate([
     { $match: { leftAt: null } },
     {

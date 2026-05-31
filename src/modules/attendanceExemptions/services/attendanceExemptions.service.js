@@ -7,7 +7,7 @@ import { ensureActiveGroup } from "../../../helpers/membership.helper.js";
 const ensureStudent = async (studentId) => {
   const u = await User.findById(studentId);
   if (!u || u.role !== ROLES.STUDENT) {
-    throw new ApiError(400, "Talaba topilmadi");
+    throw new ApiError(400, "O'quvchi topilmadi");
   }
   return u;
 };

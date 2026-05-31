@@ -52,7 +52,7 @@ const getTeacherGroupIds = async (teacherId) => {
   return groups.map((g) => g._id);
 };
 
-// Bitta o'qituvchining barcha active talabalari ID'larini qaytaradi
+// Bitta o'qituvchining barcha active o'quvchilari ID'larini qaytaradi
 const getTeacherStudentIds = async (teacherId) => {
   const groupIds = await getTeacherGroupIds(teacherId);
   if (!groupIds.length) return [];
@@ -73,7 +73,7 @@ export const resolveAudience = async (audience, currentUser) => {
   if (isTeacher && !TEACHER_ALLOWED_AUDIENCE.has(audience.type)) {
     throw new ApiError(
       403,
-      "O'qituvchi faqat o'z guruhlari yoki talabalariga xabar yubora oladi",
+      "O'qituvchi faqat o'z guruhlari yoki o'quvchilariga xabar yubora oladi",
     );
   }
 
@@ -136,13 +136,13 @@ export const resolveAudience = async (audience, currentUser) => {
         throw new ApiError(400, "Kamida bitta foydalanuvchi tanlanishi kerak");
       }
       if (isTeacher) {
-        // Teacher faqat o'z guruhi talabalari
+        // Teacher faqat o'z guruhi o'quvchilari
         const myStudents = new Set(await getTeacherStudentIds(currentUser._id));
         const allMine = userIds.every((id) => myStudents.has(id));
         if (!allMine) {
           throw new ApiError(
             403,
-            "Faqat o'z guruh talabalaringizga yubora olasiz",
+            "Faqat o'z guruh o'quvchilaringizga yubora olasiz",
           );
         }
       }

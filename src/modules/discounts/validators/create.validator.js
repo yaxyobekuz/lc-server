@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const createSchema = z.object({
   body: z.object({
-    student: z.string().min(1, "Talaba kerak"),
+    student: z.string().min(1, "O'quvchi kerak"),
     group: z.union([z.string().min(1), z.null()]).optional(),
     kind: z.string().min(1, "Chegirma turi kerak"),
     valueType: z.enum(["percent", "amount"]),

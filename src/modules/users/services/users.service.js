@@ -66,7 +66,7 @@ export const update = async (id, body) => {
   if (user.role !== ROLES.STUDENT) {
     for (const f of STUDENT_ONLY_FIELDS) {
       if (body[f] !== undefined) {
-        throw new ApiError(400, `Bu maydon (${f}) faqat talaba uchun`);
+        throw new ApiError(400, `Bu maydon (${f}) faqat o'quvchi uchun`);
       }
     }
   }
@@ -195,7 +195,7 @@ export const studentHistory = async (
 ) => {
   const user = await getById(studentId);
   if (user.role !== ROLES.STUDENT) {
-    throw new ApiError(400, "Bu foydalanuvchi talaba emas");
+    throw new ApiError(400, "Bu foydalanuvchi o'quvchi emas");
   }
   const filter = { student: studentId };
   const skip = (page - 1) * limit;

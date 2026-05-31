@@ -11,7 +11,7 @@ import {
 const ensureStudent = async (studentId) => {
   const u = await User.findById(studentId);
   if (!u || u.role !== ROLES.STUDENT) {
-    throw new ApiError(400, "Talaba topilmadi");
+    throw new ApiError(400, "O'quvchi topilmadi");
   }
   return u;
 };
@@ -50,10 +50,10 @@ export const create = async (body) => {
   await ensureActiveGroup(body.student);
   await ensureKind(body.kind);
 
-  // Guruhga xos chegirma — talaba o'sha guruhda faol bo'lishi shart (null = barchasi)
+  // Guruhga xos chegirma — o'quvchi o'sha guruhda faol bo'lishi shart (null = barchasi)
   const group = body.group || null;
   if (group && !(await isActiveInGroup(body.student, group))) {
-    throw new ApiError(400, "Talaba bu guruhda o'qimaydi");
+    throw new ApiError(400, "O'quvchi bu guruhda o'qimaydi");
   }
 
   if (body.valueType === "percent" && (body.value < 0 || body.value > 100)) {
@@ -105,7 +105,7 @@ export const update = async (id, body) => {
   if (body.group !== undefined) {
     const group = body.group || null;
     if (group && !(await isActiveInGroup(doc.student, group))) {
-      throw new ApiError(400, "Talaba bu guruhda o'qimaydi");
+      throw new ApiError(400, "O'quvchi bu guruhda o'qimaydi");
     }
     doc.group = group;
   }

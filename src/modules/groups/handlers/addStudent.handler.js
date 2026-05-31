@@ -6,7 +6,7 @@ const addStudent = asyncHandler(async (req, res) => {
   res.status(201).json({
     success: true,
     data,
-    message: "Talaba qo'shildi",
+    message: "O'quvchi qo'shildi",
   });
 });
 

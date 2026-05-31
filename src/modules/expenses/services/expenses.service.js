@@ -1,25 +1,26 @@
-import Expense, {
-  EXPENSE_CATEGORIES,
-} from "../../../models/expense.model.js";
+import mongoose from "mongoose";
+import Expense from "../../../models/expense.model.js";
+import ExpenseType from "../../../models/expenseType.model.js";
 import ApiError from "../../../utils/ApiError.js";
 
-const validateCategory = (cat) => {
-  if (cat && !EXPENSE_CATEGORIES.includes(cat)) {
-    throw new ApiError(400, "Noto'g'ri kategoriya");
+const TYPE_PROJECTION = { name: 1, isActive: 1 };
+
+const ensureType = async (typeId) => {
+  if (!typeId || !mongoose.isValidObjectId(typeId)) {
+    throw new ApiError(400, "Xarajat turi noto'g'ri");
   }
+  const t = await ExpenseType.findById(typeId);
+  if (!t) throw new ApiError(404, "Xarajat turi topilmadi");
+  return t;
 };
 
-export const list = async ({
-  category,
-  fromDate,
-  toDate,
-  page = 1,
-  limit = 20,
-}) => {
+export const list = async ({ type, fromDate, toDate, page = 1, limit = 20 }) => {
   const filter = {};
-  if (category) {
-    validateCategory(category);
-    filter.category = category;
+  if (type) {
+    if (!mongoose.isValidObjectId(type)) {
+      throw new ApiError(400, "Xarajat turi noto'g'ri");
+    }
+    filter.type = type;
   }
   if (fromDate || toDate) {
     filter.date = {};
@@ -33,6 +34,7 @@ export const list = async ({
       .sort({ date: -1, createdAt: -1 })
       .skip(skip)
       .limit(limit)
+      .populate("type", TYPE_PROJECTION)
       .populate("createdBy", { firstName: 1, lastName: 1 }),
     Expense.countDocuments(filter),
   ]);
@@ -40,22 +42,21 @@ export const list = async ({
 };
 
 export const getById = async (id) => {
-  const doc = await Expense.findById(id).populate("createdBy", {
-    firstName: 1,
-    lastName: 1,
-  });
+  const doc = await Expense.findById(id)
+    .populate("type", TYPE_PROJECTION)
+    .populate("createdBy", { firstName: 1, lastName: 1 });
   if (!doc) throw new ApiError(404, "Xarajat topilmadi");
   return doc;
 };
 
 export const create = async (body, currentUser) => {
-  validateCategory(body.category);
+  await ensureType(body.type);
   const amount = Number(body.amount);
   if (!Number.isFinite(amount) || amount < 0) {
     throw new ApiError(400, "Summa noto'g'ri");
   }
   return Expense.create({
-    category: body.category,
+    type: body.type,
     amount,
     date: body.date ? new Date(body.date) : new Date(),
     description: body.description || "",
@@ -66,9 +67,9 @@ export const create = async (body, currentUser) => {
 export const update = async (id, body) => {
   const doc = await getById(id);
 
-  if (body.category !== undefined) {
-    validateCategory(body.category);
-    doc.category = body.category;
+  if (body.type !== undefined) {
+    await ensureType(body.type);
+    doc.type = body.type;
   }
   if (body.amount !== undefined) {
     const amount = Number(body.amount);
@@ -85,7 +86,7 @@ export const update = async (id, body) => {
   }
 
   await doc.save();
-  return doc;
+  return getById(doc._id);
 };
 
 export const remove = async (id) => {
@@ -94,7 +95,7 @@ export const remove = async (id) => {
   return doc;
 };
 
-// Statistika: jami summa, kategoriya bo'yicha, oy bo'yicha trend
+// Statistika: jami summa, tur bo'yicha, oy bo'yicha trend
 export const getStats = async ({ fromDate, toDate } = {}) => {
   const match = {};
   if (fromDate || toDate) {
@@ -103,7 +104,7 @@ export const getStats = async ({ fromDate, toDate } = {}) => {
     if (toDate) match.date.$lte = new Date(toDate);
   }
 
-  const [totals, byCategory] = await Promise.all([
+  const [totals, byType] = await Promise.all([
     Expense.aggregate([
       { $match: match },
       {
@@ -118,9 +119,26 @@ export const getStats = async ({ fromDate, toDate } = {}) => {
       { $match: match },
       {
         $group: {
-          _id: "$category",
+          _id: "$type",
           sum: { $sum: "$amount" },
           count: { $sum: 1 },
+        },
+      },
+      {
+        $lookup: {
+          from: "expensetypes",
+          localField: "_id",
+          foreignField: "_id",
+          as: "type",
+        },
+      },
+      { $unwind: { path: "$type", preserveNullAndEmptyArrays: true } },
+      {
+        $project: {
+          _id: 1,
+          sum: 1,
+          count: 1,
+          name: "$type.name",
         },
       },
       { $sort: { sum: -1 } },
@@ -131,7 +149,7 @@ export const getStats = async ({ fromDate, toDate } = {}) => {
   return {
     total: t.total,
     count: t.count,
-    byCategory,
+    byType,
   };
 };
 

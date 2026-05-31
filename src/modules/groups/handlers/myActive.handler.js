@@ -5,7 +5,7 @@ import { ROLES } from "../../../constants/roles.js";
 
 const myActive = asyncHandler(async (req, res) => {
   if (req.user.role !== ROLES.STUDENT) {
-    throw new ApiError(403, "Faqat talabalar uchun");
+    throw new ApiError(403, "Faqat o'quvchilar uchun");
   }
   const data = await groupsService.findActiveForStudent(req.user._id);
   res.json({ success: true, data });

@@ -79,10 +79,10 @@ export const PERMISSIONS = Object.freeze({
 export const PERMISSION_LABELS = {
   [PERMISSIONS.USERS_READ]: { label: "Foydalanuvchilarni ko'rish", group: "users" },
 
-  [PERMISSIONS.STUDENTS_READ]: { label: "Talabalarni ko'rish", group: "students" },
-  [PERMISSIONS.STUDENTS_CREATE]: { label: "Talabalarni yaratish", group: "students" },
-  [PERMISSIONS.STUDENTS_UPDATE]: { label: "Talabalarni tahrirlash", group: "students" },
-  [PERMISSIONS.STUDENTS_DELETE]: { label: "Talabalarni o'chirish", group: "students" },
+  [PERMISSIONS.STUDENTS_READ]: { label: "O'quvchilarni ko'rish", group: "students" },
+  [PERMISSIONS.STUDENTS_CREATE]: { label: "O'quvchilarni yaratish", group: "students" },
+  [PERMISSIONS.STUDENTS_UPDATE]: { label: "O'quvchilarni tahrirlash", group: "students" },
+  [PERMISSIONS.STUDENTS_DELETE]: { label: "O'quvchilarni o'chirish", group: "students" },
 
   [PERMISSIONS.TEACHERS_READ]: { label: "O'qituvchilarni ko'rish", group: "teachers" },
   [PERMISSIONS.TEACHERS_CREATE]: { label: "O'qituvchilarni yaratish", group: "teachers" },
@@ -99,7 +99,7 @@ export const PERMISSION_LABELS = {
   [PERMISSIONS.GROUPS_UPDATE]: { label: "Guruhlarni tahrirlash", group: "groups" },
   [PERMISSIONS.GROUPS_DELETE]: { label: "Guruhlarni o'chirish", group: "groups" },
   [PERMISSIONS.GROUPS_MANAGE_STUDENTS]: {
-    label: "Guruh talabalarini boshqarish",
+    label: "Guruh o'quvchilarini boshqarish",
     group: "groups",
   },
 

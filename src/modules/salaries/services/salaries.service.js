@@ -3,6 +3,8 @@ import Salary from "../../../models/salary.model.js";
 import SalaryPayout from "../../../models/salaryPayout.model.js";
 import TeacherGroupRate from "../../../models/teacherGroupRate.model.js";
 import Group from "../../../models/group.model.js";
+import GroupMembership from "../../../models/groupMembership.model.js";
+import TeacherAttendance from "../../../models/teacherAttendance.model.js";
 import User from "../../../models/user.model.js";
 import PaymentMethod from "../../../models/paymentMethod.model.js";
 import ApiError from "../../../utils/ApiError.js";
@@ -441,6 +443,59 @@ export const recordPayout = async (salaryId, body, currentUser) => {
   return { payout: created, carriedToAdvance: excess > 0 ? excess : 0 };
 };
 
+// Bir nechta oylikni birvarakayiga to'lash.
+// amount berilsa - har biriga o'sha summa; berilmasa - har biriga to'liq qoldiq.
+// Ortiqcha qism har bir o'qituvchining keyingi oy avansiga yoziladi (recordPayout mantig'i).
+export const recordPayoutBatch = async (salaryIds, body, currentUser) => {
+  await ensureMethod(body.methodId);
+  const fixedAmount =
+    body.amount != null && Number(body.amount) > 0 ? Number(body.amount) : null;
+
+  const summary = { paid: 0, skipped: 0, errors: 0, totalPaid: 0, carried: 0 };
+  for (const id of salaryIds) {
+    try {
+      const salary = await Salary.findById(id).select({
+        finalAmount: 1,
+        paidAmount: 1,
+        status: 1,
+      });
+      if (
+        !salary ||
+        salary.status === "paid" ||
+        salary.status === "cancelled"
+      ) {
+        summary.skipped += 1;
+        continue;
+      }
+      const remaining = Math.max(
+        0,
+        (salary.finalAmount || 0) - (salary.paidAmount || 0),
+      );
+      const amount = fixedAmount != null ? fixedAmount : remaining;
+      if (amount <= 0) {
+        summary.skipped += 1;
+        continue;
+      }
+      const { payout, carriedToAdvance } = await recordPayout(
+        id,
+        {
+          amount,
+          methodId: body.methodId,
+          paidAt: body.paidAt,
+          note: body.note || "",
+        },
+        currentUser,
+      );
+      summary.paid += 1;
+      summary.totalPaid += payout?.amount || 0;
+      summary.carried += carriedToAdvance || 0;
+    } catch {
+      summary.errors += 1;
+    }
+  }
+  return summary;
+};
+
 export const removePayout = async (payoutId, currentUser) => {
   return runWithSession(async (session) => {
     const opts = session ? { session } : {};
@@ -577,6 +632,105 @@ export const getMonthlyTrend = async ({ months = 6 } = {}) => {
     });
   }
   return result;
+};
+
+// Guruh jadvalidan haftalik dars soatini hisoblaydi (HH:mm slotlar yig'indisi)
+const groupWeeklyHours = (group) => {
+  let mins = 0;
+  for (const slot of group?.schedule || []) {
+    const [sh, sm] = String(slot.startTime || "0:0").split(":").map(Number);
+    const [eh, em] = String(slot.endTime || "0:0").split(":").map(Number);
+    const d = (eh * 60 + em) - (sh * 60 + sm);
+    if (d > 0) mins += d;
+  }
+  return mins / 60;
+};
+
+// Owner dashboard: oy uchun har bir o'qituvchi kesimida hisobot.
+// Daromad reytingi + ish hajmi (haftalik soat, o'quvchilar, guruhlar) + bonus/jarima.
+// Ish hajmi to'lov turidan qat'i nazar guruh jadvali va a'zoliklaridan hisoblanadi.
+export const getTeacherReport = async ({ year, month } = {}) => {
+  const filter = { status: { $ne: "cancelled" } };
+  if (year) filter["period.year"] = Number(year);
+  if (month) filter["period.month"] = Number(month);
+
+  const salaries = await Salary.find(filter)
+    .select({
+      teacher: 1,
+      period: 1,
+      finalAmount: 1,
+      paidAmount: 1,
+      bonusTotal: 1,
+      penaltyTotal: 1,
+      status: 1,
+      groupBreakdowns: 1,
+    })
+    .populate("teacher", TEACHER_PROJECTION);
+
+  // Barcha guruh id'larini yig'ib, jadval va o'quvchilar sonini bitta so'rovda olamiz
+  const idSet = new Set();
+  for (const s of salaries)
+    for (const b of s.groupBreakdowns || [])
+      if (b.group) idSet.add(String(b.group));
+  const ids = [...idSet];
+
+  const groups = ids.length
+    ? await Group.find({ _id: { $in: ids } }).select({ schedule: 1 })
+    : [];
+  const groupMap = new Map(groups.map((g) => [String(g._id), g]));
+
+  const memberAgg = ids.length
+    ? await GroupMembership.aggregate([
+        { $match: { group: { $in: groups.map((g) => g._id) }, leftAt: null } },
+        { $group: { _id: "$group", count: { $sum: 1 } } },
+      ])
+    : [];
+  const memberMap = new Map(memberAgg.map((m) => [String(m._id), m.count]));
+
+  // Oy davomida kelmagan kunlar soni (o'qituvchi davomatidan)
+  let absentMap = new Map();
+  if (year && month) {
+    const prefix = `${Number(year)}-${String(Number(month)).padStart(2, "0")}-`;
+    const absAgg = await TeacherAttendance.aggregate([
+      { $match: { dateKey: { $regex: `^${prefix}` }, status: "absent" } },
+      { $group: { _id: "$teacher", count: { $sum: 1 } } },
+    ]);
+    absentMap = new Map(absAgg.map((a) => [String(a._id), a.count]));
+  }
+
+  const rows = salaries
+    .filter((s) => s.teacher)
+    .map((s) => {
+      const breakdowns = s.groupBreakdowns || [];
+      let weeklyHours = 0;
+      let studentsCount = 0;
+      for (const b of breakdowns) {
+        const g = groupMap.get(String(b.group));
+        if (g) weeklyHours += groupWeeklyHours(g);
+        studentsCount += memberMap.get(String(b.group)) || 0;
+      }
+      const finalAmount = s.finalAmount || 0;
+      const paidAmount = s.paidAmount || 0;
+      return {
+        salaryId: s._id,
+        teacherId: s.teacher._id,
+        firstName: s.teacher.firstName || "",
+        lastName: s.teacher.lastName || "",
+        status: s.status,
+        finalAmount,
+        paidAmount,
+        remaining: Math.max(0, finalAmount - paidAmount),
+        bonusTotal: s.bonusTotal || 0,
+        penaltyTotal: s.penaltyTotal || 0,
+        groupsCount: breakdowns.length,
+        weeklyHours: Math.round(weeklyHours * 10) / 10,
+        studentsCount,
+        absentDays: absentMap.get(String(s.teacher._id)) || 0,
+      };
+    });
+
+  rows.sort((a, b) => b.finalAmount - a.finalAmount);
+  return rows;
 };
 
 // Profile/teacher panel uchun summary

@@ -25,7 +25,7 @@ const startOfMonth = (year, month) =>
 const endOfMonth = (year, month) =>
   new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
 
-// Yangi hisobni talaba balansidan to'ldiradi (yetganicha; chala bo'lsa qisman).
+// Yangi hisobni o'quvchi balansidan to'ldiradi (yetganicha; chala bo'lsa qisman).
 // Function declaration — hoisting tufayli ensureInvoiceFor ichidan chaqiriladi.
 async function applyStudentBalance(invoice) {
   if (!invoice || invoice.totalDue <= 0) return invoice;
@@ -95,7 +95,7 @@ export const ensureInvoiceFor = async (
       dueDate,
       createdBy,
     });
-    // Yangi hisob: talaba balansidan avtomatik yechib qo'yamiz
+    // Yangi hisob: o'quvchi balansidan avtomatik yechib qo'yamiz
     await applyStudentBalance(invoice);
     return invoice;
   } catch (e) {
@@ -117,7 +117,7 @@ export const generateForPeriod = async ({ year, month }, { createdBy = null } = 
   ensurePeriod({ year, month });
 
   // Active membership: leftAt === null (yoki shu oy tugagandan keyin)
-  // Talaba 25-noyabrda qo'shilsa ham, dekabr uchun invoice yaratiladi (next-month).
+  // O'quvchi 25-noyabrda qo'shilsa ham, dekabr uchun invoice yaratiladi (next-month).
   // Joriy oy uchun: faqat oy oxirigacha active bo'lganlar.
   const periodEnd = endOfMonth(year, month);
   const memberships = await GroupMembership.find({
@@ -241,7 +241,7 @@ export const recompute = async (invoiceId, session = null) => {
 };
 
 // O'qituvchi kelmagan kun chegirmasini qo'llaydi (amount > 0). Hisob totalDue
-// kamayadi; ortiqcha to'langan summa talaba balansiga o'tadi.
+// kamayadi; ortiqcha to'langan summa o'quvchi balansiga o'tadi.
 // Returns { deducted, balanceCredited, appliedBalanceReduced } — teskari qilish uchun.
 export const applyAbsenceDeduction = async (invoiceId, amount, session = null) => {
   const opts = session ? { session } : {};
@@ -332,7 +332,7 @@ export const create = async (body, currentUser) => {
 
   const student = await User.findById(body.student);
   if (!student || student.role !== ROLES.STUDENT) {
-    throw new ApiError(400, "Talaba topilmadi");
+    throw new ApiError(400, "O'quvchi topilmadi");
   }
   const group = await Group.findById(body.group);
   if (!group) throw new ApiError(404, "Guruh topilmadi");
@@ -382,7 +382,7 @@ export const create = async (body, currentUser) => {
     createdBy: currentUser?._id || null,
     notes: body.notes || "",
   });
-  // Yangi hisob: talaba balansidan avtomatik yechib qo'yamiz
+  // Yangi hisob: o'quvchi balansidan avtomatik yechib qo'yamiz
   await applyStudentBalance(invoice);
   return invoice;
 };
@@ -423,7 +423,7 @@ export const cancel = async (id, { reason = "" } = {}, currentUser) => {
     throw new ApiError(400, "Bekor qilish sababi majburiy");
   }
 
-  // Balansdan yechilgan bo'lsa — talaba balansiga qaytaramiz
+  // Balansdan yechilgan bo'lsa — o'quvchi balansiga qaytaramiz
   if (invoice.appliedBalance > 0) {
     const student = await User.findById(invoice.student);
     if (student) {

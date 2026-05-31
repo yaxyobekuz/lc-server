@@ -10,7 +10,7 @@ const transferStudent = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     data,
-    message: "Talaba boshqa guruhga ko'chirildi",
+    message: "O'quvchi boshqa guruhga ko'chirildi",
   });
 });
 

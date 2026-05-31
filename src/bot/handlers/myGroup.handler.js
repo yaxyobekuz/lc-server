@@ -8,7 +8,7 @@ const myGroupHandler = async (bot, msg) => {
   const linked = await getLinkedUser(msg.from.id);
 
   if (!linked || linked.role !== ROLES.STUDENT) {
-    await bot.sendMessage(chatId, "Bu funksiya faqat talabalar uchun.");
+    await bot.sendMessage(chatId, "Bu funksiya faqat o'quvchilar uchun.");
     return;
   }
 

@@ -11,6 +11,7 @@ import paymentsRouter from "../modules/payments/payments.routes.js";
 import paymentSettingsRouter from "../modules/paymentSettings/paymentSettings.routes.js";
 import paymentReportsRouter from "../modules/paymentReports/paymentReports.routes.js";
 import attendanceRouter from "../modules/attendance/attendance.routes.js";
+import teacherAttendanceRouter from "../modules/teacherAttendance/teacherAttendance.routes.js";
 import attendanceExemptionsRouter from "../modules/attendanceExemptions/attendanceExemptions.routes.js";
 import attendanceSettingsRouter from "../modules/attendanceSettings/attendanceSettings.routes.js";
 import salariesRouter from "../modules/salaries/salaries.routes.js";
@@ -27,6 +28,7 @@ import feedbackRouter from "../modules/feedback/feedback.routes.js";
 import feedbackTypesRouter from "../modules/feedbackTypes/feedbackTypes.routes.js";
 import botAuthRouter from "../modules/botAuth/botAuth.routes.js";
 import expensesRouter from "../modules/expenses/expenses.routes.js";
+import expenseTypesRouter from "../modules/expenseTypes/expenseTypes.routes.js";
 import activityLogsRouter from "../modules/activityLogs/activityLogs.routes.js";
 import adminDashboardRouter from "../modules/adminDashboard/adminDashboard.routes.js";
 
@@ -52,6 +54,7 @@ router.use("/payment-reports", paymentReportsRouter);
 
 // Attendance subsystem
 router.use("/attendance", attendanceRouter);
+router.use("/teacher-attendance", teacherAttendanceRouter);
 router.use("/attendance-exemptions", attendanceExemptionsRouter);
 router.use("/attendance-settings", attendanceSettingsRouter);
 
@@ -78,6 +81,7 @@ router.use("/bot-auth", botAuthRouter);
 
 // Admin / boshqaruv paneli
 router.use("/expenses", expensesRouter);
+router.use("/expense-types", expenseTypesRouter);
 router.use("/activity-logs", activityLogsRouter);
 router.use("/admin-dashboard", adminDashboardRouter);
 

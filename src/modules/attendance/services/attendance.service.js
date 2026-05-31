@@ -114,7 +114,7 @@ export const listForGroupOnDate = async (groupId, dateInput) => {
 
 // ─── bulk record ───
 const validateItem = (item) => {
-  if (!item.studentId) throw new ApiError(400, "Talaba kerak");
+  if (!item.studentId) throw new ApiError(400, "O'quvchi kerak");
   if (!["present", "absent", "excused", "exempt"].includes(item.status)) {
     throw new ApiError(400, "Holat noto'g'ri");
   }
@@ -227,7 +227,7 @@ const startOfMonth = (year, month) =>
 const endOfMonth = (year, month) =>
   new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
 
-// Talabaning [rangeStart, rangeEnd] oralig'idagi class-day xaritasi (har guruh × sana → status)
+// O'quvchining [rangeStart, rangeEnd] oralig'idagi class-day xaritasi (har guruh × sana → status)
 const buildStudentClassDays = async (studentId, rangeStart, rangeEnd) => {
   // Shu oraliqda active bo'lgan memberships
   const memberships = await GroupMembership.find({
@@ -289,7 +289,7 @@ const buildStudentClassDays = async (studentId, rangeStart, rangeEnd) => {
   return groups;
 };
 
-// Talabaning bir oy ichidagi class-day xaritasi (har guruh × sana → status)
+// O'quvchining bir oy ichidagi class-day xaritasi (har guruh × sana → status)
 export const getStudentMonthly = async (studentId, { year, month }) => {
   const groups = await buildStudentClassDays(
     studentId,
@@ -299,7 +299,7 @@ export const getStudentMonthly = async (studentId, { year, month }) => {
   return { studentId, year, month, groups };
 };
 
-// Talabaning butun yil bo'yicha class-day xaritasi (yillik heatmap uchun)
+// O'quvchining butun yil bo'yicha class-day xaritasi (yillik heatmap uchun)
 export const getStudentYear = async (studentId, { year }) => {
   const yearStart = new Date(Date.UTC(year, 0, 1, 0, 0, 0, 0));
   const yearEnd = new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999));
@@ -307,7 +307,7 @@ export const getStudentYear = async (studentId, { year }) => {
   return { studentId, year, groups };
 };
 
-// ─── guruh bo'yicha oylik matritsa (talaba × sana) ───
+// ─── guruh bo'yicha oylik matritsa (o'quvchi × sana) ───
 export const getGroupMonthly = async (groupId, { year, month }) => {
   const group = await ensureGroup(groupId);
   const monthStart = startOfMonth(year, month);
@@ -417,7 +417,7 @@ export const getGroupMonthly = async (groupId, { year, month }) => {
   };
 };
 
-// ─── summary (talaba bo'yicha) ───
+// ─── summary (o'quvchi bo'yicha) ───
 const buildSummaryFromBuckets = (counts) => {
   const total =
     counts.present + counts.absent + counts.excused + counts.late + counts.exempt;
@@ -601,7 +601,7 @@ export const getTeacherGroupsSummary = async (teacherId, { fromDate, toDate }) =
 
 // ─── dashboard ───
 // Barcha hisob-kitob 5 ta so'rovda bajariladi (oldingi N+1 kaskad o'rniga):
-// guruhlar, guruh membershiplari, talabalarning barcha membershiplari, exemptions, attendances.
+// guruhlar, guruh membershiplari, o'quvchilarning barcha membershiplari, exemptions, attendances.
 export const getDashboardStats = async ({ fromDate, toDate, page = 1, limit = 20 }) => {
   const settings = await getSettings();
   const from = toUtcMidnight(fromDate);
@@ -610,7 +610,7 @@ export const getDashboardStats = async ({ fromDate, toDate, page = 1, limit = 20
   const groups = await Group.find({ isActive: true });
   const groupIds = groups.map((g) => g._id);
 
-  // Oraliqda active bo'lgan guruh membershiplari (groupBreakdown + talabalar ro'yxati uchun)
+  // Oraliqda active bo'lgan guruh membershiplari (groupBreakdown + o'quvchilar ro'yxati uchun)
   const groupMemberships = await GroupMembership.find({
     group: { $in: groupIds },
     joinedAt: { $lte: to },
@@ -625,7 +625,7 @@ export const getDashboardStats = async ({ fromDate, toDate, page = 1, limit = 20
     (id) => new mongoose.Types.ObjectId(id),
   );
 
-  // Shu talabalarning BARCHA membershiplari + exemptions + attendances — 3 so'rov, N+1 yo'q.
+  // Shu o'quvchilarning BARCHA membershiplari + exemptions + attendances — 3 so'rov, N+1 yo'q.
   // (per-student summary cross-group hisoblanadi — getStudentSummary bilan bir xil)
   const [allMemberships, exemptions, attendances] = await Promise.all([
     GroupMembership.find({
@@ -650,7 +650,7 @@ export const getDashboardStats = async ({ fromDate, toDate, page = 1, limit = 20
   const exemptionsByStudent = groupBy(exemptions, (ex) => String(ex.student));
   const attendancesByStudent = groupBy(attendances, (a) => String(a.student));
 
-  // Har talaba uchun cross-group summary — bir martda (getStudentSummary bilan bir xil natija)
+  // Har o'quvchi uchun cross-group summary — bir martda (getStudentSummary bilan bir xil natija)
   const summaryByStudent = new Map();
   for (const sid of studentIdSet) {
     const { total, exemptDefault, cells } = computeClassDays({
