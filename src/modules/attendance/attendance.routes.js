@@ -6,7 +6,10 @@ import { PERMISSIONS } from "../../constants/permissions.js";
 
 import { bulkRecordSchema } from "./validators/bulkRecord.validator.js";
 import { listForDateSchema } from "./validators/listForDate.validator.js";
-import { studentMonthlySchema } from "./validators/studentMonthly.validator.js";
+import {
+  studentMonthlySchema,
+  studentYearSchema,
+} from "./validators/studentMonthly.validator.js";
 import { groupMonthlySchema } from "./validators/groupMonthly.validator.js";
 import {
   rangeQuerySchema,
@@ -24,6 +27,7 @@ import bulkRecord from "./handlers/bulkRecord.handler.js";
 import teacherAttendanceStatus from "./handlers/teacherAttendanceStatus.handler.js";
 import teacherAttendanceSet from "./handlers/teacherAttendanceSet.handler.js";
 import studentMonthly from "./handlers/studentMonthly.handler.js";
+import studentYear from "./handlers/studentYear.handler.js";
 import groupMonthly from "./handlers/groupMonthly.handler.js";
 import studentSummary from "./handlers/studentSummary.handler.js";
 import groupSummary from "./handlers/groupSummary.handler.js";
@@ -58,6 +62,14 @@ router.get(
   requirePermission(PERMISSIONS.ATTENDANCE_READ),
   validate(studentMonthlySchema),
   studentMonthly,
+);
+
+router.get(
+  "/students/:id/yearly",
+  requireAuth,
+  requirePermission(PERMISSIONS.ATTENDANCE_READ),
+  validate(studentYearSchema),
+  studentYear,
 );
 
 router.get(

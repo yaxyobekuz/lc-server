@@ -10,6 +10,13 @@ const discountSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    // null — barcha guruhlarga tegishli; aks holda faqat shu guruhga
+    group: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Group",
+      default: null,
+      index: true,
+    },
     kind: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "DiscountKind",

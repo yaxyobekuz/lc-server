@@ -3,7 +3,10 @@ import DiscountKind from "../../../models/discountKind.model.js";
 import User from "../../../models/user.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import { ROLES } from "../../../constants/roles.js";
-import { ensureActiveGroup } from "../../../helpers/membership.helper.js";
+import {
+  ensureActiveGroup,
+  isActiveInGroup,
+} from "../../../helpers/membership.helper.js";
 
 const ensureStudent = async (studentId) => {
   const u = await User.findById(studentId);
@@ -35,7 +38,8 @@ export const list = async ({
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .populate("kind", { name: 1, isActive: 1 }),
+      .populate("kind", { name: 1, isActive: 1 })
+      .populate("group", { name: 1 }),
     Discount.countDocuments(filter),
   ]);
   return { items, total, page, limit };
@@ -45,6 +49,12 @@ export const create = async (body) => {
   await ensureStudent(body.student);
   await ensureActiveGroup(body.student);
   await ensureKind(body.kind);
+
+  // Guruhga xos chegirma — talaba o'sha guruhda faol bo'lishi shart (null = barchasi)
+  const group = body.group || null;
+  if (group && !(await isActiveInGroup(body.student, group))) {
+    throw new ApiError(400, "Talaba bu guruhda o'qimaydi");
+  }
 
   if (body.valueType === "percent" && (body.value < 0 || body.value > 100)) {
     throw new ApiError(400, "Foiz 0 dan 100 gacha bo'lishi kerak");
@@ -67,6 +77,7 @@ export const create = async (body) => {
 
   const doc = {
     student: body.student,
+    group,
     kind: body.kind,
     valueType: body.valueType,
     value: body.value,
@@ -90,6 +101,13 @@ export const update = async (id, body) => {
   if (body.kind !== undefined) {
     await ensureKind(body.kind);
     doc.kind = body.kind;
+  }
+  if (body.group !== undefined) {
+    const group = body.group || null;
+    if (group && !(await isActiveInGroup(doc.student, group))) {
+      throw new ApiError(400, "Talaba bu guruhda o'qimaydi");
+    }
+    doc.group = group;
   }
   if (body.valueType !== undefined) doc.valueType = body.valueType;
   if (body.value !== undefined) {
@@ -118,13 +136,24 @@ export const remove = async (id) => {
   return doc;
 };
 
-// Faqat shu ondagi active chegirmalarni qaytaradi (billing helper foydalanadi)
-export const getActiveForStudent = async (studentId, asOf = new Date()) => {
-  const docs = await Discount.find({
+// Faqat shu ondagi active chegirmalarni qaytaradi (billing helper foydalanadi).
+// groupId berilsa: global (group=null) + shu guruhga xos chegirmalar; aks holda barchasi.
+export const getActiveForStudent = async (
+  studentId,
+  asOf = new Date(),
+  groupId,
+) => {
+  const timeOr = [{ endDate: null }, { endDate: { $gte: asOf } }];
+  const filter = {
     student: studentId,
     isActive: true,
     startDate: { $lte: asOf },
-    $or: [{ endDate: null }, { endDate: { $gte: asOf } }],
-  }).populate("kind", { name: 1 });
+  };
+  if (groupId) {
+    filter.$and = [{ $or: timeOr }, { $or: [{ group: null }, { group: groupId }] }];
+  } else {
+    filter.$or = timeOr;
+  }
+  const docs = await Discount.find(filter).populate("kind", { name: 1 });
   return docs;
 };

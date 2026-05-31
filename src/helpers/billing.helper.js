@@ -10,22 +10,26 @@ export const lessonsInMonth = (group, year, month) => {
   return getClassDaysInRange(group, start, end).length;
 };
 
-// O'qituvchi kelmagan kun chegirmasi sozlamasi: guruh override → global default.
-export const resolveAbsenceConfig = (group, settings) => {
+// O'qituvchi kelmagan kun jarimasi sozlamasi: o'qituvchi override → guruh override → global default.
+export const resolveAbsenceConfig = (group, settings, teacher = null) => {
+  const tMode = teacher?.teacherAbsenceMode;
+  if (tMode && tMode !== "inherit") {
+    return { mode: tMode, amount: Number(teacher?.teacherAbsenceAmount) || 0 };
+  }
   const gMode = group?.teacherAbsenceMode;
   if (gMode && gMode !== "inherit") {
     return { mode: gMode, amount: Number(group?.teacherAbsenceAmount) || 0 };
   }
   return {
-    mode: settings?.teacherAbsenceMode || "auto",
+    mode: settings?.teacherAbsenceMode || "none",
     amount: Number(settings?.teacherAbsenceAmount) || 0,
   };
 };
 
 // O'qituvchi kelmagan 1 kun uchun o'quvchidan ayiriladigan summa.
 // auto → oylik narx / oydagi darslar soni; fixed → belgilangan summa; none → 0.
-export const computePerLessonAmount = (group, { year, month }, settings) => {
-  const { mode, amount } = resolveAbsenceConfig(group, settings);
+export const computePerLessonAmount = (group, { year, month }, settings, teacher = null) => {
+  const { mode, amount } = resolveAbsenceConfig(group, settings, teacher);
   if (mode === "none") return 0;
   if (mode === "fixed") return Math.max(0, Math.round(amount));
   const lessons = lessonsInMonth(group, year, month);
@@ -40,9 +44,15 @@ export const computeDueDate = ({ year, month }, dayOfMonth) => {
 };
 
 // Active discountlarni jamlab summani hisoblaydi (percent additiv, max 100%; keyin amount).
+// groupId berilsa — global + shu guruhga xos chegirmalar qo'llanadi.
 // Returns: { amount, snapshot: [{ kind, value, valueType }] }
-export const computeDiscountAmount = async (studentId, baseAmount, asOf = new Date()) => {
-  const discounts = await getActiveForStudent(studentId, asOf);
+export const computeDiscountAmount = async (
+  studentId,
+  baseAmount,
+  asOf = new Date(),
+  groupId,
+) => {
+  const discounts = await getActiveForStudent(studentId, asOf, groupId);
   if (!discounts || discounts.length === 0) {
     return { amount: 0, snapshot: [] };
   }

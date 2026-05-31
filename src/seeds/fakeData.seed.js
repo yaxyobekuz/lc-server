@@ -588,9 +588,8 @@ const seed = async () => {
           if (m.joinedAt > cursor) continue;
           if (m.leftAt && m.leftAt < cursor) continue;
           const status = weighted([
-            { value: "present", weight: 82 },
+            { value: "present", weight: 87 },
             { value: "absent", weight: 8 },
-            { value: "late", weight: 5 },
             { value: "excused", weight: 4 },
             { value: "exempt", weight: 1 },
           ]);
@@ -614,7 +613,6 @@ const seed = async () => {
               20,
             ),
           };
-          if (status === "late") doc.lateMinutes = randInt(5, 30);
           if (status === "excused")
             doc.reason = pick([
               "Kasallik",

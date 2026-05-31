@@ -2,7 +2,7 @@ import { z } from "zod";
 
 const itemSchema = z.object({
   studentId: z.string().min(1),
-  status: z.enum(["present", "absent", "excused", "late", "exempt"]),
+  status: z.enum(["present", "absent", "excused", "exempt"]),
   reason: z.string().max(300).optional(),
   lateMinutes: z.coerce.number().int().min(0).optional(),
 });

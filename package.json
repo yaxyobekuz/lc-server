@@ -12,7 +12,8 @@
     "seed:payments": "node src/seeds/paymentDefaults.seed.js",
     "seed:leads": "node src/seeds/leadDefaults.seed.js",
     "seed:communication": "node src/seeds/communicationDefaults.seed.js",
-    "seed:fake-data": "node src/seeds/fakeData.seed.js"
+    "seed:fake-data": "node src/seeds/fakeData.seed.js",
+    "seed:fake-extras": "node src/seeds/fakeExtras.seed.js"
   },
   "dependencies": {
     "agenda": "^5.0.0",

@@ -8,6 +8,7 @@ import Invoice from "../../../models/invoice.model.js";
 import Payment from "../../../models/payment.model.js";
 import User from "../../../models/user.model.js";
 import ApiError from "../../../utils/ApiError.js";
+import { buildMeta } from "../../../utils/pagination.js";
 import { ROLES } from "../../../constants/roles.js";
 import {
   dateKeyOf,
@@ -114,10 +115,10 @@ export const listForGroupOnDate = async (groupId, dateInput) => {
 // ─── bulk record ───
 const validateItem = (item) => {
   if (!item.studentId) throw new ApiError(400, "Talaba kerak");
-  if (!["present", "absent", "excused", "late", "exempt"].includes(item.status)) {
+  if (!["present", "absent", "excused", "exempt"].includes(item.status)) {
     throw new ApiError(400, "Holat noto'g'ri");
   }
-  // Kechikdi/Sababli uchun minut va sabab ixtiyoriy - status tanlanishi yetarli
+  // Sababli uchun sabab ixtiyoriy - status tanlanishi yetarli
 };
 
 const runWithSession = async (fn) => {
@@ -172,6 +173,14 @@ export const bulkRecord = async (
   const date = toUtcMidnight(dateInput);
   const dKey = dateKeyOf(date);
 
+  // Faqat guruhning dars kunlari belgilanadi (dars vaqti o'tgan/oldin — farqi yo'q)
+  const isClassDay = (group.schedule || []).some(
+    (s) => s.day === dayOfWeekOf(date),
+  );
+  if (!isClassDay) {
+    throw new ApiError(400, "Bu kun bu guruh uchun dars kuni emas");
+  }
+
   if (!Array.isArray(items) || items.length === 0) {
     throw new ApiError(400, "Hech bo'lmaganda bitta yozuv kerak");
   }
@@ -218,16 +227,13 @@ const startOfMonth = (year, month) =>
 const endOfMonth = (year, month) =>
   new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
 
-// Talabaning bir oy ichidagi class-day xaritasi (har guruh × sana → status)
-export const getStudentMonthly = async (studentId, { year, month }) => {
-  const monthStart = startOfMonth(year, month);
-  const monthEnd = endOfMonth(year, month);
-
-  // Shu oy ichida active bo'lgan memberships
+// Talabaning [rangeStart, rangeEnd] oralig'idagi class-day xaritasi (har guruh × sana → status)
+const buildStudentClassDays = async (studentId, rangeStart, rangeEnd) => {
+  // Shu oraliqda active bo'lgan memberships
   const memberships = await GroupMembership.find({
     student: studentId,
-    joinedAt: { $lte: monthEnd },
-    $or: [{ leftAt: null }, { leftAt: { $gte: monthStart } }],
+    joinedAt: { $lte: rangeEnd },
+    $or: [{ leftAt: null }, { leftAt: { $gte: rangeStart } }],
   }).populate("group");
 
   const exemptions = await AttendanceExemption.find({
@@ -240,11 +246,11 @@ export const getStudentMonthly = async (studentId, { year, month }) => {
 
   for (const m of memberships) {
     if (!m.group) continue;
-    // Shu membershipning effective range'i oy ichida
+    // Shu membershipning effective range'i oraliq ichida
     const effFrom =
-      m.joinedAt > monthStart ? toUtcMidnight(m.joinedAt) : monthStart;
+      m.joinedAt > rangeStart ? toUtcMidnight(m.joinedAt) : rangeStart;
     const effTo =
-      m.leftAt && m.leftAt < monthEnd ? toUtcMidnight(m.leftAt) : monthEnd;
+      m.leftAt && m.leftAt < rangeEnd ? toUtcMidnight(m.leftAt) : rangeEnd;
 
     const classDays = getClassDaysInRange(m.group, effFrom, effTo);
     const days = classDays.map((cd) => {
@@ -280,7 +286,25 @@ export const getStudentMonthly = async (studentId, { year, month }) => {
     }
   }
 
+  return groups;
+};
+
+// Talabaning bir oy ichidagi class-day xaritasi (har guruh × sana → status)
+export const getStudentMonthly = async (studentId, { year, month }) => {
+  const groups = await buildStudentClassDays(
+    studentId,
+    startOfMonth(year, month),
+    endOfMonth(year, month),
+  );
   return { studentId, year, month, groups };
+};
+
+// Talabaning butun yil bo'yicha class-day xaritasi (yillik heatmap uchun)
+export const getStudentYear = async (studentId, { year }) => {
+  const yearStart = new Date(Date.UTC(year, 0, 1, 0, 0, 0, 0));
+  const yearEnd = new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999));
+  const groups = await buildStudentClassDays(studentId, yearStart, yearEnd);
+  return { studentId, year, groups };
 };
 
 // ─── guruh bo'yicha oylik matritsa (talaba × sana) ───
@@ -411,26 +435,16 @@ const buildSummaryFromBuckets = (counts) => {
   };
 };
 
-const computeStudentClassDays = async (studentId, fromDate, toDate) => {
-  const memberships = await GroupMembership.find({
-    student: studentId,
-    joinedAt: { $lte: toDate },
-    $or: [{ leftAt: null }, { leftAt: { $gte: fromDate } }],
-  }).populate("group");
-
-  const exemptions = await AttendanceExemption.find({
-    student: studentId,
-    isActive: true,
-  });
-
+// Pure: membership + exemption ro'yxatidan [from,to] oralig'idagi class-day cell'lar
+const computeClassDays = ({ memberships, exemptions, from, to }) => {
   let total = 0;
   let exemptDefault = 0;
   const cells = [];
 
   for (const m of memberships) {
     if (!m.group) continue;
-    const effFrom = m.joinedAt > fromDate ? m.joinedAt : fromDate;
-    const effTo = m.leftAt && m.leftAt < toDate ? m.leftAt : toDate;
+    const effFrom = m.joinedAt > from ? m.joinedAt : from;
+    const effTo = m.leftAt && m.leftAt < to ? m.leftAt : to;
     const classDays = getClassDaysInRange(m.group, effFrom, effTo);
     for (const cd of classDays) {
       total += 1;
@@ -442,28 +456,9 @@ const computeStudentClassDays = async (studentId, fromDate, toDate) => {
   return { total, exemptDefault, cells };
 };
 
-export const getStudentSummary = async (
-  studentId,
-  { fromDate, toDate } = {},
-) => {
-  if (!fromDate || !toDate) {
-    return buildSummaryFromBuckets({
-      present: 0,
-      absent: 0,
-      excused: 0,
-      late: 0,
-      exempt: 0,
-    });
-  }
-  const from = toUtcMidnight(fromDate);
-  const to = toUtcMidnight(toDate);
-
-  const { total, exemptDefault, cells } = await computeStudentClassDays(
-    studentId,
-    from,
-    to,
-  );
-
+// Pure: class-day cell'lar + attendance yozuvlaridan summary. attendances cell'lardan
+// keng bo'lishi mumkin — faqat mos group|dateKey lar hisobga olinadi.
+const summarizeCells = ({ total, exemptDefault, cells, attendances }) => {
   if (total === 0) {
     return buildSummaryFromBuckets({
       present: 0,
@@ -474,11 +469,6 @@ export const getStudentSummary = async (
     });
   }
 
-  const dKeys = Array.from(new Set(cells.map((c) => c.dateKey)));
-  const attendances = await Attendance.find({
-    student: studentId,
-    dateKey: { $in: dKeys },
-  });
   const attMap = new Map();
   for (const a of attendances) attMap.set(`${String(a.group)}|${a.dateKey}`, a);
 
@@ -494,16 +484,51 @@ export const getStudentSummary = async (
   const markedTotal =
     counts.present + counts.absent + counts.excused + counts.late + counts.exempt;
   const unmarked = total - markedTotal;
-  // Default-exempt unmarked'larni exempt sifatida hisobga olamiz
-  // exemptDefault - har class day uchun (multi-active student bo'lsa duplicate bo'lmaydi)
-  // Lekin biz unmarked'lardan eng ko'pi exempt-default deymiz
   const exemptUnmarked = Math.min(unmarked, exemptDefault);
   counts.exempt += exemptUnmarked;
-  // Qolgan unmarked = ne'masu, totalClasses dan kamaytirsak bo'lmaydi (rate uchun ahamiyatsiz)
   const summary = buildSummaryFromBuckets(counts);
   summary.totalClasses = total; // total class days (belgilanganmi yoki yo'q)
   summary.unmarked = total - markedTotal - exemptUnmarked;
   return summary;
+};
+
+export const getStudentSummary = async (
+  studentId,
+  { fromDate, toDate } = {},
+) => {
+  if (!fromDate || !toDate) {
+    return summarizeCells({ total: 0, exemptDefault: 0, cells: [], attendances: [] });
+  }
+  const from = toUtcMidnight(fromDate);
+  const to = toUtcMidnight(toDate);
+
+  const [memberships, exemptions] = await Promise.all([
+    GroupMembership.find({
+      student: studentId,
+      joinedAt: { $lte: to },
+      $or: [{ leftAt: null }, { leftAt: { $gte: from } }],
+    }).populate("group"),
+    AttendanceExemption.find({ student: studentId, isActive: true }),
+  ]);
+
+  const { total, exemptDefault, cells } = computeClassDays({
+    memberships,
+    exemptions,
+    from,
+    to,
+  });
+
+  if (total === 0) {
+    return summarizeCells({ total: 0, exemptDefault: 0, cells: [], attendances: [] });
+  }
+
+  const dKeys = Array.from(new Set(cells.map((c) => c.dateKey)));
+  const attendances = await Attendance.find({
+    student: studentId,
+    dateKey: { $in: dKeys },
+  });
+
+  return summarizeCells({ total, exemptDefault, cells, attendances });
 };
 
 // ─── group summary ───
@@ -575,12 +600,80 @@ export const getTeacherGroupsSummary = async (teacherId, { fromDate, toDate }) =
 };
 
 // ─── dashboard ───
-export const getDashboardStats = async ({ fromDate, toDate }) => {
+// Barcha hisob-kitob 5 ta so'rovda bajariladi (oldingi N+1 kaskad o'rniga):
+// guruhlar, guruh membershiplari, talabalarning barcha membershiplari, exemptions, attendances.
+export const getDashboardStats = async ({ fromDate, toDate, page = 1, limit = 20 }) => {
   const settings = await getSettings();
   const from = toUtcMidnight(fromDate);
   const to = toUtcMidnight(toDate);
 
   const groups = await Group.find({ isActive: true });
+  const groupIds = groups.map((g) => g._id);
+
+  // Oraliqda active bo'lgan guruh membershiplari (groupBreakdown + talabalar ro'yxati uchun)
+  const groupMemberships = await GroupMembership.find({
+    group: { $in: groupIds },
+    joinedAt: { $lte: to },
+    $or: [{ leftAt: null }, { leftAt: { $gte: from } }],
+  }).populate("student", STUDENT_PROJECTION);
+
+  const studentIdSet = new Set();
+  for (const m of groupMemberships) {
+    if (m.student) studentIdSet.add(String(m.student._id));
+  }
+  const studentIds = Array.from(studentIdSet).map(
+    (id) => new mongoose.Types.ObjectId(id),
+  );
+
+  // Shu talabalarning BARCHA membershiplari + exemptions + attendances — 3 so'rov, N+1 yo'q.
+  // (per-student summary cross-group hisoblanadi — getStudentSummary bilan bir xil)
+  const [allMemberships, exemptions, attendances] = await Promise.all([
+    GroupMembership.find({
+      student: { $in: studentIds },
+      joinedAt: { $lte: to },
+      $or: [{ leftAt: null }, { leftAt: { $gte: from } }],
+    }).populate("group"),
+    AttendanceExemption.find({ student: { $in: studentIds }, isActive: true }),
+    Attendance.find({ student: { $in: studentIds }, date: { $gte: from, $lte: to } }),
+  ]);
+
+  const groupBy = (docs, keyOf) => {
+    const map = new Map();
+    for (const d of docs) {
+      const k = keyOf(d);
+      if (!map.has(k)) map.set(k, []);
+      map.get(k).push(d);
+    }
+    return map;
+  };
+  const membershipsByStudent = groupBy(allMemberships, (m) => String(m.student));
+  const exemptionsByStudent = groupBy(exemptions, (ex) => String(ex.student));
+  const attendancesByStudent = groupBy(attendances, (a) => String(a.student));
+
+  // Har talaba uchun cross-group summary — bir martda (getStudentSummary bilan bir xil natija)
+  const summaryByStudent = new Map();
+  for (const sid of studentIdSet) {
+    const { total, exemptDefault, cells } = computeClassDays({
+      memberships: membershipsByStudent.get(sid) || [],
+      exemptions: exemptionsByStudent.get(sid) || [],
+      from,
+      to,
+    });
+    summaryByStudent.set(
+      sid,
+      summarizeCells({
+        total,
+        exemptDefault,
+        cells,
+        attendances: attendancesByStudent.get(sid) || [],
+      }),
+    );
+  }
+
+  const membershipsByGroup = groupBy(
+    groupMemberships.filter((m) => m.student),
+    (m) => String(m.group),
+  );
 
   let aggregate = {
     present: 0,
@@ -590,35 +683,26 @@ export const getDashboardStats = async ({ fromDate, toDate }) => {
     exempt: 0,
     totalClasses: 0,
   };
-  const groupBreakdown = [];
+  const groupBreakdownAll = [];
   const studentRates = new Map();
 
-  // Guruh summary'larini parallel olib kelamiz (sequential O(N) -> O(1) wall-clock)
-  const groupSummaries = await Promise.all(
-    groups.map((g) =>
-      getGroupSummary(g._id, { fromDate: from, toDate: to }).then((gs) => ({ g, gs })),
-    ),
-  );
+  for (const g of groups) {
+    const members = membershipsByGroup.get(String(g._id)) || [];
+    const gAgg = { present: 0, absent: 0, excused: 0, late: 0, exempt: 0, totalClasses: 0 };
 
-  for (const { g, gs } of groupSummaries) {
-    aggregate.present += gs.aggregate.present;
-    aggregate.absent += gs.aggregate.absent;
-    aggregate.excused += gs.aggregate.excused;
-    aggregate.late += gs.aggregate.late;
-    aggregate.exempt += gs.aggregate.exempt;
-    aggregate.totalClasses += gs.aggregate.totalClasses;
+    for (const m of members) {
+      const sid = String(m.student._id);
+      const s = summaryByStudent.get(sid);
+      if (!s) continue;
+      gAgg.present += s.present;
+      gAgg.absent += s.absent;
+      gAgg.excused += s.excused;
+      gAgg.late += s.late;
+      gAgg.exempt += s.exempt;
+      gAgg.totalClasses += s.totalClasses;
 
-    groupBreakdown.push({
-      groupId: g._id,
-      name: g.name,
-      groupRate: gs.aggregate.groupRate,
-      totalClasses: gs.aggregate.totalClasses,
-    });
-
-    for (const ps of gs.perStudent) {
-      const sid = String(ps.student._id);
       const cur = studentRates.get(sid) || {
-        student: ps.student,
+        student: m.student.toJSON(),
         present: 0,
         absent: 0,
         late: 0,
@@ -626,14 +710,32 @@ export const getDashboardStats = async ({ fromDate, toDate }) => {
         excused: 0,
         totalClasses: 0,
       };
-      cur.present += ps.summary.present;
-      cur.absent += ps.summary.absent;
-      cur.late += ps.summary.late;
-      cur.exempt += ps.summary.exempt;
-      cur.excused += ps.summary.excused;
-      cur.totalClasses += ps.summary.totalClasses;
+      cur.present += s.present;
+      cur.absent += s.absent;
+      cur.late += s.late;
+      cur.exempt += s.exempt;
+      cur.excused += s.excused;
+      cur.totalClasses += s.totalClasses;
       studentRates.set(sid, cur);
     }
+
+    const gDenom = gAgg.totalClasses - gAgg.exempt;
+    const gNumer = gAgg.present + gAgg.late;
+    const groupRate = gDenom > 0 ? Math.round((gNumer / gDenom) * 100) : null;
+
+    aggregate.present += gAgg.present;
+    aggregate.absent += gAgg.absent;
+    aggregate.excused += gAgg.excused;
+    aggregate.late += gAgg.late;
+    aggregate.exempt += gAgg.exempt;
+    aggregate.totalClasses += gAgg.totalClasses;
+
+    groupBreakdownAll.push({
+      groupId: g._id,
+      name: g.name,
+      groupRate,
+      totalClasses: gAgg.totalClasses,
+    });
   }
 
   const overallDenom = aggregate.totalClasses - aggregate.exempt;
@@ -659,6 +761,15 @@ export const getDashboardStats = async ({ fromDate, toDate }) => {
     .filter((s) => s.absent > 0)
     .slice(0, 10);
 
+  // groupBreakdown'ni nom bo'yicha tartiblab paginate qilamiz (umumiy stat'lar to'liq qoladi)
+  groupBreakdownAll.sort((a, b) =>
+    (a.name || "").localeCompare(b.name || "", "uz"),
+  );
+  const safeLimit = Math.min(500, Math.max(1, Number(limit) || 20));
+  const safePage = Math.max(1, Number(page) || 1);
+  const start = (safePage - 1) * safeLimit;
+  const groupBreakdown = groupBreakdownAll.slice(start, start + safeLimit);
+
   return {
     overallRate,
     aggregate,
@@ -667,6 +778,11 @@ export const getDashboardStats = async ({ fromDate, toDate }) => {
     lowAttendanceStudents,
     topAbsent,
     groupBreakdown,
+    groupBreakdownMeta: buildMeta({
+      page: safePage,
+      limit: safeLimit,
+      total: groupBreakdownAll.length,
+    }),
   };
 };
 

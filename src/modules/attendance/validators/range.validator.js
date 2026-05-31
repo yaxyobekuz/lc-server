@@ -4,6 +4,8 @@ export const rangeQuerySchema = z.object({
   query: z.object({
     fromDate: z.coerce.date(),
     toDate: z.coerce.date(),
+    page: z.coerce.number().int().positive().optional(),
+    limit: z.coerce.number().int().positive().max(500).optional(),
   }),
 });
 

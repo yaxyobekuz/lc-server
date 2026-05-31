@@ -39,6 +39,13 @@ const userSchema = new mongoose.Schema(
 
     // Faqat teacher rolidagi maydon
     hiredAt: { type: Date, default: null },
+    // O'qituvchi kelmagan kun jarimasi (o'qituvchi override). "inherit" → global sozlama.
+    teacherAbsenceMode: {
+      type: String,
+      enum: ["inherit", "auto", "fixed", "none"],
+      default: "inherit",
+    },
+    teacherAbsenceAmount: { type: Number, default: 0, min: 0 },
   },
   { timestamps: true },
 );

@@ -7,7 +7,7 @@ export const updateSchema = z.object({
   body: z
     .object({
       startDate: z.coerce.date().optional(),
-      endDate: z.union([z.coerce.date(), z.null()]).optional(),
+      endDate: z.coerce.date().nullable().optional(),
       daysOfWeek: z.array(z.enum(DAYS)).optional(),
       reason: z.string().max(300).optional(),
       isActive: z.boolean().optional(),

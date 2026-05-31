@@ -12,7 +12,7 @@ const paymentSettingsSchema = new mongoose.Schema(
     teacherAbsenceMode: {
       type: String,
       enum: ["auto", "fixed", "none"],
-      default: "auto",
+      default: "none",
     },
     teacherAbsenceAmount: { type: Number, default: 0, min: 0 },
   },

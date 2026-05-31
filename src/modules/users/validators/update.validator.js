@@ -24,6 +24,10 @@ export const updateSchema = z.object({
 
       // Teacher-only
       hiredAt: z.union([z.coerce.date(), z.null()]).optional(),
+      teacherAbsenceMode: z
+        .enum(["inherit", "auto", "fixed", "none"])
+        .optional(),
+      teacherAbsenceAmount: z.coerce.number().min(0).optional(),
     })
     .refine((b) => Object.keys(b).length > 0, {
       message: "Hech bo'lmaganda bitta maydon kerak",

@@ -1,12 +1,6 @@
 import mongoose from "mongoose";
 
-export const ATTENDANCE_STATUSES = [
-  "present",
-  "absent",
-  "excused",
-  "late",
-  "exempt",
-];
+export const ATTENDANCE_STATUSES = ["present", "absent", "excused", "exempt"];
 export const ATTENDANCE_SOURCES = ["teacher", "admin", "auto-exempt"];
 
 const attendanceSchema = new mongoose.Schema(

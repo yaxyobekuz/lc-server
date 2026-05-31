@@ -1,6 +1,7 @@
 import TeacherAbsence from "../../../models/teacherAbsence.model.js";
 import Group from "../../../models/group.model.js";
 import GroupMembership from "../../../models/groupMembership.model.js";
+import User from "../../../models/user.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import {
   toUtcMidnight,
@@ -23,6 +24,12 @@ const periodOf = (date) => {
 const isClassDayFor = (group, dow) =>
   (group.schedule || []).some((s) => s.day === dow);
 
+// Guruhga biriktirilgan o'qituvchi (jarima override'i shu o'qituvchiniki bo'lishi mumkin)
+const loadTeacher = (group) =>
+  group.teachers?.[0]
+    ? User.findById(group.teachers[0]).select("teacherAbsenceMode teacherAbsenceAmount")
+    : null;
+
 // O'qituvchi shu kuni keldimi + 1 dars haqi preview
 export const getStatus = async (groupId, dateInput) => {
   const group = await Group.findById(groupId);
@@ -30,7 +37,8 @@ export const getStatus = async (groupId, dateInput) => {
   const date = toUtcMidnight(dateInput);
   const dKey = dateKeyOf(date);
   const settings = await getSettings();
-  const perStudentAmount = computePerLessonAmount(group, periodOf(date), settings);
+  const teacher = await loadTeacher(group);
+  const perStudentAmount = computePerLessonAmount(group, periodOf(date), settings, teacher);
   const absence = await TeacherAbsence.findOne({ group: groupId, dateKey: dKey });
   return {
     dateKey: dKey,
@@ -55,8 +63,9 @@ export const setAbsent = async (groupId, dateInput, currentUser) => {
   if (existing) return existing;
 
   const settings = await getSettings();
+  const teacher = await loadTeacher(group);
   const period = periodOf(date);
-  const perStudent = computePerLessonAmount(group, period, settings);
+  const perStudent = computePerLessonAmount(group, period, settings, teacher);
 
   const memberships = await GroupMembership.find({
     group: groupId,

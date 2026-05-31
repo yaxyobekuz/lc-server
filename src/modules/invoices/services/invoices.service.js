@@ -72,6 +72,8 @@ export const ensureInvoiceFor = async (
   const { amount: discountAmount, snapshot } = await computeDiscountAmount(
     studentId,
     baseAmount,
+    undefined,
+    groupId,
   );
   const totalDue = Math.max(0, baseAmount - discountAmount);
 
@@ -350,7 +352,12 @@ export const create = async (body, currentUser) => {
   if (body.discountAmount !== undefined && body.discountAmount !== null) {
     discountAmount = Math.max(0, Math.min(baseAmount, Number(body.discountAmount)));
   } else {
-    const auto = await computeDiscountAmount(body.student, baseAmount);
+    const auto = await computeDiscountAmount(
+      body.student,
+      baseAmount,
+      undefined,
+      body.group,
+    );
     discountAmount = auto.amount;
     snapshot = auto.snapshot;
   }

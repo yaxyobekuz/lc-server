@@ -6,7 +6,6 @@ const STATUS_EMOJI = {
   present: "✅",
   absent: "❌",
   excused: "🟡",
-  late: "⏰",
   exempt: "⚪️",
 };
 
@@ -14,7 +13,6 @@ const STATUS_LABEL = {
   present: "Keldi",
   absent: "Kelmadi",
   excused: "Sababli",
-  late: "Kechikdi",
   exempt: "Ozod",
 };
 
@@ -47,7 +45,6 @@ const myAttendanceHandler = async (bot, msg) => {
     `${STATUS_EMOJI.present} ${STATUS_LABEL.present}: ${summary.present}`,
     `${STATUS_EMOJI.absent} ${STATUS_LABEL.absent}: ${summary.absent}`,
     `${STATUS_EMOJI.excused} ${STATUS_LABEL.excused}: ${summary.excused}`,
-    `${STATUS_EMOJI.late} ${STATUS_LABEL.late}: ${summary.late}`,
     `${STATUS_EMOJI.exempt} ${STATUS_LABEL.exempt}: ${summary.exempt}`,
   ];
 

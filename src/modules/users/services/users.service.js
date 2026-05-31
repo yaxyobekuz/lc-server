@@ -16,7 +16,11 @@ const STUDENT_ONLY_FIELDS = [
   "leadSource",
   "leaveStatus",
 ];
-const TEACHER_ONLY_FIELDS = ["hiredAt"];
+const TEACHER_ONLY_FIELDS = [
+  "hiredAt",
+  "teacherAbsenceMode",
+  "teacherAbsenceAmount",
+];
 
 export const list = async ({ role, search, page = 1, limit = 20 }) => {
   const filter = {};
@@ -133,6 +137,12 @@ export const update = async (id, body) => {
         throw new ApiError(400, "Ishga olingan sana kelajakda bo'lmasin");
       }
       user.hiredAt = d;
+    }
+    if (body.teacherAbsenceMode !== undefined) {
+      user.teacherAbsenceMode = body.teacherAbsenceMode;
+    }
+    if (body.teacherAbsenceAmount !== undefined) {
+      user.teacherAbsenceAmount = Math.max(0, Number(body.teacherAbsenceAmount) || 0);
     }
   }
 
