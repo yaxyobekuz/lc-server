@@ -1,6 +1,7 @@
 import { Router } from "express";
 import requireAuth from "../../middleware/auth.js";
 import requirePermission from "../../middleware/requirePermission.js";
+import requirePermissionOrSelf from "../../middleware/requirePermissionOrSelf.js";
 import validate from "../../middleware/validate.js";
 import { PERMISSIONS } from "../../constants/permissions.js";
 
@@ -59,7 +60,7 @@ router.get(
 router.get(
   "/students/:id/monthly",
   requireAuth,
-  requirePermission(PERMISSIONS.ATTENDANCE_READ),
+  requirePermissionOrSelf(PERMISSIONS.ATTENDANCE_READ, (req) => req.params.id),
   validate(studentMonthlySchema),
   studentMonthly,
 );
@@ -67,7 +68,7 @@ router.get(
 router.get(
   "/students/:id/yearly",
   requireAuth,
-  requirePermission(PERMISSIONS.ATTENDANCE_READ),
+  requirePermissionOrSelf(PERMISSIONS.ATTENDANCE_READ, (req) => req.params.id),
   validate(studentYearSchema),
   studentYear,
 );
@@ -75,7 +76,7 @@ router.get(
 router.get(
   "/students/:id/summary",
   requireAuth,
-  requirePermission(PERMISSIONS.ATTENDANCE_READ),
+  requirePermissionOrSelf(PERMISSIONS.ATTENDANCE_READ, (req) => req.params.id),
   validate(studentRangeSchema),
   studentSummary,
 );

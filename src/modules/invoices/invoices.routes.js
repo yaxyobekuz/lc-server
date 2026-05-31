@@ -1,6 +1,7 @@
 import { Router } from "express";
 import requireAuth from "../../middleware/auth.js";
 import requirePermission from "../../middleware/requirePermission.js";
+import requirePermissionOrSelf from "../../middleware/requirePermissionOrSelf.js";
 import validate from "../../middleware/validate.js";
 import { PERMISSIONS } from "../../constants/permissions.js";
 
@@ -31,7 +32,7 @@ router.post(
 router.get(
   "/",
   requireAuth,
-  requirePermission(PERMISSIONS.INVOICES_READ),
+  requirePermissionOrSelf(PERMISSIONS.INVOICES_READ, (req) => req.query.studentId),
   validate(listSchema),
   list,
 );
