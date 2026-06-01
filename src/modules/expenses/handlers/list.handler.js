@@ -8,6 +8,7 @@ const list = asyncHandler(async (req, res) => {
     type: req.query.type,
     fromDate: req.query.fromDate,
     toDate: req.query.toDate,
+    archived: req.query.archived === "1" || req.query.archived === "true",
     page,
     limit,
   });

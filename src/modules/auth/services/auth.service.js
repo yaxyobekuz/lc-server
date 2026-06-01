@@ -194,11 +194,6 @@ export const registerUser = async (body) => {
   };
 
   if (body.role === ROLES.STUDENT) {
-    doc.address = body.address || "";
-    doc.parentName = body.parentName || "";
-    doc.parentPhone = body.parentPhone
-      ? normalizePhone(body.parentPhone) || ""
-      : "";
     doc.enrolledAt = body.enrolledAt ? new Date(body.enrolledAt) : new Date();
 
     if (body.leadSource) {

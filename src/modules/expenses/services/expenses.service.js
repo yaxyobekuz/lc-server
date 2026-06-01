@@ -14,8 +14,15 @@ const ensureType = async (typeId) => {
   return t;
 };
 
-export const list = async ({ type, fromDate, toDate, page = 1, limit = 20 }) => {
-  const filter = {};
+export const list = async ({
+  type,
+  fromDate,
+  toDate,
+  archived = false,
+  page = 1,
+  limit = 20,
+}) => {
+  const filter = { isDeleted: archived ? true : { $ne: true } };
   if (type) {
     if (!mongoose.isValidObjectId(type)) {
       throw new ApiError(400, "Xarajat turi noto'g'ri");
@@ -89,15 +96,21 @@ export const update = async (id, body) => {
   return getById(doc._id);
 };
 
-export const remove = async (id) => {
+export const remove = async (id, currentUser) => {
   const doc = await getById(id);
-  await doc.deleteOne();
+  await doc.softDelete(currentUser?._id);
   return doc;
+};
+
+export const restore = async (id) => {
+  const doc = await getById(id);
+  await doc.restore();
+  return getById(doc._id);
 };
 
 // Statistika: jami summa, tur bo'yicha, oy bo'yicha trend
 export const getStats = async ({ fromDate, toDate } = {}) => {
-  const match = {};
+  const match = { isDeleted: { $ne: true } };
   if (fromDate || toDate) {
     match.date = {};
     if (fromDate) match.date.$gte = new Date(fromDate);
@@ -156,7 +169,7 @@ export const getStats = async ({ fromDate, toDate } = {}) => {
 // Diapazonda jami xarajat (adminDashboard.getMonthlyFinancials uchun)
 export const sumInRange = async (start, end) => {
   const result = await Expense.aggregate([
-    { $match: { date: { $gte: start, $lte: end } } },
+    { $match: { date: { $gte: start, $lte: end }, isDeleted: { $ne: true } } },
     { $group: { _id: null, sum: { $sum: "$amount" } } },
   ]);
   return result[0]?.sum || 0;

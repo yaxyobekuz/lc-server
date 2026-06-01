@@ -16,7 +16,6 @@ const STUDENT_PROJECTION = {
   lastName: 1,
   username: 1,
   phone: 1,
-  parentPhone: 1,
 };
 const GROUP_PROJECTION = { name: 1, monthlyPrice: 1 };
 

@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import softDeletePlugin from "./plugins/softDelete.plugin.js";
 
 const expenseSchema = new mongoose.Schema(
   {
@@ -20,6 +21,8 @@ const expenseSchema = new mongoose.Schema(
   },
   { timestamps: true },
 );
+
+expenseSchema.plugin(softDeletePlugin);
 
 expenseSchema.index({ date: -1 });
 expenseSchema.index({ type: 1, date: -1 });

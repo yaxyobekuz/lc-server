@@ -79,7 +79,6 @@ export const buildUserProfile = async (userInput) => {
 
     return {
       ...base,
-      age: calcYears(user.birthDate),
       activeGroups,
       paymentSummary,
       attendanceSummary,

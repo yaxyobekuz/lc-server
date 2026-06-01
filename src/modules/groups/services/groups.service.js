@@ -61,8 +61,14 @@ const ensureTeachers = async (teacherIds) => {
   }
 };
 
-export const list = async ({ search, teacherId, page = 1, limit = 20 }) => {
-  const match = { isActive: true };
+export const list = async ({
+  search,
+  teacherId,
+  archived = false,
+  page = 1,
+  limit = 20,
+}) => {
+  const match = { isActive: archived ? false : true };
   if (teacherId) match.teachers = toObjectId(teacherId);
   if (search && search.trim()) {
     match.name = { $regex: escapeRegex(search.trim()), $options: "i" };
@@ -201,6 +207,14 @@ export const update = async (id, body) => {
 export const remove = async (id) => {
   const group = await ensureGroup(id);
   group.isActive = false;
+  await group.save();
+  return group;
+};
+
+export const restore = async (id) => {
+  const group = await Group.findById(id);
+  if (!group) throw new ApiError(404, "Guruh topilmadi");
+  group.isActive = true;
   await group.save();
   return group;
 };

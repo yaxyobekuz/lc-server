@@ -150,6 +150,12 @@ export const softRemove = async (id) => {
   return doc;
 };
 
+export const setDefault = async (id) => {
+  const doc = await LeadStatus.setDefault(id);
+  if (!doc) throw new ApiError(404, "Lid statusi topilmadi");
+  return doc;
+};
+
 export const findInitial = async () => {
   return LeadStatus.findOne({ isActive: true, isInitial: true }).sort({
     order: 1,

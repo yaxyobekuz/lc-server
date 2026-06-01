@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import defaultFlagPlugin from "./plugins/defaultFlag.plugin.js";
 
 const HEX_REGEX = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
@@ -18,6 +19,8 @@ const leadStatusSchema = new mongoose.Schema(
   },
   { timestamps: true },
 );
+
+leadStatusSchema.plugin(defaultFlagPlugin);
 
 leadStatusSchema.index(
   { name: 1 },

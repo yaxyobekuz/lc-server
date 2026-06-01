@@ -37,6 +37,10 @@ export const bulkRecord = async (dateInput, items, currentUser) => {
   const date = new Date(dateInput);
   if (Number.isNaN(date.getTime())) throw new ApiError(400, "Sana noto'g'ri");
   const dateKey = dateKeyOf(date);
+  // Kelajak kun uchun davomat belgilanmaydi (o'tmishni tuzatish mumkin)
+  if (dateKey > dateKeyOf(new Date())) {
+    throw new ApiError(400, "Kelajak kun uchun davomat belgilab bo'lmaydi");
+  }
   if (!Array.isArray(items) || !items.length) {
     throw new ApiError(400, "Hech bo'lmaganda bitta yozuv kerak");
   }

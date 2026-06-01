@@ -7,6 +7,7 @@ const list = asyncHandler(async (req, res) => {
   const { items, total } = await groupsService.list({
     search: req.query.search,
     teacherId: req.query.teacherId,
+    archived: req.query.archived === "1" || req.query.archived === "true",
     page,
     limit,
   });

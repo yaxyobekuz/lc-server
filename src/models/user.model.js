@@ -25,9 +25,6 @@ const userSchema = new mongoose.Schema(
     gender: { type: String, enum: ["male", "female"], default: null },
 
     // Faqat student rolidagi maydonlar
-    address: { type: String, trim: true, default: "" },
-    parentName: { type: String, trim: true, default: "" },
-    parentPhone: { type: String, trim: true, default: "" },
     enrolledAt: { type: Date, default: null },
     // O'quvchi oldindan/ortiqcha to'lagan pul (keyingi oy hisoblaridan yechiladi)
     balance: { type: Number, default: 0, min: 0 },

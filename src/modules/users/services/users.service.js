@@ -8,22 +8,21 @@ import { normalizePhone } from "../../../utils/phone.js";
 import { hashPassword } from "../../../helpers/password.helper.js";
 import { buildUserProfile } from "../../../helpers/userProfile.helper.js";
 
-const STUDENT_ONLY_FIELDS = [
-  "address",
-  "parentName",
-  "parentPhone",
-  "enrolledAt",
-  "leadSource",
-  "leaveStatus",
-];
+const STUDENT_ONLY_FIELDS = ["enrolledAt", "leadSource", "leaveStatus"];
 const TEACHER_ONLY_FIELDS = [
   "hiredAt",
   "teacherAbsenceMode",
   "teacherAbsenceAmount",
 ];
 
-export const list = async ({ role, search, page = 1, limit = 20 }) => {
-  const filter = {};
+export const list = async ({
+  role,
+  search,
+  archived = false,
+  page = 1,
+  limit = 20,
+}) => {
+  const filter = { isActive: archived ? false : true };
   if (role) filter.role = role;
 
   if (search && search.trim()) {
@@ -99,15 +98,6 @@ export const update = async (id, body) => {
 
   // Student-specific
   if (user.role === ROLES.STUDENT) {
-    if (body.address !== undefined) user.address = body.address || "";
-    if (body.parentName !== undefined) user.parentName = body.parentName || "";
-    if (body.parentPhone !== undefined) {
-      const p = body.parentPhone ? normalizePhone(body.parentPhone) : "";
-      if (body.parentPhone && !p) {
-        throw new ApiError(400, "Ota-ona telefon raqami noto'g'ri");
-      }
-      user.parentPhone = p || "";
-    }
     if (body.enrolledAt !== undefined) {
       const d = body.enrolledAt ? new Date(body.enrolledAt) : null;
       if (d && d.getTime() > Date.now()) {
@@ -185,6 +175,13 @@ export const softRemove = async (id) => {
     throw new ApiError(403, "Owner foydalanuvchini o'chirib bo'lmaydi");
   }
   user.isActive = false;
+  await user.save();
+  return user;
+};
+
+export const restore = async (id) => {
+  const user = await getById(id);
+  user.isActive = true;
   await user.save();
   return user;
 };

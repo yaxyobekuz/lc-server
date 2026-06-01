@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import defaultFlagPlugin from "./plugins/defaultFlag.plugin.js";
 
 const paymentMethodSchema = new mongoose.Schema(
   {
@@ -20,6 +21,8 @@ paymentMethodSchema.index(
     partialFilterExpression: { isActive: true, code: { $type: "string", $ne: "" } },
   },
 );
+
+paymentMethodSchema.plugin(defaultFlagPlugin);
 
 paymentMethodSchema.set("toJSON", {
   transform: (_doc, ret) => {

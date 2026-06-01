@@ -21,6 +21,7 @@ import getById from "./handlers/getById.handler.js";
 import create from "./handlers/create.handler.js";
 import update from "./handlers/update.handler.js";
 import remove from "./handlers/remove.handler.js";
+import restore from "./handlers/restore.handler.js";
 import addStudent from "./handlers/addStudent.handler.js";
 import removeStudent from "./handlers/removeStudent.handler.js";
 import transferStudent from "./handlers/transferStudent.handler.js";
@@ -69,6 +70,13 @@ router.delete(
   requirePermission(PERMISSIONS.GROUPS_DELETE),
   validate(idParamSchema),
   remove,
+);
+router.post(
+  "/:id/restore",
+  requireAuth,
+  requirePermission(PERMISSIONS.GROUPS_DELETE),
+  validate(idParamSchema),
+  restore,
 );
 
 router.post(

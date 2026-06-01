@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import defaultFlagPlugin from "./plugins/defaultFlag.plugin.js";
 
 // Migratsiya/seed uchun standart xarajat turlari (eski enum kategoriyalardan ko'chiriladi)
 export const DEFAULT_EXPENSE_TYPES = ["Oylik", "Ijara", "Kommunal", "Reklama", "Boshqa"];
@@ -15,6 +16,8 @@ expenseTypeSchema.index(
   { name: 1 },
   { unique: true, partialFilterExpression: { isActive: true } },
 );
+
+expenseTypeSchema.plugin(defaultFlagPlugin);
 
 expenseTypeSchema.set("toJSON", {
   transform: (_doc, ret) => {

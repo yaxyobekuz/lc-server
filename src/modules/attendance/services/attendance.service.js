@@ -24,7 +24,6 @@ const STUDENT_PROJECTION = {
   lastName: 1,
   username: 1,
   phone: 1,
-  parentPhone: 1,
 };
 
 const ensureGroup = async (groupId) => {
@@ -172,6 +171,11 @@ export const bulkRecord = async (
 
   const date = toUtcMidnight(dateInput);
   const dKey = dateKeyOf(date);
+
+  // Kelajak sana uchun davomat belgilanmaydi (o'tmishni tuzatish mumkin)
+  if (date.getTime() > toUtcMidnight(new Date()).getTime()) {
+    throw new ApiError(400, "Kelajak kun uchun davomat belgilab bo'lmaydi");
+  }
 
   // Faqat guruhning dars kunlari belgilanadi (dars vaqti o'tgan/oldin — farqi yo'q)
   const isClassDay = (group.schedule || []).some(

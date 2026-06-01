@@ -1,13 +1,7 @@
 import { z } from "zod";
 import { ROLES } from "../../../constants/roles.js";
 
-const STUDENT_FIELDS = [
-  "address",
-  "parentName",
-  "parentPhone",
-  "enrolledAt",
-  "leadSource",
-];
+const STUDENT_FIELDS = ["enrolledAt", "leadSource"];
 const TEACHER_FIELDS = ["hiredAt"];
 
 export const registerUserSchema = z.object({
@@ -24,9 +18,6 @@ export const registerUserSchema = z.object({
       gender: z.enum(["male", "female"]).nullable().optional(),
 
       // Student-only
-      address: z.string().max(200).optional(),
-      parentName: z.string().max(120).optional(),
-      parentPhone: z.string().optional(),
       enrolledAt: z.union([z.coerce.date(), z.null()]).optional(),
       leadSource: z.string().min(1).optional(),
 

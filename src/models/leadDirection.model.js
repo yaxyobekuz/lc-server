@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import defaultFlagPlugin from "./plugins/defaultFlag.plugin.js";
 
 const leadDirectionSchema = new mongoose.Schema(
   {
@@ -13,6 +14,8 @@ leadDirectionSchema.index(
   { name: 1 },
   { unique: true, partialFilterExpression: { isActive: true } },
 );
+
+leadDirectionSchema.plugin(defaultFlagPlugin);
 
 leadDirectionSchema.set("toJSON", {
   transform: (_doc, ret) => {

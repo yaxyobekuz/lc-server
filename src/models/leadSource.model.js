@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import defaultFlagPlugin from "./plugins/defaultFlag.plugin.js";
 
 const leadSourceSchema = new mongoose.Schema(
   {
@@ -7,6 +8,8 @@ const leadSourceSchema = new mongoose.Schema(
   },
   { timestamps: true },
 );
+
+leadSourceSchema.plugin(defaultFlagPlugin);
 
 // Faqat active manbalar orasida nom unique bo'lishi uchun partial index
 leadSourceSchema.index(

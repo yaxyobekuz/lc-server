@@ -17,7 +17,10 @@ export const list = async ({
 
   const skip = (page - 1) * limit;
   const [items, total] = await Promise.all([
-    LeadDirection.find(filter).sort({ name: 1 }).skip(skip).limit(limit),
+    LeadDirection.find(filter)
+      .sort({ isDefault: -1, name: 1 })
+      .skip(skip)
+      .limit(limit),
     LeadDirection.countDocuments(filter),
   ]);
 
@@ -66,5 +69,11 @@ export const softRemove = async (id) => {
   const doc = await getById(id);
   doc.isActive = false;
   await doc.save();
+  return doc;
+};
+
+export const setDefault = async (id) => {
+  const doc = await LeadDirection.setDefault(id);
+  if (!doc) throw new ApiError(404, "Yo'nalish topilmadi");
   return doc;
 };

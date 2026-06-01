@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import defaultFlagPlugin from "./plugins/defaultFlag.plugin.js";
 
 const discountKindSchema = new mongoose.Schema(
   {
@@ -12,6 +13,8 @@ discountKindSchema.index(
   { name: 1 },
   { unique: true, partialFilterExpression: { isActive: true } },
 );
+
+discountKindSchema.plugin(defaultFlagPlugin);
 
 discountKindSchema.set("toJSON", {
   transform: (_doc, ret) => {

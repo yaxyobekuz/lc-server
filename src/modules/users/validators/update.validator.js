@@ -16,9 +16,6 @@ export const updateSchema = z.object({
       gender: z.enum(["male", "female"]).nullable().optional(),
 
       // Student-only
-      address: z.string().max(200).optional(),
-      parentName: z.string().max(120).optional(),
-      parentPhone: z.string().optional(),
       enrolledAt: z.union([z.coerce.date(), z.null()]).optional(),
       leadSource: z.union([z.string().min(1), z.null()]).optional(),
 

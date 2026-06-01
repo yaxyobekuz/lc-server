@@ -7,6 +7,7 @@ const list = asyncHandler(async (req, res) => {
   const { items, total } = await usersService.list({
     role: req.query.role,
     search: req.query.search,
+    archived: req.query.archived === "1" || req.query.archived === "true",
     page,
     limit,
   });

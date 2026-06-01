@@ -17,7 +17,10 @@ export const list = async ({
 
   const skip = (page - 1) * limit;
   const [items, total] = await Promise.all([
-    LeadSource.find(filter).sort({ name: 1 }).skip(skip).limit(limit),
+    LeadSource.find(filter)
+      .sort({ isDefault: -1, name: 1 })
+      .skip(skip)
+      .limit(limit),
     LeadSource.countDocuments(filter),
   ]);
 
@@ -63,5 +66,12 @@ export const softRemove = async (id) => {
   const doc = await getById(id);
   doc.isActive = false;
   await doc.save();
+  return doc;
+};
+
+// Tanlangan manbani "asosiy" (default) qiladi; qolganlaridan default olinadi.
+export const setDefault = async (id) => {
+  const doc = await LeadSource.setDefault(id);
+  if (!doc) throw new ApiError(404, "Lead manba topilmadi");
   return doc;
 };

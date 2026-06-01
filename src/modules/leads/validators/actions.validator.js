@@ -46,11 +46,7 @@ export const convertSchema = z.object({
     username: z.string().min(3).max(40),
     phone: z.string().min(5),
     password: z.string().min(6),
-    birthDate: z.coerce.date().nullable().optional(),
     gender: z.enum(["male", "female"]).nullable().optional(),
-    address: z.string().max(200).optional(),
-    parentName: z.string().max(120).optional(),
-    parentPhone: z.string().optional(),
     enrolledAt: z.coerce.date().nullable().optional(),
   }),
 });

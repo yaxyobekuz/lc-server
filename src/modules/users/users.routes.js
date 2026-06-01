@@ -12,6 +12,7 @@ import list from "./handlers/list.handler.js";
 import getById from "./handlers/getById.handler.js";
 import update from "./handlers/update.handler.js";
 import remove from "./handlers/remove.handler.js";
+import restore from "./handlers/restore.handler.js";
 import groupHistory from "./handlers/groupHistory.handler.js";
 import getPassword from "./handlers/getPassword.handler.js";
 import setPassword from "./handlers/setPassword.handler.js";
@@ -66,6 +67,13 @@ router.delete(
   requireRole(ROLES.OWNER),
   validate(idSchema),
   remove,
+);
+router.post(
+  "/:id/restore",
+  requireAuth,
+  requireRole(ROLES.OWNER),
+  validate(idSchema),
+  restore,
 );
 
 export default router;

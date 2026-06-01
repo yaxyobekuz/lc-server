@@ -32,7 +32,10 @@ export const list = async ({
   }
   const skip = (page - 1) * limit;
   const [items, total] = await Promise.all([
-    ExpenseType.find(filter).sort({ name: 1 }).skip(skip).limit(limit),
+    ExpenseType.find(filter)
+      .sort({ isDefault: -1, name: 1 })
+      .skip(skip)
+      .limit(limit),
     ExpenseType.countDocuments(filter),
   ]);
   return { items, total, page, limit };
@@ -75,5 +78,11 @@ export const softRemove = async (id) => {
   const doc = await getById(id);
   doc.isActive = false;
   await doc.save();
+  return doc;
+};
+
+export const setDefault = async (id) => {
+  const doc = await ExpenseType.setDefault(id);
+  if (!doc) throw new ApiError(404, "Xarajat turi topilmadi");
   return doc;
 };

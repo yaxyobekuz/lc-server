@@ -15,6 +15,7 @@ import getById from "./handlers/getById.handler.js";
 import create from "./handlers/create.handler.js";
 import update from "./handlers/update.handler.js";
 import remove from "./handlers/remove.handler.js";
+import restore from "./handlers/restore.handler.js";
 import stats from "./handlers/stats.handler.js";
 
 const router = Router();
@@ -60,6 +61,13 @@ router.delete(
   requirePermission(PERMISSIONS.EXPENSES_MANAGE),
   validate(idSchema),
   remove,
+);
+router.post(
+  "/:id/restore",
+  requireAuth,
+  requirePermission(PERMISSIONS.EXPENSES_MANAGE),
+  validate(idSchema),
+  restore,
 );
 
 export default router;

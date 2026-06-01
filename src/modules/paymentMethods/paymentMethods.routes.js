@@ -16,6 +16,7 @@ import getById from "./handlers/getById.handler.js";
 import create from "./handlers/create.handler.js";
 import update from "./handlers/update.handler.js";
 import remove from "./handlers/remove.handler.js";
+import setDefault from "./handlers/setDefault.handler.js";
 
 const router = Router();
 
@@ -56,6 +57,14 @@ router.delete(
   requirePermission(PERMISSIONS.PAYMENT_METHODS_MANAGE),
   validate(idSchema),
   remove,
+);
+router.post(
+  "/:id/set-default",
+  requireAuth,
+  requireRole(ROLES.OWNER),
+  requirePermission(PERMISSIONS.PAYMENT_METHODS_MANAGE),
+  validate(idSchema),
+  setDefault,
 );
 
 export default router;
