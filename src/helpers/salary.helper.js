@@ -4,7 +4,7 @@ import Payment from "../models/payment.model.js";
 import Invoice from "../models/invoice.model.js";
 import GroupMembership from "../models/groupMembership.model.js";
 import ApiError from "../utils/ApiError.js";
-import { getClassDaysInRange } from "./attendance.helper.js";
+import { getClassDaysInRange, toUtcMidnight } from "./attendance.helper.js";
 
 // Guruhdagi faol o'quvchilar soni (per_student hisob uchun)
 const countActiveStudents = async (groupId) =>
@@ -80,7 +80,16 @@ export const computeGroupBreakdown = async (rate, group, period) => {
   // O'qituvchining shu oydagi faol davri: [effectiveFrom, effectiveTo) ∩ oy.
   // Almashtirilgan o'qituvchi faqat o'zi ishlagan davr darslari uchun pul oladi.
   const effFrom = rate.effectiveFrom ? new Date(rate.effectiveFrom) : start;
-  const effToExcl = rate.effectiveTo ? new Date(rate.effectiveTo) : end;
+  let effToExcl = rate.effectiveTo ? new Date(rate.effectiveTo) : end;
+  // Guruh yakunlangan/arxivlangan bo'lsa — finishedAt'dan keyin maosh hisoblanmaydi.
+  // (finishedAt inclusive → eksklyuziv chegara = +1 kun). Maxraj (monthSessions) o'zgarmaydi,
+  // shu sababli yakunlangan oy proratsiya bo'ladi, keyingi oylar 0 bo'ladi.
+  if (group.finishedAt) {
+    const groupEndExcl = new Date(
+      toUtcMidnight(group.finishedAt).getTime() + 24 * 60 * 60 * 1000,
+    );
+    if (groupEndExcl < effToExcl) effToExcl = groupEndExcl;
+  }
   const rangeStart = effFrom > start ? effFrom : start;
   const rangeEndExcl = effToExcl < end ? effToExcl : end;
   const isActiveInRange = rangeStart < rangeEndExcl;

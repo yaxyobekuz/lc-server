@@ -2,11 +2,39 @@ import TeacherAttendance, {
   TEACHER_ATTENDANCE_STATUSES,
 } from "../../../models/teacherAttendance.model.js";
 import User from "../../../models/user.model.js";
+import Group from "../../../models/group.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import { ROLES } from "../../../constants/roles.js";
-import { dateKeyOf } from "../../../helpers/attendance.helper.js";
+import { dateKeyOf, dayOfWeekOf } from "../../../helpers/attendance.helper.js";
+import {
+  setAbsent as setGroupTeacherAbsent,
+  setPresent as setGroupTeacherPresent,
+} from "../../attendance/services/teacherAbsence.service.js";
 
 const TEACHER_PROJECTION = { firstName: 1, lastName: 1, username: 1 };
+
+const isClassDayFor = (group, dow) =>
+  (group.schedule || []).some((s) => s.day === dow);
+
+// O'qituvchi kunlik davomatini uning barcha (faol, yakunlanmagan) guruhlaridagi
+// "o'qituvchi keldi/kelmadi" bilan moslaydi. Kelmadi → dars kuni bo'lgan guruhlarga
+// "kelmadi" yoziladi; keldi → o'sha guruhlardagi belgilar olib tashlanadi.
+const syncTeacherGroupAbsences = async (teacherId, date, isAbsent, currentUser) => {
+  const dow = dayOfWeekOf(date);
+  const groups = await Group.find({
+    teachers: teacherId,
+    isActive: true,
+    status: { $ne: "finished" },
+  }).select("schedule teachers");
+  for (const g of groups) {
+    if (isAbsent) {
+      if (!isClassDayFor(g, dow)) continue; // dars kuni bo'lmasa o'tkazib yuboramiz
+      await setGroupTeacherAbsent(g._id, date, currentUser);
+    } else {
+      await setGroupTeacherPresent(g._id, date);
+    }
+  }
+};
 
 // Sana uchun barcha faol o'qituvchilar + holati (yozuv bo'lmasa default "keldi")
 export const listForDate = async (dateInput) => {
@@ -51,6 +79,8 @@ export const bulkRecord = async (dateInput, items, currentUser) => {
     if (!TEACHER_ATTENDANCE_STATUSES.includes(it.status)) continue;
     if (it.status === "present") {
       await TeacherAttendance.deleteOne({ teacher: it.teacherId, dateKey });
+      // Keldi → barcha guruhlardagi "kelmadi" belgilarini olib tashlaymiz
+      await syncTeacherGroupAbsences(it.teacherId, date, false, currentUser);
       present += 1;
     } else {
       await TeacherAttendance.findOneAndUpdate(
@@ -66,6 +96,8 @@ export const bulkRecord = async (dateInput, items, currentUser) => {
         },
         { upsert: true, new: true, setDefaultsOnInsert: true },
       );
+      // Kelmadi/sababli → o'qituvchining dars kuni bo'lgan barcha guruhlari "kelmadi"
+      await syncTeacherGroupAbsences(it.teacherId, date, true, currentUser);
       marked += 1;
     }
   }

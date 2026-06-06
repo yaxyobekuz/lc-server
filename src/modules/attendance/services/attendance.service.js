@@ -16,6 +16,7 @@ import {
   toUtcMidnight,
   getClassDaysInRange,
   defaultStatusFor,
+  withinCourseBounds,
 } from "../../../helpers/attendance.helper.js";
 import { listForTeacher } from "../../groups/services/groups.service.js";
 
@@ -48,12 +49,13 @@ export const listForGroupOnDate = async (groupId, dateInput) => {
   const slots = (group.schedule || [])
     .filter((s) => s.day === dow)
     .map((s) => ({ startTime: s.startTime, endTime: s.endTime }));
-  const isClassDay = slots.length > 0;
+  const isClassDay = slots.length > 0 && withinCourseBounds(group, date);
 
-  // Active memberships shu sanada (joinedAt <= date && (leftAt is null || leftAt > date))
+  // Active memberships shu sanada — joinedAt kun ichida bo'lsa ham qamrab olish uchun kun oxiri bilan solishtiramiz
+  const dayEnd = new Date(date.getTime() + 24 * 60 * 60 * 1000);
   const memberships = await GroupMembership.find({
     group: groupId,
-    joinedAt: { $lte: date },
+    joinedAt: { $lt: dayEnd },
     $or: [{ leftAt: null }, { leftAt: { $gt: date } }],
   }).populate("student", STUDENT_PROJECTION);
 
@@ -253,8 +255,13 @@ const buildStudentClassDays = async (studentId, rangeStart, rangeEnd) => {
     // Shu membershipning effective range'i oraliq ichida
     const effFrom =
       m.joinedAt > rangeStart ? toUtcMidnight(m.joinedAt) : rangeStart;
-    const effTo =
+    let effTo =
       m.leftAt && m.leftAt < rangeEnd ? toUtcMidnight(m.leftAt) : rangeEnd;
+    // Guruh yakunlangan bo'lsa — finishedAt'dan keyin dars kuni yo'q
+    if (m.group.finishedAt) {
+      const fin = toUtcMidnight(m.group.finishedAt);
+      if (fin < effTo) effTo = fin;
+    }
 
     const classDays = getClassDaysInRange(m.group, effFrom, effTo);
     const days = classDays.map((cd) => {
@@ -329,7 +336,7 @@ export const getGroupMonthly = async (groupId, { year, month }) => {
       date: new Date(cur),
       dateKey: dKey,
       dayOfWeek: dow,
-      isClassDay: scheduleDays.has(dow),
+      isClassDay: scheduleDays.has(dow) && withinCourseBounds(group, cur),
     });
     dateKeys.push(dKey);
     cur.setUTCDate(cur.getUTCDate() + 1);
@@ -448,7 +455,11 @@ const computeClassDays = ({ memberships, exemptions, from, to }) => {
   for (const m of memberships) {
     if (!m.group) continue;
     const effFrom = m.joinedAt > from ? m.joinedAt : from;
-    const effTo = m.leftAt && m.leftAt < to ? m.leftAt : to;
+    let effTo = m.leftAt && m.leftAt < to ? m.leftAt : to;
+    if (m.group.finishedAt) {
+      const fin = toUtcMidnight(m.group.finishedAt);
+      if (fin < effTo) effTo = fin;
+    }
     const classDays = getClassDaysInRange(m.group, effFrom, effTo);
     for (const cd of classDays) {
       total += 1;

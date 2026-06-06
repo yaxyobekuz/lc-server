@@ -1,55 +1,31 @@
 import TeacherAbsence from "../../../models/teacherAbsence.model.js";
 import Group from "../../../models/group.model.js";
-import GroupMembership from "../../../models/groupMembership.model.js";
-import User from "../../../models/user.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import {
   toUtcMidnight,
   dateKeyOf,
   dayOfWeekOf,
 } from "../../../helpers/attendance.helper.js";
-import { computePerLessonAmount } from "../../../helpers/billing.helper.js";
-import { get as getSettings } from "../../paymentSettings/services/paymentSettings.service.js";
-import {
-  ensureInvoiceFor,
-  applyAbsenceDeduction,
-  reverseAbsenceDeduction,
-} from "../../invoices/services/invoices.service.js";
-
-const periodOf = (date) => {
-  const d = new Date(date);
-  return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1 };
-};
 
 const isClassDayFor = (group, dow) =>
   (group.schedule || []).some((s) => s.day === dow);
 
-// Guruhga biriktirilgan o'qituvchi (jarima override'i shu o'qituvchiniki bo'lishi mumkin)
-const loadTeacher = (group) =>
-  group.teachers?.[0]
-    ? User.findById(group.teachers[0]).select("teacherAbsenceMode teacherAbsenceAmount")
-    : null;
-
-// O'qituvchi shu kuni keldimi + 1 dars haqi preview
+// O'qituvchi shu kuni keldimi (faqat fakt — o'quvchilar hisobiga ta'sir qilmaydi)
 export const getStatus = async (groupId, dateInput) => {
   const group = await Group.findById(groupId);
   if (!group) throw new ApiError(404, "Guruh topilmadi");
   const date = toUtcMidnight(dateInput);
   const dKey = dateKeyOf(date);
-  const settings = await getSettings();
-  const teacher = await loadTeacher(group);
-  const perStudentAmount = computePerLessonAmount(group, periodOf(date), settings, teacher);
   const absence = await TeacherAbsence.findOne({ group: groupId, dateKey: dKey });
   return {
     dateKey: dKey,
     isClassDay: isClassDayFor(group, dayOfWeekOf(date)),
     present: !absence,
-    perStudentAmount,
-    affectedCount: absence?.applications?.length || 0,
   };
 };
 
-// O'qituvchi kelmadi → har bir faol o'quvchining shu oygi hisobidan 1 dars haqi ayiriladi
+// O'qituvchi kelmadi — faqat belgilab qo'yiladi. O'quvchilar to'loviga TEGMAYDI.
+// Jarima kerak bo'lsa, admin o'qituvchi maoshiga qo'lda yozadi (individual).
 export const setAbsent = async (groupId, dateInput, currentUser) => {
   const group = await Group.findById(groupId);
   if (!group) throw new ApiError(404, "Guruh topilmadi");
@@ -62,51 +38,21 @@ export const setAbsent = async (groupId, dateInput, currentUser) => {
   const existing = await TeacherAbsence.findOne({ group: groupId, dateKey: dKey });
   if (existing) return existing;
 
-  const settings = await getSettings();
-  const teacher = await loadTeacher(group);
-  const period = periodOf(date);
-  const perStudent = computePerLessonAmount(group, period, settings, teacher);
-
-  const memberships = await GroupMembership.find({
-    group: groupId,
-    joinedAt: { $lte: date },
-    $or: [{ leftAt: null }, { leftAt: { $gt: date } }],
-  });
-
-  const applications = [];
-  if (perStudent > 0) {
-    for (const m of memberships) {
-      const invoice = await ensureInvoiceFor(m.student, groupId, m._id, period, {
-        createdBy: currentUser._id,
-      });
-      if (!invoice) continue;
-      const res = await applyAbsenceDeduction(invoice._id, perStudent);
-      applications.push({ student: m.student, invoice: invoice._id, ...res });
-    }
-  }
-
   return TeacherAbsence.create({
     group: groupId,
     teacher: group.teachers?.[0] || null,
     date,
     dateKey: dKey,
-    perStudentAmount: perStudent,
-    applications,
     recordedBy: currentUser._id,
   });
 };
 
-// O'qituvchi keldi (orqaga qaytarish) → barcha chegirmalar bekor qilinadi
+// O'qituvchi keldi — belgini olib tashlaymiz.
 export const setPresent = async (groupId, dateInput) => {
   const date = toUtcMidnight(dateInput);
   const dKey = dateKeyOf(date);
-  const absence = await TeacherAbsence.findOne({ group: groupId, dateKey: dKey });
-  if (!absence) return { removed: false };
-  for (const app of absence.applications || []) {
-    await reverseAbsenceDeduction(app.invoice, app);
-  }
-  await TeacherAbsence.deleteOne({ _id: absence._id });
-  return { removed: true };
+  const res = await TeacherAbsence.deleteOne({ group: groupId, dateKey: dKey });
+  return { removed: res.deletedCount > 0 };
 };
 
 export const toggle = async (groupId, dateInput, present, currentUser) =>

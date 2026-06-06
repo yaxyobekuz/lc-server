@@ -13,6 +13,7 @@ export const updateSchema = z.object({
       percentageRate: z.coerce.number().min(0).max(100).optional(),
       amountPerStudent: z.coerce.number().min(0).optional(),
       minMonthlyAmount: z.coerce.number().min(0).optional(),
+      effectiveFrom: z.coerce.date().optional(),
       notes: z.string().max(300).optional(),
     })
     .refine((b) => Object.keys(b).length > 0, {

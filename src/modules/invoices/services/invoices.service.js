@@ -9,6 +9,7 @@ import { ROLES } from "../../../constants/roles.js";
 import {
   computeDiscountAmount,
   computeDueDate,
+  proratedBase,
 } from "../../../helpers/billing.helper.js";
 import { get as getSettings } from "../../paymentSettings/services/paymentSettings.service.js";
 
@@ -52,7 +53,7 @@ export const ensureInvoiceFor = async (
   groupId,
   membershipId,
   { year, month },
-  { createdBy = null } = {},
+  { createdBy = null, effectiveEnd = null } = {},
 ) => {
   ensurePeriod({ year, month });
 
@@ -68,7 +69,10 @@ export const ensureInvoiceFor = async (
   const group = await Group.findById(groupId);
   if (!group) throw new ApiError(404, "Guruh topilmadi");
 
-  const baseAmount = Number(group.monthlyPrice) || 0;
+  // effectiveEnd berilsa (o'quvchi oy o'rtasida chiqdi/arxivlandi) — o'qigan qismiga prorate
+  const baseAmount = effectiveEnd
+    ? proratedBase(group, { year, month }, effectiveEnd)
+    : Number(group.monthlyPrice) || 0;
   const { amount: discountAmount, snapshot } = await computeDiscountAmount(
     studentId,
     baseAmount,
@@ -116,24 +120,34 @@ export const ensureInvoiceFor = async (
 export const generateForPeriod = async ({ year, month }, { createdBy = null } = {}) => {
   ensurePeriod({ year, month });
 
-  // Active membership: leftAt === null (yoki shu oy tugagandan keyin)
-  // O'quvchi 25-noyabrda qo'shilsa ham, dekabr uchun invoice yaratiladi (next-month).
-  // Joriy oy uchun: faqat oy oxirigacha active bo'lganlar.
+  // Shu oyda faol bo'lgan a'zoliklar: oy oxirigacha qo'shilgan VA oy boshidan keyin chiqqan (yoki hali chiqmagan).
+  // leftAt oy ichida bo'lsa — o'qigan qismiga prorate (qarz). Arxivlangan (isActive=false) o'quvchi o'tkazib yuboriladi
+  // (uning yakuniy hisobi arxivlash paytida reconcileOnLeave bilan yoziladi).
+  const monthStart = startOfMonth(year, month);
   const periodEnd = endOfMonth(year, month);
   const memberships = await GroupMembership.find({
-    $or: [{ leftAt: null }, { leftAt: { $gt: periodEnd } }],
     joinedAt: { $lte: periodEnd },
-  }).populate({
-    path: "group",
-    match: { isActive: true },
-  });
+    $or: [{ leftAt: null }, { leftAt: { $gte: monthStart } }],
+  })
+    .populate({ path: "group", match: { isActive: true } })
+    .populate({ path: "student", select: { isActive: 1 } });
 
   let created = 0;
   let skipped = 0;
   for (const m of memberships) {
-    if (!m.group) continue;
+    if (!m.group || !m.student) continue;
+    if (m.student.isActive === false) {
+      skipped += 1;
+      continue;
+    }
+    // Guruh yakunlangan/arxivlangan bo'lsa: oy boshidan oldin tugagan bo'lsa — yozilmaydi
+    const groupFin = m.group.finishedAt ? new Date(m.group.finishedAt) : null;
+    if (groupFin && groupFin < monthStart) {
+      skipped += 1;
+      continue;
+    }
     const before = await Invoice.findOne({
-      student: m.student,
+      student: m.student._id,
       group: m.group._id,
       "period.year": year,
       "period.month": month,
@@ -143,11 +157,87 @@ export const generateForPeriod = async ({ year, month }, { createdBy = null } = 
       skipped += 1;
       continue;
     }
-    await ensureInvoiceFor(m.student, m.group._id, m._id, { year, month }, { createdBy });
+    // O'qigan qism oxiri: a'zolik chiqishi yoki guruh tugashidan eng erkini (oy ichida bo'lsa)
+    let effectiveEnd = m.leftAt && m.leftAt < periodEnd ? new Date(m.leftAt) : null;
+    if (groupFin && groupFin < periodEnd) {
+      effectiveEnd = effectiveEnd && effectiveEnd < groupFin ? effectiveEnd : groupFin;
+    }
+    await ensureInvoiceFor(m.student._id, m.group._id, m._id, { year, month }, {
+      createdBy,
+      effectiveEnd,
+    });
     created += 1;
   }
 
   return { created, skipped, total: memberships.length };
+};
+
+// O'quvchi guruhdan chiqdi/arxivlandi — joriy oy hisobini o'qigan qismiga (prorate) moslaydi.
+// Mavjud to'lanmagan/qisman hisob kamaytiriladi; ortiqcha to'langan bo'lsa farq balansga qaytariladi.
+export const reconcileOnLeave = async (
+  studentId,
+  group,
+  membershipId,
+  { year, month },
+  effectiveEnd,
+  { createdBy = null } = {},
+) => {
+  ensurePeriod({ year, month });
+  if (!group) return null;
+
+  const newBase = proratedBase(group, { year, month }, effectiveEnd);
+  const { amount: discountAmount, snapshot } = await computeDiscountAmount(
+    studentId,
+    newBase,
+    undefined,
+    group._id,
+  );
+  const newTotalDue = Math.max(0, newBase - discountAmount);
+
+  const invoice = await Invoice.findOne({
+    student: studentId,
+    group: group._id,
+    "period.year": year,
+    "period.month": month,
+    status: NON_CANCELLED,
+  });
+
+  // Hisob hali yo'q — o'qigan qismi bor bo'lsa, prorate bilan yaratamiz
+  if (!invoice) {
+    if (newBase <= 0) return null;
+    return ensureInvoiceFor(studentId, group._id, membershipId, { year, month }, {
+      createdBy,
+      effectiveEnd,
+    });
+  }
+
+  invoice.baseAmount = newBase;
+  invoice.discountAmount = discountAmount;
+  invoice.discountSnapshot = snapshot;
+  invoice.totalDue = newTotalDue;
+
+  // Ortiqcha to'langan bo'lsa — farqni o'quvchi balansiga qaytaramiz
+  if (invoice.paidAmount > newTotalDue) {
+    const excess = invoice.paidAmount - newTotalDue;
+    const student = await User.findById(studentId);
+    if (student) {
+      student.balance = (Number(student.balance) || 0) + excess;
+      await student.save();
+    }
+    invoice.paidAmount = newTotalDue;
+    if (invoice.appliedBalance) {
+      invoice.appliedBalance = Math.min(invoice.appliedBalance, newTotalDue);
+    }
+  }
+
+  invoice.status =
+    invoice.paidAmount >= newTotalDue
+      ? "paid"
+      : invoice.paidAmount > 0
+        ? "partial"
+        : "unpaid";
+  await invoice.save();
+  return invoice;
 };
 
 const STUDENT_PROJECTION = {

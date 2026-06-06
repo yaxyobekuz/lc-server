@@ -149,7 +149,7 @@ export const update = async (id, body, currentUser) => {
   return TeacherGroupRate.create({
     ...buildPayload(merged),
     isActive: true,
-    effectiveFrom: new Date(),
+    effectiveFrom: body.effectiveFrom ? new Date(body.effectiveFrom) : new Date(),
     createdBy: currentUser?._id || null,
   });
 };

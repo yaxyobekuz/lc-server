@@ -36,15 +36,18 @@ const iterateDays = function* (fromDate, toDate) {
   }
 };
 
-// Guruh schedule asosida diapazondagi class kunlar
+// Guruh schedule asosida diapazondagi class kunlar.
+// group.startDate bo'lsa — undan oldingi kunlar dars kuni hisoblanmaydi.
 export const getClassDaysInRange = (group, fromDate, toDate) => {
   const dayMap = new Map();
   for (const item of group?.schedule || []) {
     if (!dayMap.has(item.day)) dayMap.set(item.day, []);
     dayMap.get(item.day).push({ startTime: item.startTime, endTime: item.endTime });
   }
+  const startTs = group?.startDate ? toUtcMidnight(group.startDate).getTime() : null;
   const result = [];
   for (const d of iterateDays(fromDate, toDate)) {
+    if (startTs !== null && d.getTime() < startTs) continue;
     const dow = dayOfWeekOf(d);
     const slots = dayMap.get(dow);
     if (!slots) continue;
@@ -78,3 +81,11 @@ export const isExemptOn = (exemptions, date, dayOfWeek) => {
 
 export const defaultStatusFor = (exemptions, date, dayOfWeek) =>
   isExemptOn(exemptions, date, dayOfWeek) ? "exempt" : null;
+
+// Sana kurs oralig'ida (startDate..finishedAt, ikkalasi inclusive) ekanligini tekshiradi
+export const withinCourseBounds = (group, date) => {
+  const t = toUtcMidnight(date).getTime();
+  if (group?.startDate && t < toUtcMidnight(group.startDate).getTime()) return false;
+  if (group?.finishedAt && t > toUtcMidnight(group.finishedAt).getTime()) return false;
+  return true;
+};

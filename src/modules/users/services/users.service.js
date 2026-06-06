@@ -7,6 +7,8 @@ import { ROLES } from "../../../constants/roles.js";
 import { normalizePhone } from "../../../utils/phone.js";
 import { hashPassword } from "../../../helpers/password.helper.js";
 import { buildUserProfile } from "../../../helpers/userProfile.helper.js";
+import { toUtcMidnight } from "../../../helpers/attendance.helper.js";
+import { reconcileOnLeave } from "../../invoices/services/invoices.service.js";
 
 const STUDENT_ONLY_FIELDS = ["enrolledAt", "leadSource", "leaveStatus"];
 const TEACHER_ONLY_FIELDS = [
@@ -176,6 +178,26 @@ export const softRemove = async (id) => {
   }
   user.isActive = false;
   await user.save();
+
+  // O'quvchi arxivlansa — faol a'zoliklarni yopamiz va joriy oy hisobini o'qigan qismiga (qarz) moslaymiz.
+  // Arxivdan keyingi oylarga hisob umuman yozilmaydi (generateForPeriod isActive=false ni o'tkazib yuboradi).
+  if (user.role === ROLES.STUDENT) {
+    const today = toUtcMidnight(new Date());
+    const period = { year: today.getUTCFullYear(), month: today.getUTCMonth() + 1 };
+    const memberships = await GroupMembership.find({
+      student: user._id,
+      leftAt: null,
+    }).populate("group");
+    for (const m of memberships) {
+      m.leftAt = today;
+      m.leftReason = "removed";
+      await m.save();
+      if (m.group) {
+        await reconcileOnLeave(user._id, m.group, m._id, period, today, {});
+      }
+    }
+  }
+
   return user;
 };
 

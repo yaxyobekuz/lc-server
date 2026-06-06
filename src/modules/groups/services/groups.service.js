@@ -5,6 +5,8 @@ import User from "../../../models/user.model.js";
 import LeadDirection from "../../../models/leadDirection.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import { ROLES } from "../../../constants/roles.js";
+import { toUtcMidnight } from "../../../helpers/attendance.helper.js";
+import { reconcileOnLeave } from "../../invoices/services/invoices.service.js";
 
 export const safeUserProjection = {
   firstName: 1,
@@ -174,6 +176,8 @@ export const create = async (body) => {
     teachers: body.teachers || [],
     monthlyPrice: body.monthlyPrice ?? 0,
     direction: body.direction || null,
+    startDate: body.startDate ? toUtcMidnight(body.startDate) : null,
+    durationMonths: body.durationMonths ?? null,
     teacherAbsenceMode: body.teacherAbsenceMode ?? "inherit",
     teacherAbsenceAmount: body.teacherAbsenceAmount ?? 0,
   });
@@ -193,6 +197,12 @@ export const update = async (id, body) => {
   if (body.name !== undefined) group.name = body.name.trim();
   if (body.schedule !== undefined) group.schedule = body.schedule;
   if (body.monthlyPrice !== undefined) group.monthlyPrice = body.monthlyPrice;
+  if (body.startDate !== undefined) {
+    group.startDate = body.startDate ? toUtcMidnight(body.startDate) : null;
+  }
+  if (body.durationMonths !== undefined) {
+    group.durationMonths = body.durationMonths ?? null;
+  }
   if (body.teacherAbsenceMode !== undefined) {
     group.teacherAbsenceMode = body.teacherAbsenceMode;
   }
@@ -204,10 +214,23 @@ export const update = async (id, body) => {
   return group;
 };
 
+// Guruh tugatilganda/arxivlanganda — har bir faol o'quvchining joriy oy hisobini
+// o'qigan qismiga (prorate) moslaydi. A'zoliklar yopilmaydi (tiklash toza bo'lsin).
+const reconcileGroupInvoices = async (group, endDate) => {
+  const period = { year: endDate.getUTCFullYear(), month: endDate.getUTCMonth() + 1 };
+  const memberships = await GroupMembership.find({ group: group._id, leftAt: null });
+  for (const m of memberships) {
+    await reconcileOnLeave(m.student, group, m._id, period, endDate, {});
+  }
+};
+
 export const remove = async (id) => {
   const group = await ensureGroup(id);
   group.isActive = false;
+  // Arxivlangach to'lov/maosh to'xtashi uchun tugash sanasini belgilaymiz
+  if (!group.finishedAt) group.finishedAt = toUtcMidnight(new Date());
   await group.save();
+  await reconcileGroupInvoices(group, group.finishedAt);
   return group;
 };
 
@@ -215,12 +238,28 @@ export const restore = async (id) => {
   const group = await Group.findById(id);
   if (!group) throw new ApiError(404, "Guruh topilmadi");
   group.isActive = true;
+  group.status = "active";
+  group.finishedAt = null;
   await group.save();
   return group;
 };
 
-export const addStudent = async (groupId, studentId) => {
-  await ensureGroup(groupId);
+// Kursni yakunlash — status=finished + finishedAt; joriy oy hisoblari o'qigan qismiga prorate qilinadi.
+export const finish = async (id, { finishedAt } = {}) => {
+  const group = await ensureGroup(id);
+  const end = toUtcMidnight(finishedAt || new Date());
+  group.status = "finished";
+  group.finishedAt = end;
+  await group.save();
+  await reconcileGroupInvoices(group, end);
+  return group;
+};
+
+export const addStudent = async (groupId, studentId, { joinedAt } = {}) => {
+  const group = await ensureGroup(groupId);
+  if (group.status === "finished") {
+    throw new ApiError(400, "Yakunlangan guruhga o'quvchi qo'shib bo'lmaydi");
+  }
   await ensureStudent(studentId);
 
   const existing = await GroupMembership.findOne({
@@ -232,9 +271,11 @@ export const addStudent = async (groupId, studentId) => {
     throw new ApiError(409, "O'quvchi allaqachon shu guruhda");
   }
 
+  // Boshlash sanasi — default bugun, UTC midnight'ga normallashtirilgan
   const membership = await GroupMembership.create({
     group: groupId,
     student: studentId,
+    joinedAt: toUtcMidnight(joinedAt || new Date()),
   });
 
   // O'quvchi yana o'qishni boshladi — "chiqib ketgan" holatini tozalaymiz
@@ -283,6 +324,7 @@ const transferSequential = async (groupId, studentId, targetGroupId) => {
     const opened = await GroupMembership.create({
       group: targetGroupId,
       student: studentId,
+      joinedAt: toUtcMidnight(new Date()),
     });
     return { closed, opened };
   } catch (err) {
@@ -323,7 +365,7 @@ export const transferStudent = async (groupId, studentId, targetGroupId) => {
     if (!closed) throw new ApiError(404, "Faol a'zolik topilmadi");
 
     const [opened] = await GroupMembership.create(
-      [{ group: targetGroupId, student: studentId }],
+      [{ group: targetGroupId, student: studentId, joinedAt: toUtcMidnight(new Date()) }],
       { session },
     );
     await session.commitTransaction();

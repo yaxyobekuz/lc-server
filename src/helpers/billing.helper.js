@@ -10,6 +10,19 @@ export const lessonsInMonth = (group, year, month) => {
   return getClassDaysInRange(group, start, end).length;
 };
 
+// O'qigan qismi uchun prorate baza summasi: monthlyPrice × (oyBoshi..effectiveEnd darslari) / (butun oy darslari).
+// effectiveEnd berilmasa yoki oy oxiridan keyin bo'lsa — to'liq oy narxi.
+export const proratedBase = (group, { year, month }, effectiveEnd) => {
+  const base = Number(group?.monthlyPrice) || 0;
+  const monthStart = new Date(Date.UTC(year, month - 1, 1));
+  const monthEnd = new Date(Date.UTC(year, month, 0));
+  const total = getClassDaysInRange(group, monthStart, monthEnd).length;
+  if (total <= 0) return base; // jadval yo'q — prorate qilib bo'lmaydi
+  const end = effectiveEnd && effectiveEnd < monthEnd ? effectiveEnd : monthEnd;
+  const used = getClassDaysInRange(group, monthStart, end).length;
+  return Math.round((base * used) / total);
+};
+
 // O'qituvchi kelmagan kun jarimasi sozlamasi: o'qituvchi override → guruh override → global default.
 export const resolveAbsenceConfig = (group, settings, teacher = null) => {
   const tMode = teacher?.teacherAbsenceMode;

@@ -17,6 +17,8 @@ export const updateSchema = z.object({
         .min(0, "0 dan kichik bo'lmasin")
         .optional(),
       direction: z.string().min(1).nullable().optional(),
+      startDate: z.coerce.date().nullable().optional(),
+      durationMonths: z.coerce.number().min(0).nullable().optional(),
       teacherAbsenceMode: z
         .enum(["inherit", "auto", "fixed", "none"])
         .optional(),

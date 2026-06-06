@@ -34,6 +34,13 @@ const groupSchema = new mongoose.Schema(
       index: true,
     },
     monthlyPrice: { type: Number, default: 0, min: 0 },
+    // Dars boshlanish sanasi — undan oldin davomat/maosh hisoblanmaydi.
+    startDate: { type: Date, default: null },
+    // Kurs davomiyligi (oy) — ma'lumot uchun (mas. 10 oylik / 12 oylik).
+    durationMonths: { type: Number, default: null, min: 0 },
+    // Kurs holati. "finished" → davomat/to'lov/maosh to'xtaydi (finishedAt'dan keyin).
+    status: { type: String, enum: ["active", "finished"], default: "active", index: true },
+    finishedAt: { type: Date, default: null },
     // O'qituvchi kelmagan kun chegirmasi (guruh override). "inherit" → global sozlama.
     teacherAbsenceMode: {
       type: String,
