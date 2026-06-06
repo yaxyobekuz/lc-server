@@ -102,7 +102,7 @@ export const list = async ({
   page = 1,
   limit = 20,
 }) => {
-  const filter = {};
+  const filter = { isDeleted: { $ne: true } };
   if (status) filter.status = status;
   if (source) filter.source = source;
   if (direction) filter.direction = direction;
@@ -258,7 +258,7 @@ export const remove = async (id) => {
       "O'quvchiga aylangan lidni o'chirib bo'lmaydi (audit aloqasi yo'qoladi)",
     );
   }
-  await lead.deleteOne();
+  await lead.softDelete();
   return { ok: true };
 };
 

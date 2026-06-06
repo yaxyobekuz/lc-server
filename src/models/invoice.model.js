@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import softDeletePlugin from "./plugins/softDelete.plugin.js";
 
 export const INVOICE_STATUSES = ["unpaid", "partial", "paid", "cancelled"];
 export const REMINDER_KINDS = ["before", "due", "overdue"];
@@ -89,6 +90,8 @@ invoiceSchema.set("toJSON", {
     return ret;
   },
 });
+
+invoiceSchema.plugin(softDeletePlugin);
 
 const Invoice = mongoose.model("Invoice", invoiceSchema);
 

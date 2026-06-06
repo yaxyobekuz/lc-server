@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import softDeletePlugin from "./plugins/softDelete.plugin.js";
 
 const salaryPayoutSchema = new mongoose.Schema(
   {
@@ -40,6 +41,8 @@ salaryPayoutSchema.set("toJSON", {
     return ret;
   },
 });
+
+salaryPayoutSchema.plugin(softDeletePlugin);
 
 const SalaryPayout = mongoose.model("SalaryPayout", salaryPayoutSchema);
 

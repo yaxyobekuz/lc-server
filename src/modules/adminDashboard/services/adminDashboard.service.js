@@ -56,6 +56,7 @@ const sumPaymentsInRange = async (start, end) => {
     {
       $match: {
         paidAt: { $gte: start, $lte: end },
+        isDeleted: { $ne: true },
       },
     },
     {
@@ -77,7 +78,7 @@ const sumPaymentsInRange = async (start, end) => {
 const computeTodayAttendanceRate = async () => {
   const { start, end } = todayRange();
   const result = await Attendance.aggregate([
-    { $match: { date: { $gte: start, $lte: end } } },
+    { $match: { date: { $gte: start, $lte: end }, isDeleted: { $ne: true } } },
     {
       $group: {
         _id: "$status",
@@ -103,6 +104,7 @@ const computeCurrentMonthDebt = async (year, month) => {
         "period.year": Number(year),
         "period.month": Number(month),
         status: { $in: ["unpaid", "partial"] },
+        isDeleted: { $ne: true },
       },
     },
     {
@@ -118,7 +120,7 @@ const computeCurrentMonthDebt = async (year, month) => {
 const computeMostPopularDirection = async () => {
   // Faol o'quvchilar joylashgan guruhlar bo'yicha groupBy direction
   const result = await GroupMembership.aggregate([
-    { $match: { leftAt: null } },
+    { $match: { leftAt: null, isDeleted: { $ne: true } } },
     {
       $lookup: {
         from: Group.collection.name,
@@ -175,7 +177,7 @@ const computeWeekdayActivity = async () => {
   );
 
   const result = await Attendance.aggregate([
-    { $match: { date: { $gte: start } } },
+    { $match: { date: { $gte: start }, isDeleted: { $ne: true } } },
     {
       $group: {
         _id: { $dayOfWeek: "$date" }, // 1=Yak, 2=Du, ... 7=Sh (Mongo)
@@ -220,17 +222,19 @@ export const getOverview = async ({ year, month } = {}) => {
   ] = await Promise.all([
     paymentReports.summary({ year: y, month: m }),
     expenses.getStats({ fromDate: start, toDate: end }),
-    User.countDocuments({ role: ROLES.STUDENT, isActive: true }),
-    User.countDocuments({ role: ROLES.TEACHER, isActive: true }),
-    Group.countDocuments({ isActive: true }),
+    User.countDocuments({ role: ROLES.STUDENT, isActive: true, isDeleted: { $ne: true } }),
+    User.countDocuments({ role: ROLES.TEACHER, isActive: true, isDeleted: { $ne: true } }),
+    Group.countDocuments({ isActive: true, isDeleted: { $ne: true } }),
     leads.getDashboardStats({ fromDate: start, toDate: end }),
     computeTodayAttendanceRate(),
     computeCurrentMonthDebt(y, m),
     GroupMembership.countDocuments({
       joinedAt: { $gte: start, $lte: end },
+      isDeleted: { $ne: true },
     }),
     GroupMembership.countDocuments({
       leftAt: { $gte: start, $lte: end },
+      isDeleted: { $ne: true },
     }),
     computeMostPopularDirection(),
     computeWeekdayActivity(),
@@ -296,6 +300,7 @@ export const getIncomeByDirection = async ({ year, month } = {}) => {
         "period.year": y,
         "period.month": m,
         status: { $ne: "cancelled" },
+        isDeleted: { $ne: true },
       },
     },
     {
@@ -353,6 +358,7 @@ export const getIncomeByTeacher = async ({ year, month } = {}) => {
         "period.year": y,
         "period.month": m,
         status: { $ne: "cancelled" },
+        isDeleted: { $ne: true },
       },
     },
     {
@@ -419,9 +425,11 @@ export const getStudentFlow = async ({ months = 6 } = {}) => {
     const [joined, left] = await Promise.all([
       GroupMembership.countDocuments({
         joinedAt: { $gte: start, $lte: end },
+        isDeleted: { $ne: true },
       }),
       GroupMembership.countDocuments({
         leftAt: { $gte: start, $lte: end },
+        isDeleted: { $ne: true },
       }),
     ]);
     result.push({

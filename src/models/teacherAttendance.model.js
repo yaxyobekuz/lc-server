@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import softDeletePlugin from "./plugins/softDelete.plugin.js";
 
 export const TEACHER_ATTENDANCE_STATUSES = ["present", "absent", "excused"];
 
@@ -32,6 +33,8 @@ const teacherAttendanceSchema = new mongoose.Schema(
 // Bir o'qituvchi-kun uchun bitta yozuv
 teacherAttendanceSchema.index({ teacher: 1, dateKey: 1 }, { unique: true });
 teacherAttendanceSchema.index({ dateKey: 1 });
+
+teacherAttendanceSchema.plugin(softDeletePlugin);
 
 const TeacherAttendance = mongoose.model(
   "TeacherAttendance",

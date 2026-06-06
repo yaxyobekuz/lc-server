@@ -35,7 +35,7 @@ export const list = async ({
   page = 1,
   limit = 20,
 }) => {
-  const filter = {};
+  const filter = { isDeleted: { $ne: true } };
   if (studentId) filter.student = studentId;
   if (invoiceId) filter.invoice = invoiceId;
   if (methodId) filter.method = methodId;
@@ -236,20 +236,21 @@ export const getStudentSummary = async (studentId) => {
   const [paid, refunded, openInvoices, lastPayment, student] =
     await Promise.all([
       Payment.aggregate([
-        { $match: { student: sid, type: "payment" } },
+        { $match: { student: sid, type: "payment", isDeleted: { $ne: true } } },
         { $group: { _id: null, sum: { $sum: "$amount" } } },
       ]),
       Payment.aggregate([
-        { $match: { student: sid, type: "refund" } },
+        { $match: { student: sid, type: "refund", isDeleted: { $ne: true } } },
         { $group: { _id: null, sum: { $sum: "$amount" } } },
       ]),
       Invoice.find({
         student: sid,
         status: { $in: ["unpaid", "partial"] },
+        isDeleted: { $ne: true },
       })
         .sort({ "period.year": 1, "period.month": 1 })
         .select({ totalDue: 1, paidAmount: 1, period: 1 }),
-      Payment.findOne({ student: sid, type: "payment" })
+      Payment.findOne({ student: sid, type: "payment", isDeleted: { $ne: true } })
         .sort({ paidAt: -1 })
         .select({ paidAt: 1 }),
       User.findById(sid).select({ balance: 1 }),

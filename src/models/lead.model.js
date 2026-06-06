@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import softDeletePlugin from "./plugins/softDelete.plugin.js";
 
 export const REJECTION_REASONS = ["price", "time", "other_center", "other"];
 
@@ -110,6 +111,8 @@ leadSchema.set("toJSON", {
     return ret;
   },
 });
+
+leadSchema.plugin(softDeletePlugin);
 
 const Lead = mongoose.model("Lead", leadSchema);
 

@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import softDeletePlugin from "./plugins/softDelete.plugin.js";
 
 export const CALCULATION_TYPES = [
   "fixed",
@@ -87,6 +88,8 @@ teacherGroupRateSchema.set("toJSON", {
     return ret;
   },
 });
+
+teacherGroupRateSchema.plugin(softDeletePlugin);
 
 const TeacherGroupRate = mongoose.model(
   "TeacherGroupRate",

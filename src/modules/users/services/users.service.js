@@ -9,6 +9,7 @@ import { hashPassword } from "../../../helpers/password.helper.js";
 import { buildUserProfile } from "../../../helpers/userProfile.helper.js";
 import { toUtcMidnight } from "../../../helpers/attendance.helper.js";
 import { reconcileOnLeave } from "../../invoices/services/invoices.service.js";
+import { deleteUser, restoreUser } from "../../../helpers/cascadeDelete.helper.js";
 
 const STUDENT_ONLY_FIELDS = ["enrolledAt", "leadSource", "leaveStatus"];
 const TEACHER_ONLY_FIELDS = [
@@ -24,7 +25,7 @@ export const list = async ({
   page = 1,
   limit = 20,
 }) => {
-  const filter = { isActive: archived ? false : true };
+  const filter = { isActive: archived ? false : true, isDeleted: { $ne: true } };
   if (role) filter.role = role;
 
   if (search && search.trim()) {
@@ -205,6 +206,20 @@ export const restore = async (id) => {
   const user = await getById(id);
   user.isActive = true;
   await user.save();
+  return user;
+};
+
+// Butunlay o'chirish (soft) — foydalanuvchi + bog'liq hamma narsa isDeleted=true (UI'dan yo'qoladi, hisobdan chiqadi)
+export const permanentRemove = async (id, currentUser) => {
+  const user = await getById(id);
+  await deleteUser(user, currentUser?._id);
+  return { _id: user._id };
+};
+
+// O'chirilganni qaytarish
+export const restoreDeleted = async (id) => {
+  const user = await getById(id);
+  await restoreUser(user);
   return user;
 };
 

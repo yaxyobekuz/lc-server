@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import softDeletePlugin from "./plugins/softDelete.plugin.js";
 
 const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const TIME_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -83,6 +84,8 @@ groupSchema.pre("validate", function (next) {
   }
   next();
 });
+
+groupSchema.plugin(softDeletePlugin);
 
 const Group = mongoose.model("Group", groupSchema);
 

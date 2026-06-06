@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import softDeletePlugin from "./plugins/softDelete.plugin.js";
 
 export const DISCOUNT_VALUE_TYPES = ["percent", "amount"];
 
@@ -42,6 +43,8 @@ discountSchema.set("toJSON", {
     return ret;
   },
 });
+
+discountSchema.plugin(softDeletePlugin);
 
 const Discount = mongoose.model("Discount", discountSchema);
 

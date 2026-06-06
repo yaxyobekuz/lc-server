@@ -8,7 +8,11 @@ import { getClassDaysInRange, toUtcMidnight } from "./attendance.helper.js";
 
 // Guruhdagi faol o'quvchilar soni (per_student hisob uchun)
 const countActiveStudents = async (groupId) =>
-  GroupMembership.countDocuments({ group: groupId, leftAt: null });
+  GroupMembership.countDocuments({
+    group: groupId,
+    leftAt: null,
+    isDeleted: { $ne: true },
+  });
 
 // Oyning UTC midnight intervalini qaytaradi
 export const monthRange = (year, month) => {
@@ -40,6 +44,7 @@ export const aggregateGroupPayments = async (groupId, period, range) => {
     {
       $match: {
         paidAt: { $gte: start, $lt: end },
+        isDeleted: { $ne: true },
       },
     },
     {
@@ -51,7 +56,7 @@ export const aggregateGroupPayments = async (groupId, period, range) => {
       },
     },
     { $unwind: "$inv" },
-    { $match: { "inv.group": gid } },
+    { $match: { "inv.group": gid, "inv.isDeleted": { $ne: true } } },
     {
       $group: {
         _id: "$type",

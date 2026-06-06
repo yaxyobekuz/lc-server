@@ -15,6 +15,8 @@ import getById from "./handlers/getById.handler.js";
 import record from "./handlers/record.handler.js";
 import refund from "./handlers/refund.handler.js";
 import receipt from "./handlers/receipt.handler.js";
+import remove from "./handlers/remove.handler.js";
+import undelete from "./handlers/undelete.handler.js";
 
 const router = Router();
 
@@ -53,5 +55,20 @@ router.post(
   validate(refundSchema),
   refund,
 );
+router.delete(
+  "/:id",
+  requireAuth,
+  requirePermission(PERMISSIONS.PAYMENTS_REFUND),
+  validate(idSchema),
+  remove,
+);
+router.post(
+  "/:id/undelete",
+  requireAuth,
+  requirePermission(PERMISSIONS.PAYMENTS_REFUND),
+  validate(idSchema),
+  undelete,
+);
 
 export default router;
+

@@ -81,7 +81,7 @@ export const list = async ({
   page = 1,
   limit = 20,
 }) => {
-  const filter = {};
+  const filter = { isDeleted: { $ne: true } };
   if (teacherId) filter.teacher = teacherId;
   if (year) filter["period.year"] = Number(year);
   if (month) filter["period.month"] = Number(month);
@@ -112,7 +112,7 @@ export const getById = async (id) => {
 };
 
 export const getPayouts = async (salaryId) => {
-  const items = await SalaryPayout.find({ salary: salaryId })
+  const items = await SalaryPayout.find({ salary: salaryId, isDeleted: { $ne: true } })
     .sort({ paidAt: -1, createdAt: -1 })
     .populate("method", { name: 1, code: 1, isActive: 1 })
     .populate("paidBy", { firstName: 1, lastName: 1 });
@@ -507,7 +507,11 @@ export const removePayout = async (payoutId, currentUser) => {
       throw new ApiError(409, "Bekor qilingan oylik to'lovini o'chirib bo'lmaydi");
     }
 
-    await SalaryPayout.deleteOne({ _id: payout._id }, opts);
+    await SalaryPayout.updateOne(
+      { _id: payout._id },
+      { $set: { isDeleted: true, deletedAt: new Date() } },
+      opts,
+    );
     salary.paidAmount = Math.max(
       0,
       Math.round((salary.paidAmount || 0) - payout.amount),
@@ -520,7 +524,7 @@ export const removePayout = async (payoutId, currentUser) => {
 
 // Owner dashboard: umumiy statistikalar (oy yoki yil filteri)
 export const getDashboardStats = async ({ year, month } = {}) => {
-  const filter = { status: { $ne: "cancelled" } };
+  const filter = { status: { $ne: "cancelled" }, isDeleted: { $ne: true } };
   if (year) filter["period.year"] = Number(year);
   if (month) filter["period.month"] = Number(month);
 
@@ -611,6 +615,7 @@ export const getMonthlyTrend = async ({ months = 6 } = {}) => {
           status: { $ne: "cancelled" },
           "period.year": p.year,
           "period.month": p.month,
+          isDeleted: { $ne: true },
         },
       },
       {
@@ -650,7 +655,7 @@ const groupWeeklyHours = (group) => {
 // Daromad reytingi + ish hajmi (haftalik soat, o'quvchilar, guruhlar) + bonus/jarima.
 // Ish hajmi to'lov turidan qat'i nazar guruh jadvali va a'zoliklaridan hisoblanadi.
 export const getTeacherReport = async ({ year, month } = {}) => {
-  const filter = { status: { $ne: "cancelled" } };
+  const filter = { status: { $ne: "cancelled" }, isDeleted: { $ne: true } };
   if (year) filter["period.year"] = Number(year);
   if (month) filter["period.month"] = Number(month);
 
@@ -681,7 +686,13 @@ export const getTeacherReport = async ({ year, month } = {}) => {
 
   const memberAgg = ids.length
     ? await GroupMembership.aggregate([
-        { $match: { group: { $in: groups.map((g) => g._id) }, leftAt: null } },
+        {
+          $match: {
+            group: { $in: groups.map((g) => g._id) },
+            leftAt: null,
+            isDeleted: { $ne: true },
+          },
+        },
         { $group: { _id: "$group", count: { $sum: 1 } } },
       ])
     : [];

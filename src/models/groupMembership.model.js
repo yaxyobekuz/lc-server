@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import softDeletePlugin from "./plugins/softDelete.plugin.js";
 
 export const LEFT_REASONS = ["transferred", "removed", "graduated"];
 
@@ -33,6 +34,8 @@ groupMembershipSchema.index(
   { group: 1, student: 1 },
   { unique: true, partialFilterExpression: { leftAt: null } },
 );
+
+groupMembershipSchema.plugin(softDeletePlugin);
 
 const GroupMembership = mongoose.model("GroupMembership", groupMembershipSchema);
 

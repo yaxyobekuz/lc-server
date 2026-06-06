@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import softDeletePlugin from "./plugins/softDelete.plugin.js";
 
 export const SALARY_STATUSES = [
   "calculated",
@@ -110,6 +111,8 @@ salarySchema.set("toJSON", {
     return ret;
   },
 });
+
+salarySchema.plugin(softDeletePlugin);
 
 const Salary = mongoose.model("Salary", salarySchema);
 

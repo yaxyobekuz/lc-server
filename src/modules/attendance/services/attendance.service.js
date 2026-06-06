@@ -57,6 +57,7 @@ export const listForGroupOnDate = async (groupId, dateInput) => {
     group: groupId,
     joinedAt: { $lt: dayEnd },
     $or: [{ leftAt: null }, { leftAt: { $gt: date } }],
+    isDeleted: { $ne: true },
   }).populate("student", STUDENT_PROJECTION);
 
   const studentIds = memberships
@@ -240,6 +241,7 @@ const buildStudentClassDays = async (studentId, rangeStart, rangeEnd) => {
     student: studentId,
     joinedAt: { $lte: rangeEnd },
     $or: [{ leftAt: null }, { leftAt: { $gte: rangeStart } }],
+    isDeleted: { $ne: true },
   }).populate("group");
 
   const exemptions = await AttendanceExemption.find({
@@ -346,6 +348,7 @@ export const getGroupMonthly = async (groupId, { year, month }) => {
     group: groupId,
     joinedAt: { $lte: monthEnd },
     $or: [{ leftAt: null }, { leftAt: { $gte: monthStart } }],
+    isDeleted: { $ne: true },
   }).populate("student", STUDENT_PROJECTION);
 
   const activeMemberships = memberships.filter((m) => m.student);
@@ -522,6 +525,7 @@ export const getStudentSummary = async (
       student: studentId,
       joinedAt: { $lte: to },
       $or: [{ leftAt: null }, { leftAt: { $gte: from } }],
+      isDeleted: { $ne: true },
     }).populate("group"),
     AttendanceExemption.find({ student: studentId, isActive: true }),
   ]);

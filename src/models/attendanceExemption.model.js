@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import softDeletePlugin from "./plugins/softDelete.plugin.js";
 
 export const EXEMPTION_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
@@ -44,6 +45,8 @@ attendanceExemptionSchema.set("toJSON", {
     return ret;
   },
 });
+
+attendanceExemptionSchema.plugin(softDeletePlugin);
 
 const AttendanceExemption = mongoose.model(
   "AttendanceExemption",

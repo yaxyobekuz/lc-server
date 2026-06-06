@@ -258,7 +258,7 @@ export const list = async ({
   page = 1,
   limit = 20,
 }) => {
-  const filter = {};
+  const filter = { isDeleted: { $ne: true } };
   if (studentId) filter.student = studentId;
   if (groupId) filter.group = groupId;
   if (year) filter["period.year"] = Number(year);
@@ -308,7 +308,7 @@ export const recompute = async (invoiceId, session = null) => {
   if (invoice.status === "cancelled") return invoice;
 
   const groups = await Payment.aggregate([
-    { $match: { invoice: invoice._id } },
+    { $match: { invoice: invoice._id, isDeleted: { $ne: true } } },
     { $group: { _id: "$type", sum: { $sum: "$amount" } } },
   ]).session(session || null);
 
@@ -403,7 +403,7 @@ export const reverseAbsenceDeduction = async (invoiceId, app, session = null) =>
 
 export const computeNetPaid = async (invoiceId, session = null) => {
   const groups = await Payment.aggregate([
-    { $match: { invoice: new mongoose.Types.ObjectId(String(invoiceId)) } },
+    { $match: { invoice: new mongoose.Types.ObjectId(String(invoiceId)), isDeleted: { $ne: true } } },
     { $group: { _id: "$type", sum: { $sum: "$amount" } } },
   ]).session(session || null);
 

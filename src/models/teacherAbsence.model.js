@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import softDeletePlugin from "./plugins/softDelete.plugin.js";
 
 // O'qituvchi kelmagan kunda har bir o'quvchiga qo'llangan chegirma tafsiloti
 // (teskari qilish — qaytadan "keldi" — uchun saqlanadi).
@@ -48,6 +49,8 @@ teacherAbsenceSchema.set("toJSON", {
     return ret;
   },
 });
+
+teacherAbsenceSchema.plugin(softDeletePlugin);
 
 const TeacherAbsence = mongoose.model("TeacherAbsence", teacherAbsenceSchema);
 

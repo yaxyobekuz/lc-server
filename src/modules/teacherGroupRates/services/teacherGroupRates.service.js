@@ -28,7 +28,7 @@ export const list = async ({
   page = 1,
   limit = 50,
 }) => {
-  const filter = {};
+  const filter = { isDeleted: { $ne: true } };
   if (teacherId) filter.teacher = teacherId;
   if (groupId) filter.group = groupId;
   if (isActive !== undefined) filter.isActive = !!isActive;

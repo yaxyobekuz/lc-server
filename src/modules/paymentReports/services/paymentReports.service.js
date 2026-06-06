@@ -49,6 +49,7 @@ export const summary = async ({ year, month }) => {
           "period.year": Number(year),
           "period.month": Number(month),
           status: NON_CANCELLED,
+          isDeleted: { $ne: true },
         },
       },
       { $group: { _id: null, sum: { $sum: "$totalDue" } } },
@@ -58,6 +59,7 @@ export const summary = async ({ year, month }) => {
         $match: {
           type: "payment",
           paidAt: { $gte: monthStart, $lte: monthEnd },
+          isDeleted: { $ne: true },
         },
       },
       ...EXCLUDE_CANCELLED_INVOICE_PAYMENTS,
@@ -68,13 +70,14 @@ export const summary = async ({ year, month }) => {
         $match: {
           type: "refund",
           paidAt: { $gte: monthStart, $lte: monthEnd },
+          isDeleted: { $ne: true },
         },
       },
       ...EXCLUDE_CANCELLED_INVOICE_PAYMENTS,
       { $group: { _id: null, sum: { $sum: "$amount" } } },
     ]),
     Payment.aggregate([
-      { $match: { paidAt: { $gte: monthStart, $lte: monthEnd } } },
+      { $match: { paidAt: { $gte: monthStart, $lte: monthEnd }, isDeleted: { $ne: true } } },
       ...EXCLUDE_CANCELLED_INVOICE_PAYMENTS,
       {
         $group: {
@@ -132,6 +135,7 @@ export const groupStats = async ({ year, month }) => {
         "period.year": Number(year),
         "period.month": Number(month),
         status: NON_CANCELLED,
+        isDeleted: { $ne: true },
       },
     },
     {
@@ -186,7 +190,7 @@ export const groupStats = async ({ year, month }) => {
 
 export const topDebtors = async ({ limit = 10 }) => {
   const items = await Invoice.aggregate([
-    { $match: { status: { $in: ["unpaid", "partial"] } } },
+    { $match: { status: { $in: ["unpaid", "partial"] }, isDeleted: { $ne: true } } },
     {
       $group: {
         _id: "$student",
@@ -226,7 +230,7 @@ export const topPayers = async ({ limit = 10 }) => {
   since.setUTCMonth(since.getUTCMonth() - 12);
 
   const items = await Payment.aggregate([
-    { $match: { paidAt: { $gte: since } } },
+    { $match: { paidAt: { $gte: since }, isDeleted: { $ne: true } } },
     ...EXCLUDE_CANCELLED_INVOICE_PAYMENTS,
     {
       $group: {
@@ -299,7 +303,7 @@ export const daily = async ({ date }) => {
   const dayEnd = endOfDay(date);
 
   const items = await Payment.aggregate([
-    { $match: { paidAt: { $gte: dayStart, $lte: dayEnd } } },
+    { $match: { paidAt: { $gte: dayStart, $lte: dayEnd }, isDeleted: { $ne: true } } },
     ...EXCLUDE_CANCELLED_INVOICE_PAYMENTS,
     {
       $group: {

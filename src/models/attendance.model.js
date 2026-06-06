@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import softDeletePlugin from "./plugins/softDelete.plugin.js";
 
 export const ATTENDANCE_STATUSES = ["present", "absent", "excused", "exempt"];
 export const ATTENDANCE_SOURCES = ["teacher", "admin", "auto-exempt"];
@@ -61,6 +62,8 @@ attendanceSchema.set("toJSON", {
     return ret;
   },
 });
+
+attendanceSchema.plugin(softDeletePlugin);
 
 const Attendance = mongoose.model("Attendance", attendanceSchema);
 

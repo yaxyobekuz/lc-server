@@ -7,6 +7,10 @@ import ApiError from "../../../utils/ApiError.js";
 import { ROLES } from "../../../constants/roles.js";
 import { toUtcMidnight } from "../../../helpers/attendance.helper.js";
 import { reconcileOnLeave } from "../../invoices/services/invoices.service.js";
+import {
+  deleteGroup as cascadeDeleteGroup,
+  restoreGroup as cascadeRestoreGroup,
+} from "../../../helpers/cascadeDelete.helper.js";
 
 export const safeUserProjection = {
   firstName: 1,
@@ -70,7 +74,7 @@ export const list = async ({
   page = 1,
   limit = 20,
 }) => {
-  const match = { isActive: archived ? false : true };
+  const match = { isActive: archived ? false : true, isDeleted: { $ne: true } };
   if (teacherId) match.teachers = toObjectId(teacherId);
   if (search && search.trim()) {
     match.name = { $regex: escapeRegex(search.trim()), $options: "i" };
@@ -90,7 +94,13 @@ export const list = async ({
         pipeline: [
           {
             $match: {
-              $expr: { $and: [{ $eq: ["$group", "$$gid"] }, { $eq: ["$leftAt", null] }] },
+              $expr: {
+                $and: [
+                  { $eq: ["$group", "$$gid"] },
+                  { $eq: ["$leftAt", null] },
+                  { $ne: ["$isDeleted", true] },
+                ],
+              },
             },
           },
           { $count: "n" },
@@ -148,6 +158,7 @@ export const getById = async (id) => {
   const memberships = await GroupMembership.find({
     group: group._id,
     leftAt: null,
+    isDeleted: { $ne: true },
   })
     .populate("student", safeUserProjection)
     .sort({ joinedAt: 1 });
@@ -242,6 +253,22 @@ export const restore = async (id) => {
   group.finishedAt = null;
   await group.save();
   return group;
+};
+
+// Butunlay o'chirish (soft) — guruh + a'zolik/hisob/to'lov/davomat/stavka isDeleted=true
+export const permanentRemove = async (id, currentUser) => {
+  const group = await Group.findById(id);
+  if (!group) throw new ApiError(404, "Guruh topilmadi");
+  await cascadeDeleteGroup(id, currentUser?._id);
+  return { _id: id };
+};
+
+// O'chirilgan guruhni qaytarish
+export const restoreDeleted = async (id) => {
+  const group = await Group.findById(id);
+  if (!group) throw new ApiError(404, "Guruh topilmadi");
+  await cascadeRestoreGroup(id);
+  return Group.findById(id);
 };
 
 // Kursni yakunlash — status=finished + finishedAt; joriy oy hisoblari o'qigan qismiga prorate qilinadi.
@@ -413,6 +440,7 @@ export const findActiveForStudent = async (studentId) => {
   const membership = await GroupMembership.findOne({
     student: studentId,
     leftAt: null,
+    isDeleted: { $ne: true },
   })
     .populate({
       path: "group",
@@ -432,6 +460,7 @@ export const findAllActiveForStudent = async (studentId) => {
   const memberships = await GroupMembership.find({
     student: studentId,
     leftAt: null,
+    isDeleted: { $ne: true },
   })
     .populate({
       path: "group",

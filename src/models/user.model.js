@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { ALL_ROLES, ROLES } from "../constants/roles.js";
+import softDeletePlugin from "./plugins/softDelete.plugin.js";
 
 const userSchema = new mongoose.Schema(
   {
@@ -55,6 +56,8 @@ userSchema.set("toJSON", {
     return ret;
   },
 });
+
+userSchema.plugin(softDeletePlugin);
 
 const User = mongoose.model("User", userSchema);
 

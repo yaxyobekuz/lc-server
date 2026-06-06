@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import softDeletePlugin from "./plugins/softDelete.plugin.js";
 
 export const PAYMENT_TYPES = ["payment", "refund"];
 
@@ -49,6 +50,8 @@ paymentSchema.set("toJSON", {
     return ret;
   },
 });
+
+paymentSchema.plugin(softDeletePlugin);
 
 const Payment = mongoose.model("Payment", paymentSchema);
 

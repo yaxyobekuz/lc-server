@@ -28,7 +28,7 @@ export const list = async ({
   page = 1,
   limit = 50,
 }) => {
-  const filter = {};
+  const filter = { isDeleted: { $ne: true } };
   if (studentId) filter.student = studentId;
   if (isActive !== undefined) filter.isActive = !!isActive;
 
@@ -132,7 +132,7 @@ export const update = async (id, body) => {
 
 export const remove = async (id) => {
   const doc = await getById(id);
-  await doc.deleteOne();
+  await doc.softDelete();
   return doc;
 };
 
@@ -147,6 +147,7 @@ export const getActiveForStudent = async (
   const filter = {
     student: studentId,
     isActive: true,
+    isDeleted: { $ne: true },
     startDate: { $lte: asOf },
   };
   if (groupId) {
