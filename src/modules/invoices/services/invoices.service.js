@@ -128,15 +128,16 @@ export const generateForPeriod = async ({ year, month }, { createdBy = null } = 
   const memberships = await GroupMembership.find({
     joinedAt: { $lte: periodEnd },
     $or: [{ leftAt: null }, { leftAt: { $gte: monthStart } }],
+    isDeleted: { $ne: true },
   })
-    .populate({ path: "group", match: { isActive: true } })
-    .populate({ path: "student", select: { isActive: 1 } });
+    .populate({ path: "group", match: { isActive: true, isDeleted: { $ne: true } } })
+    .populate({ path: "student", select: { isActive: 1, isDeleted: 1 } });
 
   let created = 0;
   let skipped = 0;
   for (const m of memberships) {
     if (!m.group || !m.student) continue;
-    if (m.student.isActive === false) {
+    if (m.student.isActive === false || m.student.isDeleted) {
       skipped += 1;
       continue;
     }

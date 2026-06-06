@@ -561,7 +561,20 @@ export const getGroupSummary = async (groupId, { fromDate, toDate }) => {
     group: groupId,
     joinedAt: { $lte: to },
     $or: [{ leftAt: null }, { leftAt: { $gte: from } }],
+    isDeleted: { $ne: true },
   }).populate("student", STUDENT_PROJECTION);
+
+  const studentIds = memberships.filter((m) => m.student).map((m) => m.student._id);
+  const exemptions = await AttendanceExemption.find({
+    student: { $in: studentIds },
+    isActive: true,
+  });
+  const exempByStudent = new Map();
+  for (const ex of exemptions) {
+    const k = String(ex.student);
+    if (!exempByStudent.has(k)) exempByStudent.set(k, []);
+    exempByStudent.get(k).push(ex);
+  }
 
   const perStudent = [];
   let aggregate = {
@@ -575,10 +588,25 @@ export const getGroupSummary = async (groupId, { fromDate, toDate }) => {
 
   for (const m of memberships) {
     if (!m.student) continue;
-    const summary = await getStudentSummary(m.student._id, {
-      fromDate: from,
-      toDate: to,
+    // FAQAT shu guruh bo'yicha hisoblanadi (boshqa guruhlar aralashmasin)
+    const { total, exemptDefault, cells } = computeClassDays({
+      memberships: [{ joinedAt: m.joinedAt, leftAt: m.leftAt, group }],
+      exemptions: exempByStudent.get(String(m.student._id)) || [],
+      from,
+      to,
     });
+    let summary;
+    if (total === 0) {
+      summary = summarizeCells({ total: 0, exemptDefault: 0, cells: [], attendances: [] });
+    } else {
+      const dKeys = Array.from(new Set(cells.map((c) => c.dateKey)));
+      const attendances = await Attendance.find({
+        group: groupId,
+        student: m.student._id,
+        dateKey: { $in: dKeys },
+      });
+      summary = summarizeCells({ total, exemptDefault, cells, attendances });
+    }
     perStudent.push({
       student: m.student.toJSON(),
       summary,

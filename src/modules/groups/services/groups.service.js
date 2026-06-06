@@ -34,7 +34,7 @@ const toObjectId = (id) => {
 
 const ensureGroup = async (groupId) => {
   const group = await Group.findById(groupId);
-  if (!group || !group.isActive) {
+  if (!group || !group.isActive || group.isDeleted) {
     throw new ApiError(404, "Guruh topilmadi");
   }
   return group;
@@ -42,7 +42,7 @@ const ensureGroup = async (groupId) => {
 
 const ensureStudent = async (studentId) => {
   const user = await User.findById(studentId);
-  if (!user || user.role !== ROLES.STUDENT || !user.isActive) {
+  if (!user || user.role !== ROLES.STUDENT || !user.isActive || user.isDeleted) {
     throw new ApiError(400, "O'quvchi topilmadi");
   }
   return user;
@@ -61,6 +61,7 @@ const ensureTeachers = async (teacherIds) => {
     _id: { $in: ids },
     role: ROLES.TEACHER,
     isActive: true,
+    isDeleted: { $ne: true },
   });
   if (count !== ids.length) {
     throw new ApiError(400, "Bir yoki bir nechta o'qituvchi noto'g'ri");
@@ -312,13 +313,21 @@ export const addStudent = async (groupId, studentId, { joinedAt } = {}) => {
 };
 
 export const removeStudent = async (groupId, studentId, leaveStatus) => {
+  const leftAt = toUtcMidnight(new Date());
   const membership = await GroupMembership.findOneAndUpdate(
-    { group: groupId, student: studentId, leftAt: null },
-    { $set: { leftAt: new Date(), leftReason: "removed" } },
+    { group: groupId, student: studentId, leftAt: null, isDeleted: { $ne: true } },
+    { $set: { leftAt, leftReason: "removed" } },
     { new: true },
   );
   if (!membership) {
     throw new ApiError(404, "Faol a'zolik topilmadi");
+  }
+
+  // O'qigan qismi uchun joriy oy hisobini prorate qilamiz (arxiv/yakunlash bilan bir xil)
+  const group = await Group.findById(groupId);
+  if (group) {
+    const period = { year: leftAt.getUTCFullYear(), month: leftAt.getUTCMonth() + 1 };
+    await reconcileOnLeave(studentId, group, membership._id, period, leftAt, {});
   }
 
   // Oxirgi guruhdan chiqdimi? — chiqib ketish holatini belgilaymiz

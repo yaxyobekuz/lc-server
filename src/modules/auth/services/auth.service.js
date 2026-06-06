@@ -48,7 +48,7 @@ export const login = async ({ login, password, userAgent, ip }) => {
   if (phone) filters.push({ phone });
 
   const user = await User.findOne({ $or: filters }).select("+passwordHash");
-  if (!user || !user.isActive) {
+  if (!user || !user.isActive || user.isDeleted) {
     throw new ApiError(401, "Login yoki parol noto'g'ri");
   }
 
@@ -84,7 +84,7 @@ export const rotateRefresh = async ({ rawRefresh, userAgent, ip }) => {
   if (!revoked) throw new ApiError(401, "Sessiya tugagan");
 
   const user = await User.findById(payload.sub);
-  if (!user || !user.isActive) {
+  if (!user || !user.isActive || user.isDeleted) {
     throw new ApiError(401, "Foydalanuvchi topilmadi");
   }
 

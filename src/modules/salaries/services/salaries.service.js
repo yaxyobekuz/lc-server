@@ -137,6 +137,7 @@ export const calculateForTeacher = async (
     teacher: teacher._id,
     effectiveFrom: { $lt: pEnd },
     $or: [{ effectiveTo: null }, { effectiveTo: { $gt: pStart } }],
+    isDeleted: { $ne: true },
   });
 
   const breakdowns = [];
@@ -148,7 +149,7 @@ export const calculateForTeacher = async (
     const bd = await computeGroupBreakdown(rate, group, period);
     breakdowns.push(bd);
     componentsSum += bd.subtotal;
-    minTotal += rate.minMonthlyAmount || 0;
+    minTotal += bd.effectiveMin;
   }
   // Minimal kafolatli oylik: jami summa minimaldan past bo'lmasin
   const baseAmount = Math.round(Math.max(componentsSum, minTotal));
@@ -196,7 +197,11 @@ export const calculateForTeacher = async (
 // Hamma faol o'qituvchilar uchun ushbu oy uchun oylik shakllantirish
 // Returns: { created, recomputed, skipped, errors }
 export const calculateForAll = async ({ year, month }, currentUser) => {
-  const teachers = await User.find({ role: ROLES.TEACHER, isActive: true });
+  const teachers = await User.find({
+    role: ROLES.TEACHER,
+    isActive: true,
+    isDeleted: { $ne: true },
+  });
   const summary = { created: 0, recomputed: 0, skipped: 0, errors: 0 };
   const settings = await getSettings();
   const createdOrRecomputed = [];
@@ -251,6 +256,7 @@ export const recompute = async (salaryId, currentUser) => {
     teacher: salary.teacher,
     effectiveFrom: { $lt: pEnd },
     $or: [{ effectiveTo: null }, { effectiveTo: { $gt: pStart } }],
+    isDeleted: { $ne: true },
   });
   const breakdowns = [];
   let componentsSum = 0;
@@ -261,7 +267,7 @@ export const recompute = async (salaryId, currentUser) => {
     const bd = await computeGroupBreakdown(rate, group, salary.period);
     breakdowns.push(bd);
     componentsSum += bd.subtotal;
-    minTotal += rate.minMonthlyAmount || 0;
+    minTotal += bd.effectiveMin;
   }
 
   salary.groupBreakdowns = breakdowns;

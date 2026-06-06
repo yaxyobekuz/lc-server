@@ -1,7 +1,7 @@
 import { getActiveForStudent } from "../modules/discounts/services/discounts.service.js";
 import { getClassDaysInRange } from "./attendance.helper.js";
 
-const daysInMonth = (year, month) => new Date(year, month, 0).getUTCDate();
+const daysInMonth = (year, month) => new Date(Date.UTC(year, month, 0)).getUTCDate();
 
 // Guruhning o'sha oydagi dars kunlari soni (schedule asosida)
 export const lessonsInMonth = (group, year, month) => {

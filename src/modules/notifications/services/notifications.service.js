@@ -46,7 +46,7 @@ const TEACHER_ALLOWED_AUDIENCE = new Set(["groups", "users", "individual"]);
 // Bitta o'qituvchining barcha guruhlari ID'larini qaytaradi
 const getTeacherGroupIds = async (teacherId) => {
   const groups = await Group.find(
-    { teachers: teacherId, isActive: true },
+    { teachers: teacherId, isActive: true, isDeleted: { $ne: true } },
     { _id: 1 },
   );
   return groups.map((g) => g._id);
@@ -57,7 +57,7 @@ const getTeacherStudentIds = async (teacherId) => {
   const groupIds = await getTeacherGroupIds(teacherId);
   if (!groupIds.length) return [];
   const memberships = await GroupMembership.find(
-    { group: { $in: groupIds }, leftAt: null },
+    { group: { $in: groupIds }, leftAt: null, isDeleted: { $ne: true } },
     { student: 1 },
   );
   const set = new Set(memberships.map((m) => String(m.student)));
@@ -85,7 +85,7 @@ export const resolveAudience = async (audience, currentUser) => {
         throw new ApiError(403, "Ruxsat yo'q");
       }
       const users = await User.find(
-        { role: ROLES.STUDENT, isActive: true },
+        { role: ROLES.STUDENT, isActive: true, isDeleted: { $ne: true } },
         { _id: 1 },
       );
       recipientIds = users.map((u) => u._id);
@@ -96,7 +96,7 @@ export const resolveAudience = async (audience, currentUser) => {
         throw new ApiError(403, "Ruxsat yo'q");
       }
       const users = await User.find(
-        { role: ROLES.TEACHER, isActive: true },
+        { role: ROLES.TEACHER, isActive: true, isDeleted: { $ne: true } },
         { _id: 1 },
       );
       recipientIds = users.map((u) => u._id);
@@ -147,7 +147,7 @@ export const resolveAudience = async (audience, currentUser) => {
         }
       }
       const users = await User.find(
-        { _id: { $in: userIds }, isActive: true },
+        { _id: { $in: userIds }, isActive: true, isDeleted: { $ne: true } },
         { _id: 1 },
       );
       recipientIds = users.map((u) => u._id);

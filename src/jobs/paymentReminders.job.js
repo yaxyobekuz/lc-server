@@ -76,6 +76,7 @@ export default function definePaymentReminders(agenda) {
     const now = new Date();
     const invoices = await Invoice.find({
       status: { $in: ["unpaid", "partial"] },
+      isDeleted: { $ne: true },
     }).populate("student");
 
     let sent = 0;

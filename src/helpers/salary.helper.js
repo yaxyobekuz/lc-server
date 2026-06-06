@@ -171,6 +171,9 @@ export const computeGroupBreakdown = async (rate, group, period) => {
     amountPerStudent: Math.round(rate.amountPerStudent || 0),
     perStudentAmount: Math.round(perStudentAmount),
     minMonthlyAmount: Math.round(rate.minMonthlyAmount || 0),
+    // Kafolatli minimum ham o'qituvchi davri/guruh tugashiga ko'ra proratsiya qilinadi
+    // (aks holda guruh tugagach ham har oy to'liq minimum yozilaverardi).
+    effectiveMin: Math.round((rate.minMonthlyAmount || 0) * fraction),
     subtotal: Math.round(subtotal),
   };
 };
