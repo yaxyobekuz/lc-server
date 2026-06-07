@@ -23,10 +23,19 @@ app.use(
     // Origin yo'q so'rovlar (Postman, server-server) ham, ruxsat etilgan domenlar ham o'tadi.
     // CLIENT_URL="*" bo'lsa barcha domenga ruxsat (origin reflect qilinadi).
     origin: (origin, cb) => {
-      if (!origin || env.ALLOW_ALL_ORIGINS || env.CLIENT_URLS.includes(origin)) {
+      // Dev rejimida har qanday localhost/127.0.0.1 porti (Vite 5173/5174/...) o'tadi.
+      const isLocalhost =
+        !isProd && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin || "");
+      if (
+        !origin ||
+        env.ALLOW_ALL_ORIGINS ||
+        env.CLIENT_URLS.includes(origin) ||
+        isLocalhost
+      ) {
         return cb(null, true);
       }
-      cb(new Error("CORS: ruxsat etilmagan domen"));
+      // Xato tashlash o'rniga origin'ni rad etamiz (preflight 500 emas, toza javob).
+      cb(null, false);
     },
     credentials: true,
   }),
