@@ -18,8 +18,22 @@ import defineLeadReminders, {
 import defineHolidayGreetings, {
   JOB_NAME as HOLIDAY_JOB,
 } from "./holidayGreetings.job.js";
+import defineAttendanceReminders, {
+  JOB_NAME as ATTENDANCE_UNMARKED_JOB,
+} from "./attendanceReminders.job.js";
+import defineLowAttendanceDigest, {
+  JOB_NAME as LOW_ATTENDANCE_JOB,
+} from "./lowAttendanceDigest.job.js";
+import defineNotificationDeliver from "./notificationDeliver.job.js";
 import { get as getSalarySettings } from "../modules/salarySettings/services/salarySettings.service.js";
 import { get as getLeadSettings } from "../modules/leadSettings/services/leadSettings.service.js";
+
+// Barcha cron jadvallari mahalliy (Asia/Tashkent) vaqt bo'yicha ishlaydi —
+// server qaysi TZ da bo'lishidan qat'i nazar. Aks holda UTC serverда "20:00"
+// Toshkentда 01:00 da ishlab, NOTO'G'RI kunni qamrab olardi.
+const TZ = process.env.TZ_NAME || "Asia/Tashkent";
+// agenda.every(interval, name, data, options) — vaqt zonasini options'da beramiz
+const every = (cron, name) => agenda.every(cron, name, undefined, { timezone: TZ });
 
 export const startJobs = async () => {
   defineCleanupExpiredTokens(agenda);
@@ -28,43 +42,48 @@ export const startJobs = async () => {
   defineSalaryAutoCalculate(agenda);
   defineLeadReminders(agenda);
   defineHolidayGreetings(agenda);
+  defineAttendanceReminders(agenda);
+  defineLowAttendanceDigest(agenda);
+  defineNotificationDeliver(agenda);
 
   await agenda.start();
 
   // Har kuni 03:00 da eski tokenlarni tozalash
-  await agenda.every("0 3 * * *", CLEANUP_JOB);
+  await every("0 3 * * *", CLEANUP_JOB);
   // Har oyning 1-sanasida 02:00 da invoyslarni yaratish
-  await agenda.every("0 2 1 * *", MONTHLY_INVOICES_JOB);
+  await every("0 2 1 * *", MONTHLY_INVOICES_JOB);
   // Har kuni 09:00 da to'lov eslatmalarini yuborish
-  await agenda.every("0 9 * * *", REMINDERS_JOB);
+  await every("0 9 * * *", REMINDERS_JOB);
 
   // Maoshlarni avto hisoblash - sozlamadagi kunda 02:30 da
   const salarySettings = await getSalarySettings();
-  await agenda.every(
-    `30 2 ${salarySettings.autoCalculateOnDay} * *`,
-    SALARY_JOB,
-  );
+  await every(`30 2 ${salarySettings.autoCalculateOnDay} * *`, SALARY_JOB);
 
   // Lid eslatmalari - har kuni sozlamadagi soatda
   const leadSettings = await getLeadSettings();
-  await agenda.every(`0 ${leadSettings.remindHourOfDay} * * *`, LEAD_REMINDERS_JOB);
+  await every(`0 ${leadSettings.remindHourOfDay} * * *`, LEAD_REMINDERS_JOB);
 
-  // Bayram tabriklari - har kuni 09:00 da
-  await agenda.every("0 9 * * *", HOLIDAY_JOB);
+  // Bayram tabriklari - har kuni 08:30 da (past davomat bilan to'qnashmasin)
+  await every("30 8 * * *", HOLIDAY_JOB);
 
-  logger.info("Agenda ishga tushirildi");
+  // Belgilanmagan davomat eslatmasi - har kuni 20:00 da
+  await every("0 20 * * *", ATTENDANCE_UNMARKED_JOB);
+  // Past davomat hisoboti - har dushanba 09:30 da
+  await every("30 9 * * 1", LOW_ATTENDANCE_JOB);
+
+  logger.info({ timezone: TZ }, "Agenda ishga tushirildi");
 };
 
 // Settings o'zgarganda qayta schedule qilish uchun
 export const rescheduleSalaryJob = async (dayOfMonth) => {
   await agenda.cancel({ name: SALARY_JOB });
-  await agenda.every(`30 2 ${dayOfMonth} * *`, SALARY_JOB);
+  await every(`30 2 ${dayOfMonth} * *`, SALARY_JOB);
   logger.info({ dayOfMonth }, "Maosh hisoblash jobi qayta sozlandi");
 };
 
 export const rescheduleLeadReminders = async (hourOfDay) => {
   await agenda.cancel({ name: LEAD_REMINDERS_JOB });
-  await agenda.every(`0 ${hourOfDay} * * *`, LEAD_REMINDERS_JOB);
+  await every(`0 ${hourOfDay} * * *`, LEAD_REMINDERS_JOB);
   logger.info({ hourOfDay }, "Lid eslatma jobi qayta sozlandi");
 };
 

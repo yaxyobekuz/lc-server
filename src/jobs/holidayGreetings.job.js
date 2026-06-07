@@ -5,6 +5,7 @@ import {
   markSent,
 } from "../modules/holidays/services/holidays.service.js";
 import { send as sendNotification } from "../modules/notifications/services/notifications.service.js";
+import { localTodayKey } from "../helpers/attendance.helper.js";
 
 export const JOB_NAME = "daily.holiday-greetings";
 
@@ -14,7 +15,7 @@ const audienceMap = {
   teachers: { type: "all_teachers" },
 };
 
-const dispatchHoliday = async (holiday) => {
+const dispatchHoliday = async (holiday, dayKey) => {
   const audiences =
     holiday.audience === "all"
       ? [{ type: "all_students" }, { type: "all_teachers" }]
@@ -28,6 +29,9 @@ const dispatchHoliday = async (holiday) => {
         category: "holiday",
         audience,
         isAuto: true,
+        // Bir bayram-auditoriya-kun bo'yicha bitta xabar (instanslararo poyga/qayta
+        // ishga tushishda dublikat bo'lmasin)
+        dedupeKey: `holiday:${String(holiday._id)}:${audience.type}:${dayKey}`,
       },
       null,
     );
@@ -37,6 +41,7 @@ const dispatchHoliday = async (holiday) => {
 export default function defineHolidayGreetings(agenda) {
   agenda.define(JOB_NAME, async () => {
     const today = new Date();
+    const dayKey = localTodayKey(today);
     const holidays = await getTodayHolidays(today);
     let sent = 0;
     let skipped = 0;
@@ -47,7 +52,7 @@ export default function defineHolidayGreetings(agenda) {
         continue;
       }
       try {
-        await dispatchHoliday(h);
+        await dispatchHoliday(h, dayKey);
         await markSent(h._id, today);
         sent += 1;
       } catch (err) {

@@ -42,17 +42,38 @@ const attendanceSchema = new mongoose.Schema(
       enum: ATTENDANCE_SOURCES,
       default: "teacher",
     },
+    // Holat o'zgarishlari tarixi (audit) — kim, qachon, nimadan nimaga o'zgartirdi.
+    // O'tmishni keyinroq tahrirlash imkoni borligi uchun manipulyatsiyani kuzatish.
+    history: {
+      type: [
+        new mongoose.Schema(
+          {
+            at: { type: Date, required: true },
+            by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+            from: { type: String, default: null },
+            to: { type: String, required: true },
+            source: { type: String, default: "teacher" },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
+    },
   },
   { timestamps: true },
 );
 
-// Bir (group, student, dateKey) uchun faqat bitta yozuv
+// Bir (group, student, dateKey) uchun faqat bitta AKTIV yozuv.
+// Partial: soft-deleted yozuvlar unique cheklovga kirmaydi — qayta belgilash
+// (resurrection) duplicate-key xatosini bermaydi.
 attendanceSchema.index(
   { group: 1, student: 1, dateKey: 1 },
-  { unique: true },
+  { unique: true, partialFilterExpression: { isDeleted: false } },
 );
 attendanceSchema.index({ student: 1, date: 1 });
 attendanceSchema.index({ group: 1, date: 1 });
+// O'quvchi bo'yicha dateKey qidiruvi (summary/heatmap hot path) uchun
+attendanceSchema.index({ student: 1, dateKey: 1 });
 
 // Kechikdi uchun minut, sababli uchun sabab ixtiyoriy - status o'zi yetarli
 

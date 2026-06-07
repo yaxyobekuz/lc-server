@@ -12,6 +12,7 @@ import {
   proratedBase,
 } from "../../../helpers/billing.helper.js";
 import { get as getSettings } from "../../paymentSettings/services/paymentSettings.service.js";
+import { correlationCacheInvalidate } from "../../../helpers/correlationCache.js";
 
 const NON_CANCELLED = { $ne: "cancelled" };
 
@@ -327,6 +328,8 @@ export const recompute = async (invoiceId, session = null) => {
   invoice.paidAmount = Math.min(invoice.totalDue, credited);
   invoice.status = computeStatus(invoice.totalDue, credited);
   await invoice.save(opts);
+  // To'lov/qarz o'zgardi → korrelatsiya hisoboti keshini shu davr uchun bekor qilamiz
+  correlationCacheInvalidate(invoice.period?.year, invoice.period?.month);
   return invoice;
 };
 

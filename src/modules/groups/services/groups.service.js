@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import Group from "../../../models/group.model.js";
 import GroupMembership from "../../../models/groupMembership.model.js";
 import User from "../../../models/user.model.js";
+import BotUser from "../../../models/botUser.model.js";
 import LeadDirection from "../../../models/leadDirection.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import { ROLES } from "../../../constants/roles.js";
@@ -150,6 +151,26 @@ export const list = async ({
   return { items, total, page, limit };
 };
 
+// Berilgan user obyektlariga bog'langan Telegram ma'lumotini (telegramId, username)
+// bitta so'rovda biriktiradi. Bog'lanmagan bo'lsa telegram: null bo'ladi.
+const attachTelegram = async (userObjs) => {
+  const ids = userObjs.map((u) => u?._id).filter(Boolean);
+  if (!ids.length) return;
+  const bots = await BotUser.find(
+    { user: { $in: ids } },
+    { user: 1, telegramId: 1, username: 1 },
+  ).lean();
+  const byUser = new Map(
+    bots.map((b) => [
+      String(b.user),
+      { telegramId: b.telegramId, username: b.username || null },
+    ]),
+  );
+  for (const u of userObjs) {
+    u.telegram = byUser.get(String(u._id)) || null;
+  }
+};
+
 export const getById = async (id) => {
   const group = await Group.findById(id)
     .populate("teachers", safeUserProjection)
@@ -172,8 +193,16 @@ export const getById = async (id) => {
       ...m.student.toJSON(),
     }));
 
+  const groupJson = group.toJSON();
+
+  // Telegram ma'lumotini o'quvchilar va o'qituvchilarga biriktiramiz
+  await Promise.all([
+    attachTelegram(students),
+    attachTelegram(groupJson.teachers || []),
+  ]);
+
   return {
-    ...group.toJSON(),
+    ...groupJson,
     students,
     studentsCount: students.length,
   };

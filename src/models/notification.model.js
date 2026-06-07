@@ -9,6 +9,7 @@ export const NOTIFICATION_CATEGORIES = [
   "teacher_message",
   "feedback_status",
   "holiday",
+  "attendance",
   "template_based",
   "other",
 ];
@@ -64,6 +65,8 @@ const notificationSchema = new mongoose.Schema(
     deliveredViaBot: { type: Number, default: 0, min: 0 },
     readCount: { type: Number, default: 0, min: 0 },
     isAuto: { type: Boolean, default: false },
+    // Idempotentlik kaliti (avto job/qayta-urinish dublikat yaratmasligi uchun).
+    dedupeKey: { type: String, default: null },
     relatedFeedback: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Feedback",
@@ -77,6 +80,11 @@ const notificationSchema = new mongoose.Schema(
 notificationSchema.index({ sender: 1, sentAt: -1 });
 notificationSchema.index({ category: 1, sentAt: -1 });
 notificationSchema.index({ sentAt: -1 });
+// dedupeKey unique — faqat qiymat bor bo'lganda (partial)
+notificationSchema.index(
+  { dedupeKey: 1 },
+  { unique: true, partialFilterExpression: { dedupeKey: { $type: "string" } } },
+);
 
 notificationSchema.set("toJSON", {
   transform: (_doc, ret) => {

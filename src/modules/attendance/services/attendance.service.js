@@ -5,7 +5,6 @@ import AttendanceSettings from "../../../models/attendanceSettings.model.js";
 import Group from "../../../models/group.model.js";
 import GroupMembership from "../../../models/groupMembership.model.js";
 import Invoice from "../../../models/invoice.model.js";
-import Payment from "../../../models/payment.model.js";
 import User from "../../../models/user.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import { buildMeta } from "../../../utils/pagination.js";
@@ -17,8 +16,20 @@ import {
   getClassDaysInRange,
   defaultStatusFor,
   withinCourseBounds,
+  localTodayMidnight,
+  isHolidayOn,
 } from "../../../helpers/attendance.helper.js";
+import { holidayKeySetForRange } from "../../holidays/services/holidays.service.js";
 import { listForTeacher } from "../../groups/services/groups.service.js";
+import logger from "../../../config/logger.js";
+import {
+  correlationCacheGet,
+  correlationCacheSet,
+  correlationCacheInvalidate,
+} from "../../../helpers/correlationCache.js";
+
+// Backward-compat re-export (boshqa modullar shu yerdan import qiladi)
+export { correlationCacheInvalidate };
 
 const STUDENT_PROJECTION = {
   firstName: 1,
@@ -49,7 +60,10 @@ export const listForGroupOnDate = async (groupId, dateInput) => {
   const slots = (group.schedule || [])
     .filter((s) => s.day === dow)
     .map((s) => ({ startTime: s.startTime, endTime: s.endTime }));
-  const isClassDay = slots.length > 0 && withinCourseBounds(group, date);
+  const holidaySet = await holidayKeySetForRange(date, date);
+  const isHoliday = isHolidayOn(holidaySet, date);
+  const isClassDay =
+    slots.length > 0 && withinCourseBounds(group, date) && !isHoliday;
 
   // Active memberships shu sanada — joinedAt kun ichida bo'lsa ham qamrab olish uchun kun oxiri bilan solishtiramiz
   const dayEnd = new Date(date.getTime() + 24 * 60 * 60 * 1000);
@@ -70,6 +84,7 @@ export const listForGroupOnDate = async (groupId, dateInput) => {
       group: groupId,
       student: { $in: studentIds },
       dateKey: dKey,
+      isDeleted: { $ne: true },
     }),
     AttendanceExemption.find({
       student: { $in: studentIds },
@@ -109,6 +124,7 @@ export const listForGroupOnDate = async (groupId, dateInput) => {
     date,
     dateKey: dKey,
     isClassDay,
+    isHoliday,
     slots,
     rows,
   };
@@ -175,8 +191,10 @@ export const bulkRecord = async (
   const date = toUtcMidnight(dateInput);
   const dKey = dateKeyOf(date);
 
-  // Kelajak sana uchun davomat belgilanmaydi (o'tmishni tuzatish mumkin)
-  if (date.getTime() > toUtcMidnight(new Date()).getTime()) {
+  // Kelajak sana uchun davomat belgilanmaydi (o'tmishni tuzatish mumkin).
+  // "Bugun" mahalliy (Asia/Tashkent) kalendar kuni bo'yicha — yarim tundan keyin
+  // ham bugungi davomat belgilanishi uchun.
+  if (date.getTime() > localTodayMidnight().getTime()) {
     throw new ApiError(400, "Kelajak kun uchun davomat belgilab bo'lmaydi");
   }
 
@@ -188,15 +206,53 @@ export const bulkRecord = async (
     throw new ApiError(400, "Bu kun bu guruh uchun dars kuni emas");
   }
 
+  // Bayram/dam olish kuni — davomat belgilanmaydi (foizga ham ta'sir qilmaydi)
+  const holidaySet = await holidayKeySetForRange(date, date);
+  if (isHolidayOn(holidaySet, date)) {
+    throw new ApiError(400, "Bu kun bayram/dam olish kuni — davomat belgilanmaydi");
+  }
+
   if (!Array.isArray(items) || items.length === 0) {
     throw new ApiError(400, "Hech bo'lmaganda bitta yozuv kerak");
   }
   for (const item of items) validateItem(item);
 
+  // Har bir o'quvchi shu sanada guruhning aktiv a'zosi ekanini tekshiramiz
+  const studentIds = items.map((it) => it.studentId);
+  const dayEnd = new Date(date.getTime() + 24 * 60 * 60 * 1000);
+  const activeMembers = await GroupMembership.find({
+    group: groupId,
+    student: { $in: studentIds },
+    joinedAt: { $lt: dayEnd },
+    $or: [{ leftAt: null }, { leftAt: { $gt: date } }],
+    isDeleted: { $ne: true },
+  }).select("student");
+  const memberSet = new Set(activeMembers.map((m) => String(m.student)));
+  for (const item of items) {
+    if (!memberSet.has(String(item.studentId))) {
+      throw new ApiError(
+        400,
+        "O'quvchi bu sanada guruhning aktiv a'zosi emas",
+      );
+    }
+  }
+
+  // Audit: mavjud yozuvlarni oldindan olamiz — holat o'zgarsa tarixga yozish uchun
+  const existing = await Attendance.find({
+    group: groupId,
+    student: { $in: studentIds },
+    dateKey: dKey,
+    isDeleted: { $ne: true },
+  });
+  const existingMap = new Map();
+  for (const a of existing) existingMap.set(String(a.student), a);
+
   const results = await runWithSession(async (session) => {
     const opts = session ? { session } : {};
     const docs = [];
     for (const item of items) {
+      const prev = existingMap.get(String(item.studentId));
+      const changed = !prev || prev.status !== item.status;
       const update = {
         $set: {
           status: item.status,
@@ -205,6 +261,7 @@ export const bulkRecord = async (
           recordedBy: currentUser._id,
           recordedAt: new Date(),
           source,
+          isDeleted: false, // qayta belgilansa — soft-delete bekor qilinadi
         },
         $setOnInsert: {
           group: groupId,
@@ -213,11 +270,39 @@ export const bulkRecord = async (
           dateKey: dKey,
         },
       };
-      const doc = await Attendance.findOneAndUpdate(
-        { group: groupId, student: item.studentId, dateKey: dKey },
-        update,
-        { upsert: true, new: true, setDefaultsOnInsert: true, ...opts },
-      );
+      if (changed) {
+        update.$push = {
+          history: {
+            at: new Date(),
+            by: currentUser._id,
+            from: prev ? prev.status : null,
+            to: item.status,
+            source,
+          },
+        };
+      }
+      const filter = { group: groupId, student: item.studentId, dateKey: dKey };
+      let doc;
+      try {
+        doc = await Attendance.findOneAndUpdate(filter, update, {
+          upsert: true,
+          new: true,
+          setDefaultsOnInsert: true,
+          ...opts,
+        });
+      } catch (err) {
+        // Bir vaqtning o'zida birinchi marta saqlanganda unique-index poygasi:
+        // yozuv endi mavjud — upsert'siz qayta urinib ko'ramiz.
+        if (err?.code === 11000) {
+          delete update.$setOnInsert;
+          doc = await Attendance.findOneAndUpdate(filter, update, {
+            new: true,
+            ...opts,
+          });
+        } else {
+          throw err;
+        }
+      }
       docs.push(doc);
     }
     return docs;
@@ -225,7 +310,68 @@ export const bulkRecord = async (
 
   // Davomat o'zgardi → correlation cache'ni shu oy uchun bekor qilamiz
   correlationCacheInvalidate(date.getUTCFullYear(), date.getUTCMonth() + 1);
+
+  // Ketma-ket qoldirish ogohlantirishi (yangi "absent" bo'lganlar uchun) — bloklamaydi
+  notifyConsecutiveAbsences({ group, items, existingMap, dateKey: dKey }).catch(
+    (err) =>
+      logger.warn({ err }, "Ketma-ket qoldirish ogohlantirishi yuborilmadi"),
+  );
+
   return results;
+};
+
+// Ketma-ket qoldirish chegarasiga yangi yetgan o'quvchilar uchun egasi va
+// o'qituvchilarga ogohlantirish yuboradi. Chegaraga TENG bo'lganda bir marta ishlaydi.
+const notifyConsecutiveAbsences = async ({ group, items, existingMap, dateKey }) => {
+  const settings = await getSettings();
+  const threshold = settings.consecutiveAbsencesAlert || 0;
+  if (threshold < 1) return;
+
+  // Faqat yangi yoki absent'ga o'zgartirilgan yozuvlar
+  const candidates = items.filter((it) => {
+    if (it.status !== "absent") return false;
+    const prev = existingMap.get(String(it.studentId));
+    return !prev || prev.status !== "absent";
+  });
+  if (candidates.length === 0) return;
+
+  const crossed = [];
+  for (const it of candidates) {
+    // Faqat shu guruh bo'yicha ketma-ket qoldirish
+    const count = await consecutiveAbsences(it.studentId, group._id);
+    if (count === threshold) crossed.push(it.studentId);
+  }
+  if (crossed.length === 0) return;
+
+  const [students, owners, { send }] = await Promise.all([
+    User.find({ _id: { $in: crossed } }, STUDENT_PROJECTION).lean(),
+    User.find(
+      { role: ROLES.OWNER, isActive: true, isDeleted: { $ne: true } },
+      { _id: 1 },
+    ).lean(),
+    import("../../notifications/services/notifications.service.js"),
+  ]);
+
+  const recipientSet = new Set(owners.map((o) => String(o._id)));
+  for (const t of group.teachers || []) recipientSet.add(String(t));
+  const userIds = [...recipientSet];
+  if (userIds.length === 0) return;
+
+  for (const stu of students) {
+    const name = `${stu.lastName || ""} ${stu.firstName || ""}`.trim();
+    await send(
+      {
+        title: "Davomat ogohlantirishi",
+        body: `${name} ketma-ket ${threshold} marta darsga kelmadi.\nGuruh: ${group.name}`,
+        category: "attendance",
+        audience: { type: "auto_system", userIds },
+        isAuto: true,
+        // Bir o'quvchi-guruh-kun bo'yicha bir marta (qayta belgilashda dublikat bo'lmasin)
+        dedupeKey: `consec:${String(stu._id)}:${String(group._id)}:${dateKey}`,
+      },
+      null,
+    );
+  }
 };
 
 // ─── monthly + summary ───
@@ -244,10 +390,13 @@ const buildStudentClassDays = async (studentId, rangeStart, rangeEnd) => {
     isDeleted: { $ne: true },
   }).populate("group");
 
-  const exemptions = await AttendanceExemption.find({
-    student: studentId,
-    isActive: true,
-  });
+  const [exemptions, holidaySet] = await Promise.all([
+    AttendanceExemption.find({
+      student: studentId,
+      isActive: true,
+    }),
+    holidayKeySetForRange(rangeStart, rangeEnd),
+  ]);
 
   const groups = [];
   const dKeys = new Set();
@@ -265,7 +414,7 @@ const buildStudentClassDays = async (studentId, rangeStart, rangeEnd) => {
       if (fin < effTo) effTo = fin;
     }
 
-    const classDays = getClassDaysInRange(m.group, effFrom, effTo);
+    const classDays = getClassDaysInRange(m.group, effFrom, effTo, holidaySet);
     const days = classDays.map((cd) => {
       const def = defaultStatusFor(exemptions, cd.date, cd.dayOfWeek);
       dKeys.add(cd.dateKey);
@@ -288,6 +437,7 @@ const buildStudentClassDays = async (studentId, rangeStart, rangeEnd) => {
   const attendances = await Attendance.find({
     student: studentId,
     dateKey: { $in: Array.from(dKeys) },
+    isDeleted: { $ne: true },
   });
   const attMap = new Map();
   for (const a of attendances) attMap.set(`${String(a.group)}|${a.dateKey}`, a);
@@ -327,6 +477,7 @@ export const getGroupMonthly = async (groupId, { year, month }) => {
   const monthEnd = endOfMonth(year, month);
 
   const scheduleDays = new Set((group.schedule || []).map((s) => s.day));
+  const holidaySet = await holidayKeySetForRange(monthStart, monthEnd);
 
   const dates = [];
   const dateKeys = [];
@@ -338,7 +489,11 @@ export const getGroupMonthly = async (groupId, { year, month }) => {
       date: new Date(cur),
       dateKey: dKey,
       dayOfWeek: dow,
-      isClassDay: scheduleDays.has(dow) && withinCourseBounds(group, cur),
+      isClassDay:
+        scheduleDays.has(dow) &&
+        withinCourseBounds(group, cur) &&
+        !holidaySet.has(dKey),
+      isHoliday: holidaySet.has(dKey),
     });
     dateKeys.push(dKey);
     cur.setUTCDate(cur.getUTCDate() + 1);
@@ -359,7 +514,8 @@ export const getGroupMonthly = async (groupId, { year, month }) => {
       group: groupId,
       student: { $in: studentIds },
       dateKey: { $in: dateKeys },
-    }),
+      isDeleted: { $ne: true },
+    }).lean(),
     AttendanceExemption.find({
       student: { $in: studentIds },
       isActive: true,
@@ -431,13 +587,26 @@ export const getGroupMonthly = async (groupId, { year, month }) => {
   };
 };
 
+// ─── davomat foizi (yagona ta'rif) ───
+// Surat  = kelgan (present)
+// Maxraj = present + absent   → BELGILANGAN, hisobga olinadigan kunlar
+//   • exempt (imtiyoz) — maxrajdan tashqarida (foizga ta'sir qilmaydi)
+//   • excused (sababli) — maxrajdan tashqarida (o'quvchini jazolamaydi)
+//   • unmarked (belgilanmagan) — counts'ga umuman tushmaydi → maxrajga kirmaydi
+//     (o'qituvchi belgilamagani o'quvchining foizini pasaytirmaydi)
+// Eslatma: tizimda "late" alohida status emas (kechikish lateMinutes maydonida
+// saqlanadi), shuning uchun foiz hisobida "late" qatnashmaydi.
+// Shu yagona funksiya barcha joyda (o'quvchi/guruh/dashboard) ishlatiladi.
+export const computeRate = (counts) => {
+  const numer = counts.present;
+  const denom = counts.present + counts.absent;
+  return denom > 0 ? Math.round((numer / denom) * 100) : null;
+};
+
 // ─── summary (o'quvchi bo'yicha) ───
 const buildSummaryFromBuckets = (counts) => {
   const total =
     counts.present + counts.absent + counts.excused + counts.late + counts.exempt;
-  const denom = total - counts.exempt;
-  const numer = counts.present + counts.late;
-  const rate = denom > 0 ? Math.round((numer / denom) * 100) : null;
   return {
     totalClasses: total,
     present: counts.present,
@@ -445,12 +614,13 @@ const buildSummaryFromBuckets = (counts) => {
     excused: counts.excused,
     late: counts.late,
     exempt: counts.exempt,
-    attendanceRate: rate,
+    attendanceRate: computeRate(counts),
   };
 };
 
-// Pure: membership + exemption ro'yxatidan [from,to] oralig'idagi class-day cell'lar
-const computeClassDays = ({ memberships, exemptions, from, to }) => {
+// Pure: membership + exemption ro'yxatidan [from,to] oralig'idagi class-day cell'lar.
+// holidaySet — bayram kunlari (dateKey) class-day deb hisoblanmaydi.
+const computeClassDays = ({ memberships, exemptions, from, to, holidaySet = null }) => {
   let total = 0;
   let exemptDefault = 0;
   const cells = [];
@@ -463,12 +633,17 @@ const computeClassDays = ({ memberships, exemptions, from, to }) => {
       const fin = toUtcMidnight(m.group.finishedAt);
       if (fin < effTo) effTo = fin;
     }
-    const classDays = getClassDaysInRange(m.group, effFrom, effTo);
+    const classDays = getClassDaysInRange(m.group, effFrom, effTo, holidaySet);
     for (const cd of classDays) {
       total += 1;
       const def = defaultStatusFor(exemptions, cd.date, cd.dayOfWeek);
-      if (def === "exempt") exemptDefault += 1;
-      cells.push({ groupId: m.group._id, dateKey: cd.dateKey });
+      const isExemptDefault = def === "exempt";
+      if (isExemptDefault) exemptDefault += 1;
+      cells.push({
+        groupId: m.group._id,
+        dateKey: cd.dateKey,
+        exemptDefault: isExemptDefault,
+      });
     }
   }
   return { total, exemptDefault, cells };
@@ -476,7 +651,7 @@ const computeClassDays = ({ memberships, exemptions, from, to }) => {
 
 // Pure: class-day cell'lar + attendance yozuvlaridan summary. attendances cell'lardan
 // keng bo'lishi mumkin — faqat mos group|dateKey lar hisobga olinadi.
-const summarizeCells = ({ total, exemptDefault, cells, attendances }) => {
+const summarizeCells = ({ total, cells, attendances }) => {
   if (total === 0) {
     return buildSummaryFromBuckets({
       present: 0,
@@ -491,22 +666,24 @@ const summarizeCells = ({ total, exemptDefault, cells, attendances }) => {
   for (const a of attendances) attMap.set(`${String(a.group)}|${a.dateKey}`, a);
 
   const counts = { present: 0, absent: 0, excused: 0, late: 0, exempt: 0 };
+  let exemptUnmarked = 0;
   for (const c of cells) {
     const a = attMap.get(`${String(c.groupId)}|${c.dateKey}`);
     if (a) {
       counts[a.status] = (counts[a.status] || 0) + 1;
+    } else if (c.exemptDefault) {
+      // FAQAT belgilanmagan exempt-default kunlar avto-exempt hisoblanadi
+      // (belgilangan exempt-default kun yuqorida o'z statusi bilan sanaladi)
+      exemptUnmarked += 1;
     }
-    // belgilanmagan = null (hech qaysi bucket'ga qo'shilmaydi, totalClasses ichida lekin)
+    // boshqa belgilanmagan kunlar hech qaysi bucket'ga qo'shilmaydi
   }
-  // Belgilanmagan exempt-default'larni avto exempt deb hisoblash
+  counts.exempt += exemptUnmarked;
   const markedTotal =
     counts.present + counts.absent + counts.excused + counts.late + counts.exempt;
-  const unmarked = total - markedTotal;
-  const exemptUnmarked = Math.min(unmarked, exemptDefault);
-  counts.exempt += exemptUnmarked;
   const summary = buildSummaryFromBuckets(counts);
   summary.totalClasses = total; // total class days (belgilanganmi yoki yo'q)
-  summary.unmarked = total - markedTotal - exemptUnmarked;
+  summary.unmarked = total - markedTotal;
   return summary;
 };
 
@@ -520,7 +697,7 @@ export const getStudentSummary = async (
   const from = toUtcMidnight(fromDate);
   const to = toUtcMidnight(toDate);
 
-  const [memberships, exemptions] = await Promise.all([
+  const [memberships, exemptions, holidaySet] = await Promise.all([
     GroupMembership.find({
       student: studentId,
       joinedAt: { $lte: to },
@@ -528,6 +705,7 @@ export const getStudentSummary = async (
       isDeleted: { $ne: true },
     }).populate("group"),
     AttendanceExemption.find({ student: studentId, isActive: true }),
+    holidayKeySetForRange(from, to),
   ]);
 
   const { total, exemptDefault, cells } = computeClassDays({
@@ -535,6 +713,7 @@ export const getStudentSummary = async (
     exemptions,
     from,
     to,
+    holidaySet,
   });
 
   if (total === 0) {
@@ -545,9 +724,10 @@ export const getStudentSummary = async (
   const attendances = await Attendance.find({
     student: studentId,
     dateKey: { $in: dKeys },
-  });
+    isDeleted: { $ne: true },
+  }).lean();
 
-  return summarizeCells({ total, exemptDefault, cells, attendances });
+  return summarizeCells({ total, cells, attendances });
 };
 
 // ─── group summary ───
@@ -565,15 +745,49 @@ export const getGroupSummary = async (groupId, { fromDate, toDate }) => {
   }).populate("student", STUDENT_PROJECTION);
 
   const studentIds = memberships.filter((m) => m.student).map((m) => m.student._id);
-  const exemptions = await AttendanceExemption.find({
-    student: { $in: studentIds },
-    isActive: true,
-  });
+  const [exemptions, holidaySet] = await Promise.all([
+    AttendanceExemption.find({
+      student: { $in: studentIds },
+      isActive: true,
+    }),
+    holidayKeySetForRange(from, to),
+  ]);
   const exempByStudent = new Map();
   for (const ex of exemptions) {
     const k = String(ex.student);
     if (!exempByStudent.has(k)) exempByStudent.set(k, []);
     exempByStudent.get(k).push(ex);
+  }
+
+  // Har o'quvchi uchun shu guruhdagi class-day cell'larini oldindan hisoblaymiz
+  const perStudentCells = new Map(); // sid -> { total, cells }
+  const allDKeys = new Set();
+  for (const m of memberships) {
+    if (!m.student) continue;
+    const sid = String(m.student._id);
+    const { total, cells } = computeClassDays({
+      memberships: [{ joinedAt: m.joinedAt, leftAt: m.leftAt, group }],
+      exemptions: exempByStudent.get(sid) || [],
+      from,
+      to,
+      holidaySet,
+    });
+    perStudentCells.set(sid, { total, cells });
+    for (const c of cells) allDKeys.add(c.dateKey);
+  }
+
+  // Barcha o'quvchilarning attendance yozuvlarini BITTA so'rovda olamiz (N+1 yo'q)
+  const allAttendances = await Attendance.find({
+    group: groupId,
+    student: { $in: studentIds },
+    dateKey: { $in: Array.from(allDKeys) },
+    isDeleted: { $ne: true },
+  }).lean();
+  const attByStudent = new Map();
+  for (const a of allAttendances) {
+    const k = String(a.student);
+    if (!attByStudent.has(k)) attByStudent.set(k, []);
+    attByStudent.get(k).push(a);
   }
 
   const perStudent = [];
@@ -583,30 +797,19 @@ export const getGroupSummary = async (groupId, { fromDate, toDate }) => {
     excused: 0,
     late: 0,
     exempt: 0,
+    unmarked: 0,
     totalClasses: 0,
   };
 
   for (const m of memberships) {
     if (!m.student) continue;
-    // FAQAT shu guruh bo'yicha hisoblanadi (boshqa guruhlar aralashmasin)
-    const { total, exemptDefault, cells } = computeClassDays({
-      memberships: [{ joinedAt: m.joinedAt, leftAt: m.leftAt, group }],
-      exemptions: exempByStudent.get(String(m.student._id)) || [],
-      from,
-      to,
+    const sid = String(m.student._id);
+    const { total, cells } = perStudentCells.get(sid) || { total: 0, cells: [] };
+    const summary = summarizeCells({
+      total,
+      cells,
+      attendances: attByStudent.get(sid) || [],
     });
-    let summary;
-    if (total === 0) {
-      summary = summarizeCells({ total: 0, exemptDefault: 0, cells: [], attendances: [] });
-    } else {
-      const dKeys = Array.from(new Set(cells.map((c) => c.dateKey)));
-      const attendances = await Attendance.find({
-        group: groupId,
-        student: m.student._id,
-        dateKey: { $in: dKeys },
-      });
-      summary = summarizeCells({ total, exemptDefault, cells, attendances });
-    }
     perStudent.push({
       student: m.student.toJSON(),
       summary,
@@ -616,12 +819,11 @@ export const getGroupSummary = async (groupId, { fromDate, toDate }) => {
     aggregate.excused += summary.excused;
     aggregate.late += summary.late;
     aggregate.exempt += summary.exempt;
+    aggregate.unmarked += summary.unmarked || 0;
     aggregate.totalClasses += summary.totalClasses;
   }
 
-  const denom = aggregate.totalClasses - aggregate.exempt;
-  const numer = aggregate.present + aggregate.late;
-  const groupRate = denom > 0 ? Math.round((numer / denom) * 100) : null;
+  const groupRate = computeRate(aggregate);
 
   return {
     group: { _id: group._id, name: group.name },
@@ -654,7 +856,7 @@ export const getDashboardStats = async ({ fromDate, toDate, page = 1, limit = 20
   const from = toUtcMidnight(fromDate);
   const to = toUtcMidnight(toDate);
 
-  const groups = await Group.find({ isActive: true });
+  const groups = await Group.find({ isActive: true, isDeleted: { $ne: true } });
   const groupIds = groups.map((g) => g._id);
 
   // Oraliqda active bo'lgan guruh membershiplari (groupBreakdown + o'quvchilar ro'yxati uchun)
@@ -662,6 +864,7 @@ export const getDashboardStats = async ({ fromDate, toDate, page = 1, limit = 20
     group: { $in: groupIds },
     joinedAt: { $lte: to },
     $or: [{ leftAt: null }, { leftAt: { $gte: from } }],
+    isDeleted: { $ne: true },
   }).populate("student", STUDENT_PROJECTION);
 
   const studentIdSet = new Set();
@@ -674,14 +877,20 @@ export const getDashboardStats = async ({ fromDate, toDate, page = 1, limit = 20
 
   // Shu o'quvchilarning BARCHA membershiplari + exemptions + attendances — 3 so'rov, N+1 yo'q.
   // (per-student summary cross-group hisoblanadi — getStudentSummary bilan bir xil)
-  const [allMemberships, exemptions, attendances] = await Promise.all([
+  const [allMemberships, exemptions, attendances, holidaySet] = await Promise.all([
     GroupMembership.find({
       student: { $in: studentIds },
       joinedAt: { $lte: to },
       $or: [{ leftAt: null }, { leftAt: { $gte: from } }],
+      isDeleted: { $ne: true },
     }).populate("group"),
     AttendanceExemption.find({ student: { $in: studentIds }, isActive: true }),
-    Attendance.find({ student: { $in: studentIds }, date: { $gte: from, $lte: to } }),
+    Attendance.find({
+      student: { $in: studentIds },
+      date: { $gte: from, $lte: to },
+      isDeleted: { $ne: true },
+    }).lean(),
+    holidayKeySetForRange(from, to),
   ]);
 
   const groupBy = (docs, keyOf) => {
@@ -697,106 +906,119 @@ export const getDashboardStats = async ({ fromDate, toDate, page = 1, limit = 20
   const exemptionsByStudent = groupBy(exemptions, (ex) => String(ex.student));
   const attendancesByStudent = groupBy(attendances, (a) => String(a.student));
 
-  // Har o'quvchi uchun cross-group summary — bir martda (getStudentSummary bilan bir xil natija)
-  const summaryByStudent = new Map();
-  for (const sid of studentIdSet) {
-    const { total, exemptDefault, cells } = computeClassDays({
-      memberships: membershipsByStudent.get(sid) || [],
-      exemptions: exemptionsByStudent.get(sid) || [],
-      from,
-      to,
-    });
-    summaryByStudent.set(
-      sid,
-      summarizeCells({
-        total,
-        exemptDefault,
-        cells,
-        attendances: attendancesByStudent.get(sid) || [],
-      }),
-    );
+  const studentDocById = new Map();
+  for (const m of groupMemberships) {
+    if (m.student) studentDocById.set(String(m.student._id), m.student);
   }
 
-  const membershipsByGroup = groupBy(
-    groupMemberships.filter((m) => m.student),
-    (m) => String(m.group),
-  );
-
+  // ── Per-o'quvchi (cross-group) summary — overall + studentList uchun, HAR BIRI BIR MARTA ──
+  // (att-correctness-2: oldin har guruh a'zoligi uchun takror qo'shilib, ko'p guruhdagi
+  //  o'quvchi sonlarini N marta shishirardi)
   let aggregate = {
     present: 0,
     absent: 0,
     excused: 0,
     late: 0,
     exempt: 0,
+    unmarked: 0,
     totalClasses: 0,
   };
-  const groupBreakdownAll = [];
   const studentRates = new Map();
+  for (const sid of studentIdSet) {
+    const { total, cells } = computeClassDays({
+      memberships: membershipsByStudent.get(sid) || [],
+      exemptions: exemptionsByStudent.get(sid) || [],
+      from,
+      to,
+      holidaySet,
+    });
+    const s = summarizeCells({
+      total,
+      cells,
+      attendances: attendancesByStudent.get(sid) || [],
+    });
+    aggregate.present += s.present;
+    aggregate.absent += s.absent;
+    aggregate.excused += s.excused;
+    aggregate.late += s.late;
+    aggregate.exempt += s.exempt;
+    aggregate.unmarked += s.unmarked || 0;
+    aggregate.totalClasses += s.totalClasses;
+
+    const doc = studentDocById.get(sid);
+    studentRates.set(sid, {
+      student: doc ? doc.toJSON() : { _id: sid },
+      present: s.present,
+      absent: s.absent,
+      late: s.late,
+      exempt: s.exempt,
+      excused: s.excused,
+      totalClasses: s.totalClasses,
+    });
+  }
+
+  // ── Guruh breakdown — HAR BIR (o'quvchi,guruh) SHU GURUH bo'yicha alohida hisoblanadi ──
+  // (att-correctness-1: oldin cross-group summary guruhga qo'shilib, guruh foizига
+  //  begona guruhlar davomatini aralashtirardi)
+  const membershipsByGroup = groupBy(
+    groupMemberships.filter((m) => m.student),
+    (m) => String(m.group),
+  );
+  const groupBreakdownAll = [];
 
   for (const g of groups) {
     const members = membershipsByGroup.get(String(g._id)) || [];
-    const gAgg = { present: 0, absent: 0, excused: 0, late: 0, exempt: 0, totalClasses: 0 };
+    const gAgg = {
+      present: 0,
+      absent: 0,
+      excused: 0,
+      late: 0,
+      exempt: 0,
+      unmarked: 0,
+      totalClasses: 0,
+    };
 
     for (const m of members) {
       const sid = String(m.student._id);
-      const s = summaryByStudent.get(sid);
-      if (!s) continue;
+      // FAQAT shu guruh bo'yicha (getGroupSummary bilan bir xil scope)
+      const { total, cells } = computeClassDays({
+        memberships: [{ joinedAt: m.joinedAt, leftAt: m.leftAt, group: g }],
+        exemptions: exemptionsByStudent.get(sid) || [],
+        from,
+        to,
+        holidaySet,
+      });
+      // cells faqat shu guruh|dateKey larni o'z ichiga oladi → summarizeCells
+      // o'quvchining boshqa guruh yozuvlarini e'tiborsiz qoldiradi
+      const s = summarizeCells({
+        total,
+        cells,
+        attendances: attendancesByStudent.get(sid) || [],
+      });
       gAgg.present += s.present;
       gAgg.absent += s.absent;
       gAgg.excused += s.excused;
       gAgg.late += s.late;
       gAgg.exempt += s.exempt;
+      gAgg.unmarked += s.unmarked || 0;
       gAgg.totalClasses += s.totalClasses;
-
-      const cur = studentRates.get(sid) || {
-        student: m.student.toJSON(),
-        present: 0,
-        absent: 0,
-        late: 0,
-        exempt: 0,
-        excused: 0,
-        totalClasses: 0,
-      };
-      cur.present += s.present;
-      cur.absent += s.absent;
-      cur.late += s.late;
-      cur.exempt += s.exempt;
-      cur.excused += s.excused;
-      cur.totalClasses += s.totalClasses;
-      studentRates.set(sid, cur);
     }
-
-    const gDenom = gAgg.totalClasses - gAgg.exempt;
-    const gNumer = gAgg.present + gAgg.late;
-    const groupRate = gDenom > 0 ? Math.round((gNumer / gDenom) * 100) : null;
-
-    aggregate.present += gAgg.present;
-    aggregate.absent += gAgg.absent;
-    aggregate.excused += gAgg.excused;
-    aggregate.late += gAgg.late;
-    aggregate.exempt += gAgg.exempt;
-    aggregate.totalClasses += gAgg.totalClasses;
 
     groupBreakdownAll.push({
       groupId: g._id,
       name: g.name,
-      groupRate,
+      groupRate: computeRate(gAgg),
       totalClasses: gAgg.totalClasses,
     });
   }
 
-  const overallDenom = aggregate.totalClasses - aggregate.exempt;
-  const overallNumer = aggregate.present + aggregate.late;
-  const overallRate =
-    overallDenom > 0 ? Math.round((overallNumer / overallDenom) * 100) : null;
+  const overallRate = computeRate(aggregate);
 
   // Per-student rates
-  const studentList = Array.from(studentRates.values()).map((s) => {
-    const denom = s.totalClasses - s.exempt;
-    const numer = s.present + s.late;
-    const rate = denom > 0 ? Math.round((numer / denom) * 100) : null;
-    return { ...s, rate };
-  });
+  const studentList = Array.from(studentRates.values()).map((s) => ({
+    ...s,
+    rate: computeRate(s),
+  }));
 
   const lowAttendanceStudents = studentList
     .filter((s) => s.rate !== null && s.rate < settings.lowAttendanceThreshold)
@@ -834,24 +1056,12 @@ export const getDashboardStats = async ({ fromDate, toDate, page = 1, limit = 20
 };
 
 // ─── correlation ───
-// In-memory cache (year-month -> { data, expires }). TTL: 5 minutes.
-// Davomat yoki invoice o'zgarsa, correlationCacheInvalidate() chaqirilishi kerak.
-const correlationCache = new Map();
-const CORRELATION_TTL_MS = 5 * 60 * 1000;
 const CORRELATION_BATCH = 25;
-
-export const correlationCacheInvalidate = (year, month) => {
-  if (year && month) {
-    correlationCache.delete(`${year}-${month}`);
-  } else {
-    correlationCache.clear();
-  }
-};
 
 export const correlationReport = async ({ year, month }) => {
   const cacheKey = `${year}-${month}`;
-  const cached = correlationCache.get(cacheKey);
-  if (cached && cached.expires > Date.now()) return cached.data;
+  const cached = correlationCacheGet(cacheKey);
+  if (cached) return cached;
 
   const monthStart = startOfMonth(year, month);
   const monthEnd = endOfMonth(year, month);
@@ -911,18 +1121,24 @@ export const correlationReport = async ({ year, month }) => {
     };
   });
 
-  correlationCache.set(cacheKey, {
-    data: result,
-    expires: Date.now() + CORRELATION_TTL_MS,
-  });
+  correlationCacheSet(cacheKey, result);
   return result;
 };
 
 // ─── consecutive absences ───
-export const consecutiveAbsences = async (studentId) => {
-  const recent = await Attendance.find({ student: studentId })
+// groupId berilsa — faqat shu guruh bo'yicha (aks holda barcha guruhlar bo'yicha).
+// Soft-deleted va kelajak sanali yozuvlar hisobga olinmaydi.
+export const consecutiveAbsences = async (studentId, groupId = null) => {
+  const filter = {
+    student: studentId,
+    isDeleted: { $ne: true },
+    date: { $lte: localTodayMidnight() },
+  };
+  if (groupId) filter.group = groupId;
+  const recent = await Attendance.find(filter)
     .sort({ date: -1 })
-    .limit(50);
+    .limit(50)
+    .lean();
   let count = 0;
   for (const a of recent) {
     if (a.status === "absent") count += 1;

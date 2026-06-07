@@ -1,8 +1,10 @@
 import { Router } from "express";
 import requireAuth from "../../middleware/auth.js";
 import requirePermission from "../../middleware/requirePermission.js";
+import requireRole from "../../middleware/requireRole.js";
 import validate from "../../middleware/validate.js";
 import { PERMISSIONS } from "../../constants/permissions.js";
+import { ROLES } from "../../constants/roles.js";
 
 import { listSchema } from "./validators/list.validator.js";
 import {
@@ -38,8 +40,14 @@ router.get(
   stats,
 );
 
-// List (owner uchun barcha, teacher uchun own)
-router.get("/", requireAuth, validate(listSchema), list);
+// List (owner uchun barcha, teacher uchun own) — o'quvchilar /inbox dan foydalanadi
+router.get(
+  "/",
+  requireAuth,
+  requireRole(ROLES.OWNER, ROLES.TEACHER),
+  validate(listSchema),
+  list,
+);
 
 // Send
 router.post(
@@ -50,11 +58,19 @@ router.post(
   send,
 );
 
-// Detail va recipients
-router.get("/:id", requireAuth, validate(idSchema), getById);
+// Detail va recipients — boshqaruv yuzasi (oluvchilar PII). O'quvchilar bloklanadi
+// (handler ichida teacher faqat o'zi yuborganini ko'radi).
+router.get(
+  "/:id",
+  requireAuth,
+  requireRole(ROLES.OWNER, ROLES.TEACHER),
+  validate(idSchema),
+  getById,
+);
 router.get(
   "/:id/recipients",
   requireAuth,
+  requireRole(ROLES.OWNER, ROLES.TEACHER),
   validate(recipientListSchema),
   getRecipients,
 );

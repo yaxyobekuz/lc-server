@@ -11,6 +11,7 @@ export const upsertFromTelegram = async (from, chatId) => {
     lastName: from.last_name || "",
     languageCode: from.language_code || "uz",
     isBot: Boolean(from.is_bot),
+    isBlocked: false, // foydalanuvchi qayta yozdi → blok bekor qilinadi
     lastSeenAt: new Date(),
   };
   return BotUser.findOneAndUpdate(

@@ -5,8 +5,13 @@ import NotificationTemplate from "../../../models/notificationTemplate.model.js"
 import User from "../../../models/user.model.js";
 import Group from "../../../models/group.model.js";
 import GroupMembership from "../../../models/groupMembership.model.js";
+import BotUser from "../../../models/botUser.model.js";
 import ApiError from "../../../utils/ApiError.js";
+import logger from "../../../config/logger.js";
 import { ROLES } from "../../../constants/roles.js";
+
+// Bir vaqtning o'zida nechta bot xabari yuborilsin (Telegram ~30/sek global limit)
+const DELIVERY_CONCURRENCY = 20;
 
 const SENDER_PROJECTION = { firstName: 1, lastName: 1, role: 1 };
 
@@ -154,10 +159,17 @@ export const resolveAudience = async (audience, currentUser) => {
       break;
     }
     case "auto_system": {
-      // Auto job o'zi userIds beradi
-      recipientIds = (audience.userIds || []).map(
-        (id) => new mongoose.Types.ObjectId(String(id)),
+      // Auto job userIds beradi — boshqa branchlar kabi aktiv foydalanuvchilarga filtrlaymiz
+      const ids = (audience.userIds || []).map(String);
+      if (ids.length === 0) {
+        recipientIds = [];
+        break;
+      }
+      const users = await User.find(
+        { _id: { $in: ids }, isActive: true, isDeleted: { $ne: true } },
+        { _id: 1 },
       );
+      recipientIds = users.map((u) => u._id);
       break;
     }
     default:
@@ -169,45 +181,110 @@ export const resolveAudience = async (audience, currentUser) => {
   return [...uniqueSet].map((id) => new mongoose.Types.ObjectId(id));
 };
 
-// Bot push (transaction tashqarisida)
-const dispatchBotPush = async (notification, recipientIds) => {
-  let deliveredCount = 0;
-  // Lazy import - circular dep oldini olish
-  const { deliverToUser } = await import(
+// Cheklangan parallellik bilan ishlovchi pool (tashqi kutubxonasiz)
+const runPool = async (items, concurrency, worker) => {
+  let idx = 0;
+  const runners = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    async () => {
+      while (idx < items.length) {
+        const cur = idx;
+        idx += 1;
+        await worker(items[cur]);
+      }
+    },
+  );
+  await Promise.all(runners);
+};
+
+// Bot push — yetkazilmagan oluvchilarga partiyalab, cheklangan parallellik bilan.
+// Idempotent: faqat botDeliveredAt=null bo'lganlarni qayta uradi (job retry xavfsiz).
+export const deliverNotification = async (notificationId) => {
+  const notif = await Notification.findById(notificationId).lean();
+  if (!notif) return;
+
+  const recipients = await NotificationRecipient.find({
+    notification: notificationId,
+    botDeliveredAt: null,
+  })
+    .select("_id user")
+    .lean();
+  if (recipients.length === 0) return;
+
+  // Barcha BotUser'larni BITTA so'rovda olamiz (N+1 yo'q)
+  const userIds = recipients.map((r) => r.user);
+  const botUsers = await BotUser.find(
+    { user: { $in: userIds } },
+    { user: 1, chatId: 1, telegramId: 1, isBlocked: 1 },
+  ).lean();
+  const buByUser = new Map(botUsers.map((b) => [String(b.user), b]));
+
+  const { deliverToChat } = await import(
     "../../../bot/services/notificationDeliver.service.js"
   );
+  const payload = {
+    title: notif.title,
+    body: notif.body,
+    category: notif.category,
+  };
 
-  for (const userId of recipientIds) {
-    try {
-      const result = await deliverToUser(userId, {
-        title: notification.title,
-        body: notification.body,
-        category: notification.category,
+  let delivered = 0;
+  const ops = [];
+  await runPool(recipients, DELIVERY_CONCURRENCY, async (r) => {
+    const bu = buByUser.get(String(r.user));
+    if (!bu || bu.isBlocked || !bu.chatId) {
+      ops.push({
+        updateOne: {
+          filter: { _id: r._id },
+          update: { $set: { botFailedReason: "no-bot-link" } },
+        },
       });
-      if (result.ok) {
-        await NotificationRecipient.updateOne(
-          { notification: notification._id, user: userId },
-          { $set: { botDeliveredAt: new Date() } },
-        );
-        deliveredCount += 1;
-      } else if (result.reason) {
-        await NotificationRecipient.updateOne(
-          { notification: notification._id, user: userId },
-          { $set: { botFailedReason: result.reason } },
-        );
-      }
-    } catch (err) {
-      await NotificationRecipient.updateOne(
-        { notification: notification._id, user: userId },
-        { $set: { botFailedReason: String(err?.message || "unknown") } },
-      ).catch(() => null);
+      return;
     }
-  }
+    const res = await deliverToChat(
+      { chatId: bu.chatId, telegramId: bu.telegramId },
+      payload,
+    );
+    if (res.ok) {
+      delivered += 1;
+      ops.push({
+        updateOne: {
+          filter: { _id: r._id },
+          update: { $set: { botDeliveredAt: new Date(), botFailedReason: null } },
+        },
+      });
+    } else if (!res.transient) {
+      // transient (bot-not-running / 429) — terminal sifatida saqlamaymiz, keyin retry bo'ladi
+      ops.push({
+        updateOne: {
+          filter: { _id: r._id },
+          update: { $set: { botFailedReason: res.reason } },
+        },
+      });
+    }
+  });
 
-  if (deliveredCount > 0) {
+  if (ops.length) await NotificationRecipient.bulkWrite(ops, { ordered: false });
+  if (delivered > 0) {
     await Notification.updateOne(
-      { _id: notification._id },
-      { $set: { deliveredViaBot: deliveredCount } },
+      { _id: notificationId },
+      { $inc: { deliveredViaBot: delivered } },
+    );
+  }
+};
+
+// Yetkazishni so'rov oqimidan ajratamiz: Agenda job'iga qo'yamiz.
+// Agenda mavjud bo'lmasa (mas. test) — fonда (detached) bajaramiz.
+const scheduleDelivery = async (notificationId) => {
+  try {
+    const agenda = (await import("../../../config/agenda.js")).default;
+    await agenda.now("notification.deliver", {
+      notificationId: String(notificationId),
+    });
+  } catch (err) {
+    logger.warn({ err }, "Yetkazish job'i navbatga qo'yilmadi, inline bajariladi");
+    deliverNotification(notificationId).catch((e) =>
+      logger.error({ err: e, notificationId }, "Inline yetkazish xato"),
     );
   }
 };
@@ -233,6 +310,13 @@ export const send = async (body, currentUser) => {
     throw new ApiError(400, "Xabar matni bo'sh bo'lmasligi kerak");
   }
 
+  // Idempotentlik: dedupeKey berilsa va shunday xabar mavjud bo'lsa — qayta yaratmaymiz
+  // (avto job'lar/qayta-urinishlar dublikat bildirishnoma yaratmasligi uchun)
+  if (body.dedupeKey) {
+    const existing = await Notification.findOne({ dedupeKey: body.dedupeKey });
+    if (existing) return existing;
+  }
+
   const senderRole = currentUser
     ? currentUser.role === ROLES.OWNER
       ? "owner"
@@ -255,6 +339,7 @@ export const send = async (body, currentUser) => {
           deliveredViaBot: 0,
           readCount: 0,
           isAuto: !!body.isAuto,
+          dedupeKey: body.dedupeKey || null,
           relatedFeedback: body.relatedFeedback || null,
           sentAt: new Date(),
         },
@@ -277,9 +362,10 @@ export const send = async (body, currentUser) => {
     return notif;
   });
 
-  // Bot push (async, transaction tashqarisida)
-  // Promise'ni await qilamiz, lekin xato bo'lsa silent
-  await dispatchBotPush(notification, recipientIds).catch(() => null);
+  // Yetkazish — so'rovni bloklamasdan Agenda job'iga qo'yiladi (recipient yo'q bo'lsa skip)
+  if (recipientIds.length > 0) {
+    await scheduleDelivery(notification._id);
+  }
 
   return notification;
 };
@@ -383,27 +469,36 @@ export const markAllRead = async (userId) => {
   const docs = await NotificationRecipient.find(
     { user: userId, readAt: null },
     { _id: 1, notification: 1 },
-  );
+  ).lean();
   if (!docs.length) return { updated: 0 };
 
-  await NotificationRecipient.updateMany(
-    { user: userId, readAt: null },
-    { $set: { readAt: new Date() } },
-  );
-
-  // Notification.readCount inkrement (bulk)
-  const counts = new Map();
+  // Har bir notification bo'yicha recipient id'larini guruhlaymiz, so'ng
+  // ATOMIK updateMany qilib FAQAT shu chaqiruvda haqiqatan o'zgargan sonni
+  // (modifiedCount) readCount'ga qo'shamiz — bir vaqtda kelgan markRead bilan
+  // ikki marta sanash poygasini oldini oladi.
+  const byNotif = new Map();
   for (const d of docs) {
     const k = String(d.notification);
-    counts.set(k, (counts.get(k) || 0) + 1);
+    if (!byNotif.has(k)) byNotif.set(k, []);
+    byNotif.get(k).push(d._id);
   }
-  await Promise.all(
-    [...counts.entries()].map(([nid, cnt]) =>
-      Notification.updateOne({ _id: nid }, { $inc: { readCount: cnt } }),
-    ),
+
+  const now = new Date();
+  const results = await Promise.all(
+    [...byNotif.entries()].map(async ([nid, ids]) => {
+      const res = await NotificationRecipient.updateMany(
+        { _id: { $in: ids }, readAt: null },
+        { $set: { readAt: now } },
+      );
+      const n = res.modifiedCount || 0;
+      if (n > 0) {
+        await Notification.updateOne({ _id: nid }, { $inc: { readCount: n } });
+      }
+      return n;
+    }),
   );
 
-  return { updated: docs.length };
+  return { updated: results.reduce((a, b) => a + b, 0) };
 };
 
 export const getStats = async ({ fromDate, toDate } = {}) => {

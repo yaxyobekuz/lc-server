@@ -1,5 +1,6 @@
 import Holiday, { HOLIDAY_AUDIENCES } from "../../../models/holiday.model.js";
 import ApiError from "../../../utils/ApiError.js";
+import { dateKeyOf, toUtcMidnight } from "../../../helpers/attendance.helper.js";
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -62,6 +63,17 @@ const validateBody = (body) => {
     if (!Number.isInteger(d) || d < 1 || d > 31) {
       throw new ApiError(400, "Kun 1 dan 31 gacha bo'lishi kerak");
     }
+    // Oyga mos kun chegarasi (recurring uchun Fev 29 ruxsat — kabisa yillarda ishlaydi)
+    const m = body.month !== undefined ? Number(body.month) : null;
+    if (m) {
+      const maxDay = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1];
+      if (d > maxDay) {
+        throw new ApiError(
+          400,
+          `${m}-oy uchun kun ${maxDay} dan oshmasligi kerak`,
+        );
+      }
+    }
   }
 };
 
@@ -76,7 +88,7 @@ export const create = async (body, currentUser) => {
     throw new ApiError(400, "Bir martalik bayram uchun to'g'ri yil kerak");
   }
 
-  return Holiday.create({
+  const doc = await Holiday.create({
     name: trimmed,
     isRecurring,
     month: Number(body.month),
@@ -86,6 +98,8 @@ export const create = async (body, currentUser) => {
     audience: body.audience || "all",
     createdBy: currentUser?._id || null,
   });
+  invalidateHolidayCache();
+  return doc;
 };
 
 export const update = async (id, body) => {
@@ -113,6 +127,7 @@ export const update = async (id, body) => {
   }
 
   await doc.save();
+  invalidateHolidayCache();
   return doc;
 };
 
@@ -120,6 +135,7 @@ export const softRemove = async (id) => {
   const doc = await getById(id);
   doc.isActive = false;
   await doc.save();
+  invalidateHolidayCache();
   return doc;
 };
 
@@ -155,3 +171,68 @@ export const markSent = async (id, now = new Date()) => {
 
 export const isAlreadySentToday = (holiday, now = new Date()) =>
   sameUtcDay(holiday.lastSentAt, now);
+
+// Aktiv bayramlar ro'yxatining qisqa muddatli keshi (har so'rovda DB urilmasin).
+// Bayram CRUD juda kam, davomat hot path'i tez-tez chaqiriladi.
+let _holidayCache = null; // { audiencesKey, expires, holidays }
+const HOLIDAY_CACHE_TTL_MS = 5 * 60 * 1000;
+
+export const invalidateHolidayCache = () => {
+  _holidayCache = null;
+};
+
+const loadActiveHolidays = async (audiences) => {
+  const key = audiences.slice().sort().join(",");
+  if (
+    _holidayCache &&
+    _holidayCache.audiencesKey === key &&
+    _holidayCache.expires > Date.now()
+  ) {
+    return _holidayCache.holidays;
+  }
+  const holidays = await Holiday.find({
+    isActive: true,
+    audience: { $in: audiences },
+  }).lean();
+  _holidayCache = {
+    audiencesKey: key,
+    holidays,
+    expires: Date.now() + HOLIDAY_CACHE_TTL_MS,
+  };
+  return holidays;
+};
+
+// [from, to] oralig'ida o'quvchilarga taalluqli bayram kunlarining dateKey Set'i.
+// Davomat hisobida shu kunlar dars kuni emas deb qaraladi → foizga ta'sir qilmaydi.
+// Recurring (har yil) va one-time (ma'lum yil) bayramlar ham qamrab olinadi.
+export const holidayKeySetForRange = async (
+  from,
+  to,
+  audiences = ["all", "students"],
+) => {
+  const start = toUtcMidnight(from).getTime();
+  const end = toUtcMidnight(to).getTime();
+  if (!(start <= end)) return new Set();
+
+  const holidays = await loadActiveHolidays(audiences);
+
+  const fromYear = new Date(start).getUTCFullYear();
+  const toYear = new Date(end).getUTCFullYear();
+
+  const set = new Set();
+  for (const h of holidays) {
+    const years = h.isRecurring
+      ? Array.from({ length: toYear - fromYear + 1 }, (_, i) => fromYear + i)
+      : [h.year];
+    for (const y of years) {
+      if (!y) continue;
+      const d = new Date(Date.UTC(y, h.month - 1, h.day, 0, 0, 0, 0));
+      // Date overflow qo'riqlovi: noto'g'ri kun (mas. Fev 29 kabisa bo'lmagan yil,
+      // 30-kunlik oyda 31) keyingi oyga "ko'chib" ketmasligi uchun tekshiramiz.
+      if (d.getUTCMonth() !== h.month - 1 || d.getUTCDate() !== h.day) continue;
+      const t = d.getTime();
+      if (t >= start && t <= end) set.add(dateKeyOf(d));
+    }
+  }
+  return set;
+};

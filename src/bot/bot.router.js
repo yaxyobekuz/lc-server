@@ -1,7 +1,12 @@
 import logger from "../config/logger.js";
-import { markBlocked } from "./services/botUser.service.js";
 import startHandler from "./handlers/start.handler.js";
 import helpHandler from "./handlers/help.handler.js";
+
+// DIQQAT: bu bot ataylab "WebApp-only" — barcha funksiyalar (davomat, to'lov,
+// guruhlar va h.k.) Telegram mini-ilova ichida. Shu sababli handlers/ ichidagi
+// myAttendance/teacherAttendance/myPayments/... fayllari ataylab ulanMAGAN.
+// Ularni "tuzatish" runtime'ga ta'sir qilmaydi — yoki mini-ilovada ishlang,
+// yoki bu yerda command sifatida ro'yxatga oling.
 
 const safe = (bot, fn) => async (msg, match) => {
   try {
@@ -43,10 +48,10 @@ export const registerHandlers = (bot) => {
     logger.error({ err }, "Telegram webhook xatosi");
   });
 
-  bot.on("error", async (err) => {
-    if (err?.response?.statusCode === 403 && err?.response?.body?.from?.id) {
-      await markBlocked(err.response.body.from.id, true).catch(() => null);
-    }
+  // Eslatma: bloklangan (403) foydalanuvchilarni belgilash yetkazish nuqtasida
+  // (deliverToChat) amalga oshiriladi — u yerda userId/telegramId ma'lum. Bu yerdagi
+  // generic error event'da foydalanuvchi identifikatori ishonchli bo'lmaydi.
+  bot.on("error", (err) => {
     logger.error({ err }, "Bot umumiy xato");
   });
 };

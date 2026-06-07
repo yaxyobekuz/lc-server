@@ -90,8 +90,8 @@ const computeTodayAttendanceRate = async () => {
   for (const r of result) {
     counts[r._id] = r.count || 0;
   }
-  const denom =
-    counts.present + counts.late + counts.excused + counts.absent;
+  // Yagona ta'rif: maxraj = present + absent + late (exempt va excused tashqarida)
+  const denom = counts.present + counts.late + counts.absent;
   if (denom === 0) return null;
   const numerator = counts.present + counts.late;
   return Math.round((numerator / denom) * 100);

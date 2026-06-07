@@ -3,6 +3,7 @@ import User from "../../../models/user.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import { ROLES } from "../../../constants/roles.js";
 import { ensureActiveGroup } from "../../../helpers/membership.helper.js";
+import { correlationCacheInvalidate } from "../../../helpers/correlationCache.js";
 
 const ensureStudent = async (studentId) => {
   const u = await User.findById(studentId);
@@ -52,7 +53,10 @@ export const create = async (body, currentUser) => {
     throw new ApiError(400, "Tugash sanasi boshlanishidan keyin bo'lishi kerak");
   }
 
-  return AttendanceExemption.create(doc);
+  const created = await AttendanceExemption.create(doc);
+  // Imtiyoz davomat foiziga ta'sir qiladi → korrelatsiya keshini tozalaymiz
+  correlationCacheInvalidate();
+  return created;
 };
 
 export const getById = async (id) => {
@@ -79,11 +83,13 @@ export const update = async (id, body) => {
   }
 
   await doc.save();
+  correlationCacheInvalidate();
   return doc;
 };
 
 export const remove = async (id) => {
   const doc = await getById(id);
   await doc.softDelete();
+  correlationCacheInvalidate();
   return doc;
 };

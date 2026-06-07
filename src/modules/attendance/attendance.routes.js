@@ -2,6 +2,10 @@ import { Router } from "express";
 import requireAuth from "../../middleware/auth.js";
 import requirePermission from "../../middleware/requirePermission.js";
 import requirePermissionOrSelf from "../../middleware/requirePermissionOrSelf.js";
+import {
+  requireGroupAccess,
+  requireStudentAccess,
+} from "../../middleware/attendanceScope.js";
 import validate from "../../middleware/validate.js";
 import { PERMISSIONS } from "../../constants/permissions.js";
 
@@ -38,13 +42,15 @@ import correlation from "./handlers/correlation.handler.js";
 
 const router = Router();
 
-// Teacher uchun maxsus
+// Teacher uchun maxsus (o'z guruhlari summary'si — handler ichida scope qilinadi)
 router.get("/teacher/me/summary", requireAuth, validate(rangeQuerySchema), teacherSummary);
 
+// Markaz miqyosidagi hisobotlar — FAQAT boshqaruv ruxsati (owner). Oddiy
+// ATTENDANCE_READ (o'qituvchilarda bor) markaz-bo'ylab ma'lumotga yo'l ochmasin.
 router.get(
   "/dashboard",
   requireAuth,
-  requirePermission(PERMISSIONS.ATTENDANCE_READ),
+  requirePermission(PERMISSIONS.ATTENDANCE_MANAGE),
   validate(rangeQuerySchema),
   dashboard,
 );
@@ -52,7 +58,7 @@ router.get(
 router.get(
   "/correlation",
   requireAuth,
-  requirePermission(PERMISSIONS.ATTENDANCE_READ),
+  requirePermission(PERMISSIONS.ATTENDANCE_MANAGE),
   validate(correlationSchema),
   correlation,
 );
@@ -61,6 +67,7 @@ router.get(
   "/students/:id/monthly",
   requireAuth,
   requirePermissionOrSelf(PERMISSIONS.ATTENDANCE_READ, (req) => req.params.id),
+  requireStudentAccess((req) => req.params.id),
   validate(studentMonthlySchema),
   studentMonthly,
 );
@@ -69,6 +76,7 @@ router.get(
   "/students/:id/yearly",
   requireAuth,
   requirePermissionOrSelf(PERMISSIONS.ATTENDANCE_READ, (req) => req.params.id),
+  requireStudentAccess((req) => req.params.id),
   validate(studentYearSchema),
   studentYear,
 );
@@ -77,6 +85,7 @@ router.get(
   "/students/:id/summary",
   requireAuth,
   requirePermissionOrSelf(PERMISSIONS.ATTENDANCE_READ, (req) => req.params.id),
+  requireStudentAccess((req) => req.params.id),
   validate(studentRangeSchema),
   studentSummary,
 );
@@ -85,6 +94,7 @@ router.get(
   "/groups/:groupId/summary",
   requireAuth,
   requirePermission(PERMISSIONS.ATTENDANCE_READ),
+  requireGroupAccess(),
   validate(groupRangeSchema),
   groupSummary,
 );
@@ -93,6 +103,7 @@ router.get(
   "/groups/:groupId/monthly",
   requireAuth,
   requirePermission(PERMISSIONS.ATTENDANCE_READ),
+  requireGroupAccess(),
   validate(groupMonthlySchema),
   groupMonthly,
 );
@@ -101,6 +112,7 @@ router.get(
   "/groups/:groupId",
   requireAuth,
   requirePermission(PERMISSIONS.ATTENDANCE_READ),
+  requireGroupAccess(),
   validate(listForDateSchema),
   listForGroupOnDate,
 );
@@ -109,6 +121,7 @@ router.post(
   "/groups/:groupId/bulk",
   requireAuth,
   requirePermission(PERMISSIONS.ATTENDANCE_RECORD),
+  requireGroupAccess(),
   validate(bulkRecordSchema),
   bulkRecord,
 );
@@ -118,6 +131,7 @@ router.get(
   "/groups/:groupId/teacher",
   requireAuth,
   requirePermission(PERMISSIONS.ATTENDANCE_READ),
+  requireGroupAccess(),
   validate(teacherStatusSchema),
   teacherAttendanceStatus,
 );
@@ -126,6 +140,7 @@ router.post(
   "/groups/:groupId/teacher",
   requireAuth,
   requirePermission(PERMISSIONS.ATTENDANCE_RECORD),
+  requireGroupAccess(),
   validate(teacherSetSchema),
   teacherAttendanceSet,
 );

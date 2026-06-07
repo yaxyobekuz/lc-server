@@ -1,6 +1,7 @@
 import { getLinkedUser } from "../services/botUser.service.js";
 import { ROLES } from "../../constants/roles.js";
 import { getStudentSummary } from "../../modules/attendance/services/attendance.service.js";
+import { localTodayMidnight } from "../../helpers/attendance.helper.js";
 
 const STATUS_EMOJI = {
   present: "✅",
@@ -25,7 +26,7 @@ const myAttendanceHandler = async (bot, msg) => {
     return;
   }
 
-  const now = new Date();
+  const now = localTodayMidnight();
   const monthStart = new Date(
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
   );

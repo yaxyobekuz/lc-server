@@ -13,10 +13,13 @@ import bulkRecord from "./handlers/bulkRecord.handler.js";
 
 const router = Router();
 
+// O'qituvchilarning kelgan/kelmaganini boshqarish — maoshga ta'sir qiladi,
+// shuning uchun FAQAT boshqaruv ruxsati (owner). Oddiy o'qituvchi boshqa
+// o'qituvchini belgilay olmaydi.
 router.get(
   "/",
   requireAuth,
-  requirePermission(PERMISSIONS.ATTENDANCE_READ),
+  requirePermission(PERMISSIONS.ATTENDANCE_MANAGE),
   validate(listForDateSchema),
   listForDate,
 );
@@ -24,7 +27,7 @@ router.get(
 router.post(
   "/bulk",
   requireAuth,
-  requirePermission(PERMISSIONS.ATTENDANCE_RECORD),
+  requirePermission(PERMISSIONS.ATTENDANCE_MANAGE),
   validate(bulkRecordSchema),
   bulkRecord,
 );

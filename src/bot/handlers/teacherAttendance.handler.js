@@ -2,7 +2,10 @@ import { getLinkedUser } from "../services/botUser.service.js";
 import { ROLES } from "../../constants/roles.js";
 import { listForTeacher } from "../../modules/groups/services/groups.service.js";
 import { listForGroupOnDate } from "../../modules/attendance/services/attendance.service.js";
-import { dayOfWeekOf } from "../../helpers/attendance.helper.js";
+import {
+  localTodayMidnight,
+  localDayOfWeek,
+} from "../../helpers/attendance.helper.js";
 
 const DAY_LABELS = {
   mon: "Dushanba",
@@ -23,8 +26,8 @@ const teacherAttendanceHandler = async (bot, msg) => {
     return;
   }
 
-  const today = new Date();
-  const todayDow = dayOfWeekOf(today);
+  const today = localTodayMidnight();
+  const todayDow = localDayOfWeek();
   const groups = await listForTeacher(linked._id);
 
   const todayGroups = groups.filter((g) =>
