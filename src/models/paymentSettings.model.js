@@ -8,6 +8,15 @@ const paymentSettingsSchema = new mongoose.Schema(
     repeatAfterOverdueDays: { type: Number, min: 0, default: 3 },
     reminderEnabled: { type: Boolean, default: true },
     centerName: { type: String, default: "Bayyina" },
+    // Guruh narxi oy o'rtasida o'zgarganda joriy oy hisoblariga qanday ta'sir qilsin:
+    //  future_only    — joriy oy hisoblari o'zgarmaydi, yangi narx faqat keyingi oydan
+    //  current_unpaid — joriy oyning TO'LANMAGAN/qisman hisoblari yangi narxga o'tadi (to'langanlar himoyalangan)
+    //  include_paid   — to'langan hisoblar ham yangilanadi (farq qarz bo'ladi yoki balansga qaytadi)
+    groupPriceChangeMode: {
+      type: String,
+      enum: ["future_only", "current_unpaid", "include_paid"],
+      default: "current_unpaid",
+    },
     // O'qituvchi kelmagan kun uchun o'quvchidan ayiriladigan dars haqi (global default)
     teacherAbsenceMode: {
       type: String,

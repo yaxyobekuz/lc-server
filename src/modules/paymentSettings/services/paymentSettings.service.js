@@ -39,6 +39,9 @@ export const update = async (body) => {
   if (body.centerName !== undefined) {
     doc.centerName = String(body.centerName).trim() || "Bayyina";
   }
+  if (body.groupPriceChangeMode !== undefined) {
+    doc.groupPriceChangeMode = body.groupPriceChangeMode;
+  }
   if (body.teacherAbsenceMode !== undefined) {
     doc.teacherAbsenceMode = body.teacherAbsenceMode;
   }

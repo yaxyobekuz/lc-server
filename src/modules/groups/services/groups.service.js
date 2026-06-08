@@ -7,7 +7,11 @@ import LeadDirection from "../../../models/leadDirection.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import { ROLES } from "../../../constants/roles.js";
 import { toUtcMidnight } from "../../../helpers/attendance.helper.js";
-import { reconcileOnLeave } from "../../invoices/services/invoices.service.js";
+import {
+  reconcileOnLeave,
+  repriceCurrentCycle,
+} from "../../invoices/services/invoices.service.js";
+import { get as getPaymentSettings } from "../../paymentSettings/services/paymentSettings.service.js";
 import {
   deleteGroup as cascadeDeleteGroup,
   restoreGroup as cascadeRestoreGroup,
@@ -237,7 +241,15 @@ export const update = async (id, body) => {
   }
   if (body.name !== undefined) group.name = body.name.trim();
   if (body.schedule !== undefined) group.schedule = body.schedule;
-  if (body.monthlyPrice !== undefined) group.monthlyPrice = body.monthlyPrice;
+
+  // Narx o'zgarishini aniqlaymiz — saqlangach sozlamadagi siyosatni qo'llaymiz
+  const oldPrice = Number(group.monthlyPrice) || 0;
+  let priceChanged = false;
+  if (body.monthlyPrice !== undefined) {
+    group.monthlyPrice = body.monthlyPrice;
+    priceChanged = (Number(body.monthlyPrice) || 0) !== oldPrice;
+  }
+
   if (body.startDate !== undefined) {
     group.startDate = body.startDate ? toUtcMidnight(body.startDate) : null;
   }
@@ -252,6 +264,33 @@ export const update = async (id, body) => {
   }
 
   await group.save();
+
+  // Narx o'zgargan bo'lsa — sozlamadagi siyosat bo'yicha joriy oy hisoblarini moslaymiz
+  if (priceChanged) {
+    const settings = await getPaymentSettings();
+    const mode = settings.groupPriceChangeMode || "current_unpaid";
+
+    let priceChange = {
+      oldPrice,
+      newPrice: Math.round(Number(group.monthlyPrice) || 0),
+      mode,
+      repriced: 0,
+      newDebtCount: 0,
+    };
+    if (mode !== "future_only") {
+      // Reprice xatosi narx saqlanishini buzmasin (keyingi oy baribir to'g'ri).
+      try {
+        const result = await repriceCurrentCycle(group, {
+          includePaid: mode === "include_paid",
+        });
+        priceChange = { ...priceChange, ...result };
+      } catch {
+        priceChange = { ...priceChange, error: true };
+      }
+    }
+    return { ...group.toJSON(), priceChange };
+  }
+
   return group;
 };
 

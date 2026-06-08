@@ -13,6 +13,7 @@ import {
 } from "../../../helpers/billing.helper.js";
 import { get as getSettings } from "../../paymentSettings/services/paymentSettings.service.js";
 import { correlationCacheInvalidate } from "../../../helpers/correlationCache.js";
+import logger from "../../../config/logger.js";
 
 const NON_CANCELLED = { $ne: "cancelled" };
 
@@ -240,6 +241,195 @@ export const reconcileOnLeave = async (
         : "unpaid";
   await invoice.save();
   return invoice;
+};
+
+// Narx o'zgargach to'langan hisob qarzga aylansa — darhol "muddati o'tgan"
+// eslatmasi ketmasligi uchun beriladigan eng kam imkon (kun).
+const PRICE_CHANGE_MIN_GRACE_DAYS = 7;
+
+// Bir hisobni guruhning joriy narxiga qayta narxlaydi. Pul holatini (paidAmount/
+// status) recompute() — haqiqiy Payment yozuvlari + appliedBalance — aniqlaydi,
+// shu sabab naqd to'lovga qo'l bilan tegilmaydi (narx tushib-ko'tarilganda ikki
+// marta hisoblash xavfining oldini oladi). Faqat balansdan yechilgan (appliedBalance)
+// ortiqcha narx pasayganda balansga qaytariladi — bu xavfsiz, chunki appliedBalance
+// invoice holati va recompute uni o'qiydi. Naqd ortiqcha to'lov balansga avtomatik
+// o'tkazilmaydi (Payment yozuvlarida saqlanadi; admin refund orqali qaytaradi).
+// Qaytaradi: { changed, becameDebt }.
+const repriceOneInvoice = async (invoice, group, { year, month }, periodEnd, groupFin, settings) => {
+  // O'qigan qism oxiri (prorate). membership ref bo'lmasa (qo'lda yaratilgan
+  // hisob) — o'quvchining shu davrga TEGISHLI a'zoligidan leftAt ni izlaymiz, aks
+  // holda oy o'rtasida chiqqan o'quvchi to'liq narxga o'tib ortiqcha hisoblanardi.
+  let left = invoice.membership?.leftAt ? new Date(invoice.membership.leftAt) : null;
+  if (!left && !invoice.membership) {
+    const monthStart = startOfMonth(year, month);
+    const mem = await GroupMembership.findOne({
+      group: group._id,
+      student: invoice.student,
+      isDeleted: { $ne: true },
+      joinedAt: { $lte: periodEnd },
+      $or: [{ leftAt: null }, { leftAt: { $gte: monthStart } }],
+    })
+      .sort({ joinedAt: -1 })
+      .select({ leftAt: 1 });
+    if (mem?.leftAt) left = new Date(mem.leftAt);
+  }
+  let effectiveEnd = left && left < periodEnd ? left : null;
+  if (groupFin && groupFin < periodEnd) {
+    effectiveEnd = effectiveEnd && effectiveEnd < groupFin ? effectiveEnd : groupFin;
+  }
+
+  const newBase = effectiveEnd
+    ? proratedBase(group, { year, month }, effectiveEnd)
+    : Math.round(Number(group.monthlyPrice) || 0);
+  const { amount: discountAmount, snapshot } = await computeDiscountAmount(
+    invoice.student,
+    newBase,
+    undefined,
+    group._id,
+  );
+  const newTotalDue = Math.max(
+    0,
+    newBase - discountAmount - (invoice.teacherAbsenceDeduction || 0),
+  );
+
+  // Hech narsa o'zgarmasa — o'tkazib yuboramiz (idempotent). Chegirma tarkibi ham
+  // hisobga olinadi, aks holda eski discountSnapshot eskirib qolardi.
+  if (
+    newBase === invoice.baseAmount &&
+    discountAmount === invoice.discountAmount &&
+    newTotalDue === invoice.totalDue
+  ) {
+    return { changed: false, becameDebt: false };
+  }
+
+  const oldBase = invoice.baseAmount;
+  const wasPaid = invoice.status === "paid";
+
+  invoice.baseAmount = newBase;
+  invoice.discountAmount = discountAmount;
+  invoice.discountSnapshot = snapshot;
+  invoice.totalDue = newTotalDue;
+
+  // Narx pasaysa: balansdan yechilgan ortiqcha summani aniqlaymiz va appliedBalance'ni
+  // clamp qilamiz (reversible-safe — recompute clamplangan qiymatni o'qiydi, narx
+  // qayta oshsa ikki marta qaytarilmaydi). MUHIM tartib: avval invoice (clamplangan
+  // appliedBalance bilan) saqlanadi, KEYIN balansga qaytariladi — shunda ikki saqlash
+  // orasida uzilish bo'lsa ham ikki marta qaytarish (leak) bo'lmaydi (qayta urinishda
+  // appliedBalance allaqachon clamplangan, faqat qaytarish o'tkazib yuborilishi mumkin).
+  const applied = Number(invoice.appliedBalance) || 0;
+  const freed = applied > newTotalDue ? applied - newTotalDue : 0;
+  if (freed > 0) invoice.appliedBalance = newTotalDue;
+
+  const note = `Narx yangilandi: ${oldBase} → ${newBase} so'm`;
+  invoice.notes = invoice.notes ? `${invoice.notes}\n${note}` : note;
+  await invoice.save();
+
+  if (freed > 0) {
+    const student = await User.findById(invoice.student);
+    if (student) {
+      student.balance = (Number(student.balance) || 0) + freed;
+      await student.save();
+    }
+  }
+
+  // Pul holatini haqiqiy to'lov yozuvlaridan qayta hisoblaymiz.
+  // recompute: paidAmount = min(totalDue, net to'lov + appliedBalance).
+  const fresh = await recompute(invoice._id);
+
+  const becameDebt = wasPaid && fresh.status !== "paid";
+  if (becameDebt) {
+    const graceDays = Math.max(
+      (Number(settings.remindBeforeDays) || 0) + 1,
+      PRICE_CHANGE_MIN_GRACE_DAYS,
+    );
+    const grace = new Date(Date.now() + graceDays * 24 * 60 * 60 * 1000);
+    if (fresh.dueDate < grace) fresh.dueDate = grace;
+    fresh.remindersSent = [];
+    await fresh.save();
+  }
+  return { changed: true, becameDebt };
+};
+
+// Guruh narxi o'zgargach BERILGAN DAVR hisoblarini sozlamadagi siyosatga ko'ra
+// yangi narxga moslaydi. includePaid=false → faqat unpaid/partial; true → to'langanlar ham.
+// Har bir hisob alohida try/catch ichida — bittasi xato bersa qolganlari to'xtamaydi.
+// Qaytaradi: { repriced, newDebtCount, failed }.
+export const repriceForPeriod = async (
+  group,
+  { year, month },
+  { includePaid = false } = {},
+) => {
+  ensurePeriod({ year, month });
+  if (!group) return { repriced: 0, newDebtCount: 0, failed: 0 };
+
+  const periodEnd = endOfMonth(year, month);
+  const groupFin = group.finishedAt ? new Date(group.finishedAt) : null;
+
+  const statuses = includePaid
+    ? ["unpaid", "partial", "paid"]
+    : ["unpaid", "partial"];
+
+  const invoices = await Invoice.find({
+    group: group._id,
+    "period.year": year,
+    "period.month": month,
+    status: { $in: statuses },
+    isDeleted: { $ne: true },
+  }).populate("membership", { leftAt: 1 });
+
+  const settings = await getSettings();
+  let repriced = 0;
+  let newDebtCount = 0;
+  let failed = 0;
+
+  for (const invoice of invoices) {
+    try {
+      const { changed, becameDebt } = await repriceOneInvoice(
+        invoice,
+        group,
+        { year, month },
+        periodEnd,
+        groupFin,
+        settings,
+      );
+      if (changed) repriced += 1;
+      if (becameDebt) newDebtCount += 1;
+    } catch (err) {
+      failed += 1;
+      logger.warn({ err, invoiceId: invoice._id }, "Hisobni qayta narxlashda xato");
+    }
+  }
+
+  return { repriced, newDebtCount, failed };
+};
+
+// Guruhning AMALDAGI (eng so'nggi) billing davrini topib qayta narxlaydi.
+// Davrni soatga emas, mavjud hisoblar yozilgan davrga qarab tanlaydi — shu sabab
+// generatsiya jobi UTC/mahalliy oy chegarasini qanday yozganidan qat'i nazar to'g'ri
+// davrga tushadi. Eski/arxiv davrlarga tegmaslik uchun joriy oydan ±1 oy oralig'i.
+// Qaytaradi: { repriced, newDebtCount, failed, period }.
+export const repriceCurrentCycle = async (group, { includePaid = false } = {}) => {
+  const empty = { repriced: 0, newDebtCount: 0, failed: 0, period: null };
+  if (!group) return empty;
+
+  const latest = await Invoice.findOne({
+    group: group._id,
+    isDeleted: { $ne: true },
+    status: { $ne: "cancelled" },
+  })
+    .sort({ "period.year": -1, "period.month": -1 })
+    .select({ period: 1 });
+  if (!latest?.period) return empty;
+
+  const period = { year: latest.period.year, month: latest.period.month };
+
+  const now = new Date();
+  const clockNum = now.getUTCFullYear() * 12 + (now.getUTCMonth() + 1);
+  const latestNum = period.year * 12 + period.month;
+  if (Math.abs(latestNum - clockNum) > 1) return empty;
+
+  const result = await repriceForPeriod(group, period, { includePaid });
+  return { ...result, period };
 };
 
 const STUDENT_PROJECTION = {
