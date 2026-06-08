@@ -10,6 +10,7 @@ const bulkRecord = asyncHandler(async (req, res) => {
     req.body.items,
     req.user,
     source,
+    req.body.slot || "",
   );
   res.status(201).json({
     success: true,

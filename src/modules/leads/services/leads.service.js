@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import Lead from "../../../models/lead.model.js";
+import Lead, { TRIAL_OUTCOMES } from "../../../models/lead.model.js";
 import LeadStatus from "../../../models/leadStatus.model.js";
 import LeadSource from "../../../models/leadSource.model.js";
 import LeadDirection from "../../../models/leadDirection.model.js";
@@ -353,6 +353,8 @@ export const setTrial = async (id, { date, groupId }, currentUser) => {
 
   lead.trialDate = new Date(date);
   lead.trialGroup = groupId || null;
+  lead.trialOutcome = null; // sana o'zgarsa natija qayta belgilanadi
+  lead.trialOutcomeAt = null;
   lead.history.push({
     type: "trial_set",
     message: "Sinov darsi sozlandi",
@@ -362,6 +364,50 @@ export const setTrial = async (id, { date, groupId }, currentUser) => {
   });
   await lead.save();
   return getById(lead._id);
+};
+
+// Sinov darsi natijasini belgilash (keldi/kelmadi). currentUser — trialGroup
+// o'qituvchisi yoki owner bo'lishi mumkin (ruxsat handler/route darajasida).
+export const recordTrialOutcome = async (id, outcome, currentUser) => {
+  if (!TRIAL_OUTCOMES.includes(outcome)) {
+    throw new ApiError(400, "Noto'g'ri natija");
+  }
+  const lead = await Lead.findById(id);
+  if (!lead) throw new ApiError(404, "Lid topilmadi");
+  if (!lead.trialDate) {
+    throw new ApiError(400, "Avval sinov darsi sanasi belgilanishi kerak");
+  }
+
+  lead.trialOutcome = outcome;
+  lead.trialOutcomeAt = new Date();
+  lead.history.push({
+    type: "trial_outcome",
+    message: outcome === "attended" ? "Sinovga keldi" : "Sinovga kelmadi",
+    meta: { outcome, trialDate: lead.trialDate },
+    createdBy: currentUser?._id || null,
+    createdAt: new Date(),
+  });
+  await lead.save();
+  return getById(lead._id);
+};
+
+// Berilgan sana + (ixtiyoriy) guruh bo'yicha sinov darsiga belgilangan lidlar.
+// Davomat sahifasida "bugungi sinov o'quvchilari" bo'limi uchun.
+export const getTrialsForDate = async (date, groupId = null) => {
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return [];
+  const filter = {
+    trialDate: { $gte: utcDayStart(d), $lte: utcDayEnd(d) },
+    isDeleted: { $ne: true },
+  };
+  if (groupId) filter.trialGroup = groupId;
+  return Lead.find(filter)
+    .select(
+      "firstName lastName phone trialDate trialGroup trialOutcome trialOutcomeAt status",
+    )
+    .populate("status", STATUS_PROJECTION)
+    .sort({ trialDate: 1 })
+    .lean();
 };
 
 export const convertToStudent = async (id, userBody, currentUser) => {

@@ -57,10 +57,12 @@ const iterateDays = function* (fromDate, toDate) {
   }
 };
 
-// Guruh schedule asosida diapazondagi class kunlar.
-// group.startDate bo'lsa — undan oldingi kunlar dars kuni hisoblanmaydi.
-// holidaySet (dateKey larning Set'i) berilsa — bayram kunlari dars kuni
-// hisoblanmaydi (davomat foiziga ta'sir qilmaydi).
+// Guruh schedule asosida diapazondagi class SESSIYALARI (har biri alohida).
+// Kunda bir nechta dars (slot) bo'lsa — har sessiya alohida qaytadi.
+//   • bir slotli kun  → slot = "" (eski xatti-harakat, bitta yozuv/kun)
+//   • ko'p slotli kun → har slot uchun slot = startTime (mas. "14:00")
+// group.startDate bo'lsa — undan oldingi kunlar hisoblanmaydi.
+// holidaySet berilsa — bayram kunlari hisoblanmaydi.
 export const getClassDaysInRange = (group, fromDate, toDate, holidaySet = null) => {
   const dayMap = new Map();
   for (const item of group?.schedule || []) {
@@ -73,15 +75,20 @@ export const getClassDaysInRange = (group, fromDate, toDate, holidaySet = null) 
     if (startTs !== null && d.getTime() < startTs) continue;
     const dow = dayOfWeekOf(d);
     const slots = dayMap.get(dow);
-    if (!slots) continue;
+    if (!slots || slots.length === 0) continue;
     const dKey = dateKeyOf(d);
     if (holidaySet && holidaySet.has(dKey)) continue;
-    result.push({
-      date: d,
-      dateKey: dKey,
-      dayOfWeek: dow,
-      slots,
-    });
+    const multi = slots.length > 1;
+    for (const s of slots) {
+      result.push({
+        date: d,
+        dateKey: dKey,
+        dayOfWeek: dow,
+        slot: multi ? s.startTime : "",
+        startTime: s.startTime,
+        endTime: s.endTime,
+      });
+    }
   }
   return result;
 };
@@ -118,3 +125,14 @@ export const withinCourseBounds = (group, date) => {
 // Berilgan sana bayram kunimi (dateKey holidaySet ichida bormi)
 export const isHolidayOn = (holidaySet, date) =>
   !!holidaySet && holidaySet.has(dateKeyOf(date));
+
+// O'quvchi shu sanada muzlatilganmi (freeze oralig'ida). endDate=null → ochiq.
+export const isFrozenOn = (freezes, date) => {
+  const target = toUtcMidnight(date).getTime();
+  return (freezes || []).some((f) => {
+    if (f.isActive === false) return false;
+    if (target < toUtcMidnight(f.startDate).getTime()) return false;
+    if (f.endDate && target > toUtcMidnight(f.endDate).getTime()) return false;
+    return true;
+  });
+};

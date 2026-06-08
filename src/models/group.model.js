@@ -67,15 +67,20 @@ const DAY_LABELS_UZ = {
 };
 
 groupSchema.pre("validate", function (next) {
+  // Bir kunda bir nechta dars (sessiya) bo'lishi mumkin, lekin bir xil
+  // (kun + boshlanish vaqti) takrorlanmasligi kerak.
   const seen = new Set();
   for (const item of this.schedule || []) {
-    if (seen.has(item.day)) {
+    const key = `${item.day}-${item.startTime}`;
+    if (seen.has(key)) {
       const label = DAY_LABELS_UZ[item.day] || item.day;
       return next(
-        new Error(`Bir kun jadvalda faqat bir marta bo'lishi mumkin (${label})`),
+        new Error(
+          `Bir xil dars vaqti takrorlanmasligi kerak (${label} ${item.startTime})`,
+        ),
       );
     }
-    seen.add(item.day);
+    seen.add(key);
     if (item.startTime >= item.endTime) {
       return next(
         new Error(`Tugash vaqti boshlanish vaqtidan keyin bo'lishi kerak (${item.day})`),

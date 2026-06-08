@@ -14,6 +14,7 @@ import {
   recordContactSchema,
   setFollowUpSchema,
   setTrialSchema,
+  trialOutcomeSchema,
   convertSchema,
   rangeSchema,
 } from "./validators/actions.validator.js";
@@ -28,6 +29,7 @@ import addNote from "./handlers/addNote.handler.js";
 import recordContact from "./handlers/recordContact.handler.js";
 import setFollowUp from "./handlers/setFollowUp.handler.js";
 import setTrial from "./handlers/setTrial.handler.js";
+import recordTrialOutcome from "./handlers/recordTrialOutcome.handler.js";
 import convert from "./handlers/convert.handler.js";
 import dashboard from "./handlers/dashboard.handler.js";
 import sourcePerformance from "./handlers/sourcePerformance.handler.js";
@@ -135,6 +137,13 @@ router.post(
   requirePermission(PERMISSIONS.LEADS_UPDATE),
   validate(setTrialSchema),
   setTrial,
+);
+router.post(
+  "/:id/trial-outcome",
+  requireAuth,
+  requirePermission(PERMISSIONS.LEADS_UPDATE),
+  validate(trialOutcomeSchema),
+  recordTrialOutcome,
 );
 router.post(
   "/:id/convert",

@@ -29,6 +29,9 @@ const attendanceSchema = new mongoose.Schema(
       enum: ATTENDANCE_STATUSES,
       required: true,
     },
+    // Sessiya (kunda bir nechta dars bo'lsa). Bir slotli kun uchun "" (default).
+    // Ko'p slotli kunlarda slot = dars boshlanish vaqti (mas. "14:00").
+    slot: { type: String, default: "" },
     reason: { type: String, default: "" },
     lateMinutes: { type: Number, default: 0, min: 0 },
     recordedBy: {
@@ -63,11 +66,11 @@ const attendanceSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-// Bir (group, student, dateKey) uchun faqat bitta AKTIV yozuv.
-// Partial: soft-deleted yozuvlar unique cheklovga kirmaydi — qayta belgilash
-// (resurrection) duplicate-key xatosini bermaydi.
+// Bir (group, student, dateKey, slot) uchun faqat bitta AKTIV yozuv.
+// slot — kunda bir nechta sessiya bo'lsa ajratadi (bir slotli kun uchun "").
+// Partial: soft-deleted yozuvlar unique cheklovga kirmaydi.
 attendanceSchema.index(
-  { group: 1, student: 1, dateKey: 1 },
+  { group: 1, student: 1, dateKey: 1, slot: 1 },
   { unique: true, partialFilterExpression: { isDeleted: false } },
 );
 attendanceSchema.index({ student: 1, date: 1 });

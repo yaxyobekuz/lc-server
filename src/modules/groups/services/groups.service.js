@@ -6,7 +6,7 @@ import BotUser from "../../../models/botUser.model.js";
 import LeadDirection from "../../../models/leadDirection.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import { ROLES } from "../../../constants/roles.js";
-import { toUtcMidnight } from "../../../helpers/attendance.helper.js";
+import { toUtcMidnight, localTodayMidnight } from "../../../helpers/attendance.helper.js";
 import {
   reconcileOnLeave,
   repriceCurrentCycle,
@@ -367,11 +367,14 @@ export const addStudent = async (groupId, studentId, { joinedAt } = {}) => {
     throw new ApiError(409, "O'quvchi allaqachon shu guruhda");
   }
 
-  // Boshlash sanasi — default bugun, UTC midnight'ga normallashtirilgan
+  // Boshlash sanasi — berilsa o'sha kun, aks holda mahalliy (Asia/Tashkent) "bugun".
+  // MUHIM: davomat ham mahalliy "bugun" bilan ishlaydi — UTC ishlatilsa, yarim
+  // tundan keyin (mahalliy 00:00–05:00) joinedAt ertangi/kechagi kunga tushib,
+  // bugungi davomatda o'quvchi ko'rinmay qolardi.
   const membership = await GroupMembership.create({
     group: groupId,
     student: studentId,
-    joinedAt: toUtcMidnight(joinedAt || new Date()),
+    joinedAt: joinedAt ? toUtcMidnight(joinedAt) : localTodayMidnight(),
   });
 
   // O'quvchi yana o'qishni boshladi — "chiqib ketgan" holatini tozalaymiz
@@ -428,7 +431,7 @@ const transferSequential = async (groupId, studentId, targetGroupId) => {
     const opened = await GroupMembership.create({
       group: targetGroupId,
       student: studentId,
-      joinedAt: toUtcMidnight(new Date()),
+      joinedAt: localTodayMidnight(),
     });
     return { closed, opened };
   } catch (err) {
@@ -469,7 +472,7 @@ export const transferStudent = async (groupId, studentId, targetGroupId) => {
     if (!closed) throw new ApiError(404, "Faol a'zolik topilmadi");
 
     const [opened] = await GroupMembership.create(
-      [{ group: targetGroupId, student: studentId, joinedAt: toUtcMidnight(new Date()) }],
+      [{ group: targetGroupId, student: studentId, joinedAt: localTodayMidnight() }],
       { session },
     );
     await session.commitTransaction();

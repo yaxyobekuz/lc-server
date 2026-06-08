@@ -9,9 +9,12 @@ export const HISTORY_TYPES = [
   "contact",
   "follow_up_set",
   "trial_set",
+  "trial_outcome",
   "converted",
   "reassigned",
 ];
+
+export const TRIAL_OUTCOMES = ["attended", "no_show"];
 
 const historySchema = new mongoose.Schema(
   {
@@ -65,6 +68,13 @@ const leadSchema = new mongoose.Schema(
       ref: "Group",
       default: null,
     },
+    // Sinov darsi natijasi (keldi/kelmadi) — konversiya tahlili uchun
+    trialOutcome: {
+      type: String,
+      enum: [...TRIAL_OUTCOMES, null],
+      default: null,
+    },
+    trialOutcomeAt: { type: Date, default: null },
 
     convertedUser: {
       type: mongoose.Schema.Types.ObjectId,

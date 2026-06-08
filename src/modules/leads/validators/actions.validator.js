@@ -38,6 +38,13 @@ export const setTrialSchema = z.object({
   }),
 });
 
+export const trialOutcomeSchema = z.object({
+  params: z.object({ id: z.string().min(1) }),
+  body: z.object({
+    outcome: z.enum(["attended", "no_show"]),
+  }),
+});
+
 export const convertSchema = z.object({
   params: z.object({ id: z.string().min(1) }),
   body: z.object({

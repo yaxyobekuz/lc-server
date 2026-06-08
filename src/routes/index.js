@@ -13,6 +13,7 @@ import paymentReportsRouter from "../modules/paymentReports/paymentReports.route
 import attendanceRouter from "../modules/attendance/attendance.routes.js";
 import teacherAttendanceRouter from "../modules/teacherAttendance/teacherAttendance.routes.js";
 import attendanceExemptionsRouter from "../modules/attendanceExemptions/attendanceExemptions.routes.js";
+import studentFreezesRouter from "../modules/studentFreezes/studentFreezes.routes.js";
 import attendanceSettingsRouter from "../modules/attendanceSettings/attendanceSettings.routes.js";
 import salariesRouter from "../modules/salaries/salaries.routes.js";
 import teacherGroupRatesRouter from "../modules/teacherGroupRates/teacherGroupRates.routes.js";
@@ -56,6 +57,7 @@ router.use("/payment-reports", paymentReportsRouter);
 router.use("/attendance", attendanceRouter);
 router.use("/teacher-attendance", teacherAttendanceRouter);
 router.use("/attendance-exemptions", attendanceExemptionsRouter);
+router.use("/student-freezes", studentFreezesRouter);
 router.use("/attendance-settings", attendanceSettingsRouter);
 
 // Salaries subsystem

@@ -11,6 +11,7 @@ export const bulkRecordSchema = z.object({
   params: z.object({ groupId: z.string().min(1) }),
   body: z.object({
     date: z.coerce.date(),
+    slot: z.string().max(5).optional(), // sessiya: "" yoki "HH:mm"
     items: z.array(itemSchema).min(1, "Hech bo'lmaganda bitta yozuv kerak"),
   }),
 });
