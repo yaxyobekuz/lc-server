@@ -1060,7 +1060,7 @@ const CORRELATION_BATCH = 25;
 
 export const correlationReport = async ({ year, month }) => {
   const cacheKey = `${year}-${month}`;
-  const cached = correlationCacheGet(cacheKey);
+  const cached = await correlationCacheGet(cacheKey);
   if (cached) return cached;
 
   const monthStart = startOfMonth(year, month);
@@ -1121,7 +1121,7 @@ export const correlationReport = async ({ year, month }) => {
     };
   });
 
-  correlationCacheSet(cacheKey, result);
+  await correlationCacheSet(cacheKey, result);
   return result;
 };
 

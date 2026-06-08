@@ -1,3 +1,7 @@
+// PROYEKSIYA xizmati: TeacherAbsence (per-guruh "o'qituvchi kelmadi") yozuvlari
+// TeacherAttendance (manba-haqiqat) dan teacherAttendance.service orqali hosil
+// qilinadi — maosh/chegirma hisobiga ishlatiladi. Mustaqil haqiqat sifatida
+// qaramang. To'liq tafsilot: modules/teacherAttendance/services/teacherAttendance.service.js
 import TeacherAbsence from "../../../models/teacherAbsence.model.js";
 import Group from "../../../models/group.model.js";
 import ApiError from "../../../utils/ApiError.js";

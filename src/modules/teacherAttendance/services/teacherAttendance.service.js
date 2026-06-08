@@ -1,3 +1,20 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// O'QITUVCHI DAVOMATI ARXITEKTURASI (manba-haqiqat hujjati)
+//
+// Ikkita kolleksiya ataylab ishlatiladi va ROLLARI HAR XIL:
+//   1) TeacherAttendance  → MANBA-HAQIQAT. Har (teacher, dateKey) uchun bitta
+//      kunlik yozuv. Holatlar: present | absent | excused ("exempt" YO'Q —
+//      o'qituvchida imtiyoz tushunchasi bo'lmaydi). Owner shu yerda belgilaydi.
+//   2) TeacherAbsence     → PROYEKSIYA. Bu yozuvdan kelib chiqib, dars kuni bo'lgan
+//      har bir GURUH uchun "o'qituvchi kelmadi" belgisi (maosh/chegirma hisobiga).
+//      syncTeacherGroupAbsences() orqali TeacherAttendance'dan AVTOMATIK hosil
+//      qilinadi — uni mustaqil "haqiqat" sifatida YOZMANG.
+//
+// Ya'ni: yoz → TeacherAttendance; o'qi (guruh darajasi) → TeacherAbsence (derived).
+// Kelajak-kun qo'riqlovi student davomati bilan bir xil: localTodayKey (Asia/Tashkent).
+// To'liq bitta modelga birlashtirish maosh hisobiga ta'sir qilgani uchun ataylab
+// QILINMAGAN (parity + hujjat yondashuvi).
+// ─────────────────────────────────────────────────────────────────────────────
 import TeacherAttendance, {
   TEACHER_ATTENDANCE_STATUSES,
 } from "../../../models/teacherAttendance.model.js";
@@ -5,7 +22,11 @@ import User from "../../../models/user.model.js";
 import Group from "../../../models/group.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import { ROLES } from "../../../constants/roles.js";
-import { dateKeyOf, dayOfWeekOf } from "../../../helpers/attendance.helper.js";
+import {
+  dateKeyOf,
+  dayOfWeekOf,
+  localTodayKey,
+} from "../../../helpers/attendance.helper.js";
 import {
   setAbsent as setGroupTeacherAbsent,
   setPresent as setGroupTeacherPresent,
@@ -65,8 +86,9 @@ export const bulkRecord = async (dateInput, items, currentUser) => {
   const date = new Date(dateInput);
   if (Number.isNaN(date.getTime())) throw new ApiError(400, "Sana noto'g'ri");
   const dateKey = dateKeyOf(date);
-  // Kelajak kun uchun davomat belgilanmaydi (o'tmishni tuzatish mumkin)
-  if (dateKey > dateKeyOf(new Date())) {
+  // Kelajak kun uchun davomat belgilanmaydi (o'tmishni tuzatish mumkin).
+  // "Bugun" — mahalliy (Asia/Tashkent) kun, student davomati bilan bir xil.
+  if (dateKey > localTodayKey()) {
     throw new ApiError(400, "Kelajak kun uchun davomat belgilab bo'lmaydi");
   }
   if (!Array.isArray(items) || !items.length) {

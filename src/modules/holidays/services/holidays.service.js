@@ -174,8 +174,11 @@ export const isAlreadySentToday = (holiday, now = new Date()) =>
 
 // Aktiv bayramlar ro'yxatining qisqa muddatli keshi (har so'rovda DB urilmasin).
 // Bayram CRUD juda kam, davomat hot path'i tez-tez chaqiriladi.
+// Per-process kesh — TTL qisqa (60s) tutiladi: bayram CRUD kam, lekin ko'p-instansli
+// deploy'da boshqa instans keshini invalidate qila olmaydi, shuning uchun eskirish
+// oynasi 60s bilan cheklanadi (bir instansda CRUD bo'lsa o'sha instans darrov tozalaydi).
 let _holidayCache = null; // { audiencesKey, expires, holidays }
-const HOLIDAY_CACHE_TTL_MS = 5 * 60 * 1000;
+const HOLIDAY_CACHE_TTL_MS = 60 * 1000;
 
 export const invalidateHolidayCache = () => {
   _holidayCache = null;
