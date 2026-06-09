@@ -18,6 +18,7 @@
     "seed:fake-extras2": "node src/seeds/fakeExtras2.seed.js",
     "seed:fake-payments": "node src/seeds/fakeCurrentPayments.seed.js",
     "migrate:attendance-slot": "node src/seeds/migrateAttendanceSlot.seed.js",
+    "migrate:membership-index": "node src/seeds/migrateMembershipIndex.seed.js",
     "seed:all": "npm run seed:permissions && npm run seed:owner && npm run seed:payments && npm run seed:leads && npm run seed:communication && npm run seed:expense-types && npm run seed:fake-data && npm run seed:fake-extras && npm run seed:fake-extras2 && npm run seed:fake-payments"
   },
   "dependencies": {

@@ -362,6 +362,7 @@ export const addStudent = async (groupId, studentId, { joinedAt } = {}) => {
     group: groupId,
     student: studentId,
     leftAt: null,
+    isDeleted: { $ne: true },
   });
   if (existing) {
     throw new ApiError(409, "O'quvchi allaqachon shu guruhda");
@@ -415,7 +416,7 @@ export const removeStudent = async (groupId, studentId, leaveStatus) => {
 
 const transferSequential = async (groupId, studentId, targetGroupId) => {
   const closed = await GroupMembership.findOneAndUpdate(
-    { group: groupId, student: studentId, leftAt: null },
+    { group: groupId, student: studentId, leftAt: null, isDeleted: { $ne: true } },
     {
       $set: {
         leftAt: new Date(),
@@ -459,7 +460,7 @@ export const transferStudent = async (groupId, studentId, targetGroupId) => {
     session = await mongoose.startSession();
     session.startTransaction();
     const closed = await GroupMembership.findOneAndUpdate(
-      { group: groupId, student: studentId, leftAt: null },
+      { group: groupId, student: studentId, leftAt: null, isDeleted: { $ne: true } },
       {
         $set: {
           leftAt: new Date(),
