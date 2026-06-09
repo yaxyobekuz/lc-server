@@ -733,12 +733,32 @@ export const getGroupMonthly = async (groupId, { year, month }) => {
     freezeMap.get(key).push(f);
   }
 
-  const students = activeMemberships.map((m) => {
+  // Bir o'quvchining bir oy ichida bir nechta a'zoligi bo'lishi mumkin
+  // (guruhdan chiqarilib, keyin qayta qabul qilingan holatda). Ularni BITTA
+  // qatorga birlashtiramiz — aks holda o'quvchi davomat jadvalida ikki marta
+  // (dublikat) ko'rinardi. Har bir o'quvchi uchun barcha [joined, left]
+  // oraliqlarini saqlaymiz va katak shu oraliqlarning birortasiga tushsa — faol.
+  const byStudent = new Map();
+  for (const m of activeMemberships) {
     const sid = String(m.student._id);
+    if (!byStudent.has(sid)) {
+      byStudent.set(sid, { student: m.student, intervals: [] });
+    }
+    byStudent.get(sid).intervals.push({
+      joinedTs: toUtcMidnight(m.joinedAt).getTime(),
+      leftTs: m.leftAt ? toUtcMidnight(m.leftAt).getTime() : null,
+    });
+  }
+
+  const students = Array.from(byStudent.values()).map(({ student, intervals }) => {
+    const sid = String(student._id);
     const stuExemptions = exempMap.get(sid) || [];
     const stuFreezes = freezeMap.get(sid) || [];
-    const joinedTs = toUtcMidnight(m.joinedAt).getTime();
-    const leftTs = m.leftAt ? toUtcMidnight(m.leftAt).getTime() : null;
+    // Katak (sana) o'quvchining a'zolik oraliqlaridan biriga tushadimi?
+    const isMemberOn = (ts) =>
+      intervals.some(
+        (iv) => ts >= iv.joinedTs && (iv.leftTs === null || ts <= iv.leftTs),
+      );
 
     const dayMap = attByStudentDay; // student|dateKey -> Map(slot->att)
     const usedAtt = new Set(); // bir yozuv faqat bir cell uchun
@@ -750,7 +770,7 @@ export const getGroupMonthly = async (groupId, { year, month }) => {
         cells[key] = null;
         continue;
       }
-      if (ts < joinedTs || (leftTs !== null && ts > leftTs)) {
+      if (!isMemberOn(ts)) {
         cells[key] = null;
         continue;
       }
@@ -783,7 +803,7 @@ export const getGroupMonthly = async (groupId, { year, month }) => {
     }
 
     return {
-      student: m.student.toJSON(),
+      student: student.toJSON(),
       cells,
     };
   });
@@ -851,6 +871,10 @@ const computeClassDays = ({
   let total = 0;
   let exemptDefault = 0;
   const cells = [];
+  // Bitta o'quvchining bir nechta a'zoligi (chiqarib-qayta qabul qilingan)
+  // bir xil kunni qamrab olishi mumkin — har bir (group, dateKey, slot) katagini
+  // faqat bir marta sanaymiz (dublikat / ikki marta hisoblanmasin).
+  const seenCells = new Set();
 
   for (const m of memberships) {
     if (!m.group) continue;
@@ -864,6 +888,9 @@ const computeClassDays = ({
     for (const cd of classDays) {
       // Muzlatilgan kunlar umuman hisobga olinmaydi (bayram kabi)
       if (freezes && isFrozenOn(freezes, cd.date)) continue;
+      const cellKey = `${String(m.group._id)}|${cd.dateKey}|${cd.slot || ""}`;
+      if (seenCells.has(cellKey)) continue;
+      seenCells.add(cellKey);
       total += 1;
       const def = defaultStatusFor(exemptions, cd.date, cd.dayOfWeek);
       const isExemptDefault = def === "exempt";
@@ -1042,14 +1069,29 @@ export const getGroupSummary = async (groupId, { fromDate, toDate }) => {
     freezeByStudent.get(k).push(f);
   }
 
-  // Har o'quvchi uchun shu guruhdagi class-day cell'larini oldindan hisoblaymiz
-  const perStudentCells = new Map(); // sid -> { total, cells }
-  const allDKeys = new Set();
+  // Bir o'quvchining bir nechta a'zoligini (chiqarilib, qayta qabul qilingan)
+  // BITTA o'quvchi sifatida birlashtiramiz — aks holda hisobotda dublikat
+  // qator chiqib, davomat ikki marta sanalardi.
+  const membershipsByStudent = new Map(); // sid -> { student, intervals: [{joinedAt,leftAt}] }
   for (const m of memberships) {
     if (!m.student) continue;
     const sid = String(m.student._id);
+    if (!membershipsByStudent.has(sid)) {
+      membershipsByStudent.set(sid, { student: m.student, intervals: [] });
+    }
+    membershipsByStudent.get(sid).intervals.push({
+      joinedAt: m.joinedAt,
+      leftAt: m.leftAt,
+      group,
+    });
+  }
+
+  // Har o'quvchi uchun shu guruhdagi class-day cell'larini oldindan hisoblaymiz
+  const perStudentCells = new Map(); // sid -> { total, cells }
+  const allDKeys = new Set();
+  for (const [sid, { intervals }] of membershipsByStudent) {
     const { total, cells } = computeClassDays({
-      memberships: [{ joinedAt: m.joinedAt, leftAt: m.leftAt, group }],
+      memberships: intervals,
       exemptions: exempByStudent.get(sid) || [],
       from,
       to,
@@ -1085,9 +1127,7 @@ export const getGroupSummary = async (groupId, { fromDate, toDate }) => {
     totalClasses: 0,
   };
 
-  for (const m of memberships) {
-    if (!m.student) continue;
-    const sid = String(m.student._id);
+  for (const [sid, { student }] of membershipsByStudent) {
     const { total, cells } = perStudentCells.get(sid) || { total: 0, cells: [] };
     const summary = summarizeCells({
       total,
@@ -1095,7 +1135,7 @@ export const getGroupSummary = async (groupId, { fromDate, toDate }) => {
       attendances: attByStudent.get(sid) || [],
     });
     perStudent.push({
-      student: m.student.toJSON(),
+      student: student.toJSON(),
       summary,
     });
     aggregate.present += summary.present;
