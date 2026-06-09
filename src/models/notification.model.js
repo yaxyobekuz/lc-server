@@ -26,6 +26,14 @@ export const AUDIENCE_TYPES = [
 
 export const SENDER_ROLES = ["owner", "teacher", "system"];
 
+// Yetkazish kanallari: "inapp" — platforma ichidagi inbox, "telegram" — bot DM.
+export const NOTIFICATION_CHANNELS = ["inapp", "telegram"];
+
+// Yuborish holati: "sent" — yuborilgan (yoki yetkazilmoqda),
+// "scheduled" — kelajakdagi vaqtga rejalashtirilgan,
+// "canceled" — rejadan bekor qilingan.
+export const NOTIFICATION_STATUSES = ["sent", "scheduled", "canceled"];
+
 const audienceSchema = new mongoose.Schema(
   {
     type: { type: String, enum: AUDIENCE_TYPES, required: true },
@@ -61,6 +69,19 @@ const notificationSchema = new mongoose.Schema(
       default: null,
     },
     audience: { type: audienceSchema, required: true },
+    // Tanlangan yetkazish kanallari. Bo'sh bo'lsa eski xulq: ikkala kanal.
+    channels: {
+      type: [{ type: String, enum: NOTIFICATION_CHANNELS }],
+      default: () => ["inapp", "telegram"],
+    },
+    // Yuborish holati va rejalashtirilgan vaqt (darhol yuborilsa — null).
+    status: {
+      type: String,
+      enum: NOTIFICATION_STATUSES,
+      default: "sent",
+      index: true,
+    },
+    scheduleAt: { type: Date, default: null, index: true },
     recipientsCount: { type: Number, default: 0, min: 0 },
     deliveredViaBot: { type: Number, default: 0, min: 0 },
     readCount: { type: Number, default: 0, min: 0 },

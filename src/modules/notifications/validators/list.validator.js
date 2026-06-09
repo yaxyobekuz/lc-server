@@ -17,6 +17,9 @@ export const listSchema = z.object({
   query: z.object({
     senderId: z.string().optional(),
     category: z.enum(CATEGORIES).optional(),
+    channel: z.enum(["inapp", "telegram"]).optional(),
+    status: z.enum(["sent", "scheduled", "canceled"]).optional(),
+    search: z.string().optional(),
     fromDate: z.coerce.date().optional(),
     toDate: z.coerce.date().optional(),
     page: z.coerce.number().int().min(1).optional(),

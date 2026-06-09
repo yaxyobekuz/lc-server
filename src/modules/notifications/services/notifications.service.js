@@ -181,6 +181,13 @@ export const resolveAudience = async (audience, currentUser) => {
   return [...uniqueSet].map((id) => new mongoose.Types.ObjectId(id));
 };
 
+// Jonli preview: tanlangan auditoriya bo'yicha nechta oluvchi chiqishini
+// hisoblaydi (xabar yaratmasdan). Wizard'da "N ta foydalanuvchiga boradi".
+export const previewAudience = async (audience, currentUser) => {
+  const recipientIds = await resolveAudience(audience, currentUser);
+  return { count: recipientIds.length };
+};
+
 // Cheklangan parallellik bilan ishlovchi pool (tashqi kutubxonasiz)
 const runPool = async (items, concurrency, worker) => {
   let idx = 0;
@@ -202,6 +209,10 @@ const runPool = async (items, concurrency, worker) => {
 export const deliverNotification = async (notificationId) => {
   const notif = await Notification.findById(notificationId).lean();
   if (!notif) return;
+
+  // Telegram kanali tanlanmagan bo'lsa — bot push qilinmaydi (faqat in-app).
+  const channels = notif.channels?.length ? notif.channels : ["inapp", "telegram"];
+  if (!channels.includes("telegram")) return;
 
   const recipients = await NotificationRecipient.find({
     notification: notificationId,
@@ -323,56 +334,131 @@ export const send = async (body, currentUser) => {
       : "teacher"
     : "system";
 
-  const notification = await runWithSession(async (session) => {
-    const opts = session ? { session } : {};
-    const created = await Notification.create(
-      [
-        {
-          sender: currentUser?._id || null,
-          senderRole,
-          title: body.title || "",
-          body: finalBody,
-          category: finalCategory,
-          template: templateRef,
-          audience: body.audience,
-          recipientsCount: recipientIds.length,
-          deliveredViaBot: 0,
-          readCount: 0,
-          isAuto: !!body.isAuto,
-          dedupeKey: body.dedupeKey || null,
-          relatedFeedback: body.relatedFeedback || null,
-          sentAt: new Date(),
-        },
-      ],
-      session ? { session } : undefined,
-    );
-    const notif = created[0];
+  // Kanallar — kamida bittasi (validator min(1)). Berilmasa eski xulq: ikkalasi.
+  const channels =
+    body.channels?.length ? [...new Set(body.channels)] : ["inapp", "telegram"];
 
-    if (recipientIds.length > 0) {
-      const docs = recipientIds.map((uid) => ({
-        notification: notif._id,
-        user: uid,
-        readAt: null,
-      }));
-      await NotificationRecipient.insertMany(docs, {
-        ...opts,
-        ordered: false,
-      });
-    }
-    return notif;
+  // Rejalashtirish: scheduleAt kelajakda bo'lsa — hoziroq yubormaymiz.
+  const scheduleAt = body.scheduleAt ? new Date(body.scheduleAt) : null;
+  const isScheduled = scheduleAt && scheduleAt.getTime() > Date.now() + 30 * 1000;
+
+  // 1) Notification hujjatini yaratamiz (recipient'larsiz, status'ga qarab).
+  const notification = await Notification.create({
+    sender: currentUser?._id || null,
+    senderRole,
+    title: body.title || "",
+    body: finalBody,
+    category: finalCategory,
+    template: templateRef,
+    audience: body.audience,
+    channels,
+    status: isScheduled ? "scheduled" : "sent",
+    scheduleAt: isScheduled ? scheduleAt : null,
+    recipientsCount: recipientIds.length, // preview snapshot
+    deliveredViaBot: 0,
+    readCount: 0,
+    isAuto: !!body.isAuto,
+    dedupeKey: body.dedupeKey || null,
+    relatedFeedback: body.relatedFeedback || null,
+    sentAt: isScheduled ? scheduleAt : new Date(),
   });
 
-  // Yetkazish — so'rovni bloklamasdan Agenda job'iga qo'yiladi (recipient yo'q bo'lsa skip)
-  if (recipientIds.length > 0) {
-    await scheduleDelivery(notification._id);
+  if (isScheduled) {
+    // Recipient'lar va bot push job ishga tushganda materializatsiya qilinadi
+    // (shu vaqtga qadar auditoriya o'zgargan bo'lsa — eng so'nggi holat olinadi).
+    await scheduleSend(notification._id, scheduleAt);
+    return notification;
   }
 
-  return notification;
+  // Darhol yuborish — recipient'larni yaratamiz va bot push'ni navbatga qo'yamiz.
+  await materializeRecipients(notification._id, recipientIds, channels);
+  return Notification.findById(notification._id);
+};
+
+// Notification uchun recipient hujjatlarini yaratadi va (telegram tanlangan bo'lsa)
+// bot yetkazishni navbatga qo'yadi. Darhol va rejalashtirilgan yuborish — ikkovi ham
+// shu funksiyani chaqiradi. Idempotent emas: bir marta chaqirilishi ko'zda tutilgan.
+const materializeRecipients = async (notificationId, recipientIds, channels) => {
+  const wantsInapp = channels.includes("inapp");
+  if (recipientIds.length > 0) {
+    const docs = recipientIds.map((uid) => ({
+      notification: notificationId,
+      user: uid,
+      inapp: wantsInapp,
+      readAt: null,
+    }));
+    await NotificationRecipient.insertMany(docs, { ordered: false });
+  }
+
+  if (recipientIds.length > 0 && channels.includes("telegram")) {
+    await scheduleDelivery(notificationId);
+  }
+};
+
+// Rejalashtirilgan yuborishni belgilangan vaqtga Agenda job'iga qo'yadi.
+const scheduleSend = async (notificationId, when) => {
+  try {
+    const agenda = (await import("../../../config/agenda.js")).default;
+    await agenda.schedule(when, "notification.send", {
+      notificationId: String(notificationId),
+    });
+  } catch (err) {
+    logger.error(
+      { err, notificationId, when },
+      "Rejalashtirilgan yuborish job'i qo'yilmadi",
+    );
+    throw new ApiError(500, "Xabarni rejalashtirib bo'lmadi");
+  }
+};
+
+// Rejalashtirilgan yuborish vaqti kelganda Agenda job tomonidan chaqiriladi:
+// auditoriyani QAYTA hisoblaydi (eng so'nggi holat), recipient'larni yaratadi,
+// holatni "sent" ga o'tkazadi va bot push'ni navbatga qo'yadi. Idempotent —
+// status allaqachon "sent" bo'lsa hech nima qilmaydi.
+export const dispatchScheduled = async (notificationId) => {
+  const notif = await Notification.findById(notificationId);
+  if (!notif || notif.status !== "scheduled") return;
+
+  const sender = notif.sender
+    ? { _id: notif.sender, role: notif.senderRole === "owner" ? ROLES.OWNER : ROLES.TEACHER }
+    : null;
+  const recipientIds = await resolveAudience(notif.audience, sender);
+
+  const channels = notif.channels?.length ? notif.channels : ["inapp", "telegram"];
+  await Notification.updateOne(
+    { _id: notif._id, status: "scheduled" },
+    { $set: { status: "sent", sentAt: new Date(), recipientsCount: recipientIds.length } },
+  );
+  await materializeRecipients(notif._id, recipientIds, channels);
+};
+
+// Rejalashtirilgan xabarni bekor qilish (hali yuborilmagan bo'lsa).
+export const cancelScheduled = async (notificationId) => {
+  const notif = await Notification.findById(notificationId);
+  if (!notif) throw new ApiError(404, "Xabar topilmadi");
+  if (notif.status !== "scheduled") {
+    throw new ApiError(400, "Faqat rejalashtirilgan xabarni bekor qilish mumkin");
+  }
+  notif.status = "canceled";
+  await notif.save();
+  try {
+    const agenda = (await import("../../../config/agenda.js")).default;
+    await agenda.cancel({
+      name: "notification.send",
+      "data.notificationId": String(notificationId),
+    });
+  } catch (err) {
+    logger.warn({ err, notificationId }, "Reja job'ini bekor qilishda xato");
+  }
+  return notif;
 };
 
 export const list = async ({
   senderId,
   category,
+  channel,
+  status,
+  search,
   fromDate,
   toDate,
   page = 1,
@@ -381,6 +467,12 @@ export const list = async ({
   const filter = {};
   if (senderId) filter.sender = senderId;
   if (category) filter.category = category;
+  if (channel) filter.channels = channel;
+  if (status) filter.status = status;
+  if (search) {
+    const rx = new RegExp(search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    filter.$or = [{ title: rx }, { body: rx }];
+  }
   if (fromDate || toDate) {
     filter.sentAt = {};
     if (fromDate) filter.sentAt.$gte = new Date(fromDate);
@@ -429,7 +521,9 @@ export const getMyInbox = async (
   userId,
   { page = 1, limit = 20, unreadOnly = false } = {},
 ) => {
-  const filter = { user: userId };
+  // Faqat in-app kanali tanlangan xabarlar inbox'da ko'rinadi
+  // (eski yozuvlarda inapp maydoni yo'q — ularni ham ko'rsatamiz).
+  const filter = { user: userId, inapp: { $ne: false } };
   if (unreadOnly) filter.readAt = null;
 
   const skip = (page - 1) * limit;
@@ -448,7 +542,11 @@ export const getMyInbox = async (
 };
 
 export const getUnreadCount = async (userId) =>
-  NotificationRecipient.countDocuments({ user: userId, readAt: null });
+  NotificationRecipient.countDocuments({
+    user: userId,
+    readAt: null,
+    inapp: { $ne: false },
+  });
 
 export const markRead = async (recipientId, userId) => {
   const updated = await NotificationRecipient.findOneAndUpdate(

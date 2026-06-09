@@ -12,12 +12,14 @@ import {
   recipientListSchema,
   inboxListSchema,
 } from "./validators/id.validator.js";
-import { sendSchema } from "./validators/send.validator.js";
+import { sendSchema, previewSchema } from "./validators/send.validator.js";
 
 import list from "./handlers/list.handler.js";
 import getById from "./handlers/getById.handler.js";
 import getRecipients from "./handlers/getRecipients.handler.js";
 import send from "./handlers/send.handler.js";
+import preview from "./handlers/preview.handler.js";
+import cancel from "./handlers/cancel.handler.js";
 import myInbox from "./handlers/myInbox.handler.js";
 import unreadCount from "./handlers/unreadCount.handler.js";
 import markRead from "./handlers/markRead.handler.js";
@@ -49,6 +51,15 @@ router.get(
   list,
 );
 
+// Recipient count preview (jonli hisob — xabar yaratmaydi)
+router.post(
+  "/preview",
+  requireAuth,
+  requirePermission(PERMISSIONS.NOTIFICATIONS_SEND),
+  validate(previewSchema),
+  preview,
+);
+
 // Send
 router.post(
   "/",
@@ -56,6 +67,15 @@ router.post(
   requirePermission(PERMISSIONS.NOTIFICATIONS_SEND),
   validate(sendSchema),
   send,
+);
+
+// Rejalashtirilgan xabarni bekor qilish
+router.post(
+  "/:id/cancel",
+  requireAuth,
+  requirePermission(PERMISSIONS.NOTIFICATIONS_SEND),
+  validate(idSchema),
+  cancel,
 );
 
 // Detail va recipients — boshqaruv yuzasi (oluvchilar PII). O'quvchilar bloklanadi
