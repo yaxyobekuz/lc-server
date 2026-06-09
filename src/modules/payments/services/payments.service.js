@@ -9,7 +9,6 @@ import {
   computeNetPaid,
 } from "../../invoices/services/invoices.service.js";
 import { get as getSettings } from "../../paymentSettings/services/paymentSettings.service.js";
-import { ensureActiveGroup } from "../../../helpers/membership.helper.js";
 
 const STUDENT_PROJECTION = {
   firstName: 1,
@@ -111,12 +110,20 @@ const runWithSession = async (fn) => {
 };
 
 export const record = async (
-  { invoiceId, amount, methodId, paidAt, note },
+  { invoiceId, amount, methodId, paidAt, note, idempotencyKey },
   currentUser,
 ) => {
   const amt = Number(amount);
   if (!amt || amt <= 0) throw new ApiError(400, "Summa noto'g'ri");
   if (!Number.isInteger(amt)) throw new ApiError(400, "Summa butun son bo'lishi kerak");
+
+  const idemKey = idempotencyKey ? String(idempotencyKey) : null;
+  // Dublikat himoyasi (P-4): shu kalit bilan to'lov allaqachon yozilgan bo'lsa,
+  // yangisini yaratmasdan mavjudini qaytaramiz (idempotent retry).
+  if (idemKey) {
+    const existing = await Payment.findOne({ idempotencyKey: idemKey });
+    if (existing) return existing;
+  }
 
   return runWithSession(async (session) => {
     const opts = session ? { session } : {};
@@ -126,47 +133,48 @@ export const record = async (
       throw new ApiError(400, "Bekor qilingan hisobga to'lov yozib bo'lmaydi");
     }
 
-    // Faqat faol guruhdagi o'quvchiga to'lov yozish mumkin
-    await ensureActiveGroup(invoice.student, session);
+    // P-7: Mavjud hisobni to'lash uchun faol guruh SHART EMAS — guruhdan
+    // chiqqan o'quvchining qoldiq qarzi ham yig'ilishi kerak. (Avvalgi
+    // ensureActiveGroup cheklovi chiqib ketgan o'quvchining qarzini
+    // to'lashni butunlay bloklab qo'yardi.)
 
     await ensureMethod(methodId);
 
-    // Qarzdan ortiq summa o'quvchi balansiga o'tadi. To'lov yozuvi to'liq
-    // summada saqlanadi (audit + kunlik hisobot), hisob paidAmount esa
-    // recompute'da totalDue bilan cheklanadi.
-    const netPaid = await computeNetPaid(invoice._id, session);
-    const remaining = Math.max(
-      0,
-      invoice.totalDue - netPaid - (invoice.appliedBalance || 0),
-    );
-    const overflow = Math.max(0, amt - remaining);
-
-    const created = await Payment.create(
-      [
-        {
-          invoice: invoice._id,
-          student: invoice.student,
-          amount: amt,
-          type: "payment",
-          method: methodId,
-          paidAt: paidAt ? new Date(paidAt) : new Date(),
-          receivedBy: currentUser._id,
-          note: note || "",
-        },
-      ],
-      session ? { session } : undefined,
-    );
+    // To'lov yozuvi to'liq summada saqlanadi (audit + kunlik hisobot).
+    // Qarzdan ortiq (overflow) summani o'quvchi balansiga o'tkazishni
+    // recomputeInvoice MARKAZLASHGAN tarzda bajaradi (P-1 fix): u invoice
+    // ustidagi overflowCredit'ni kuzatadi, shuning uchun to'lov o'chirilsa
+    // yoki refund qilinsa overflow o'z-o'zidan teskari qaytadi. Bu yerda
+    // alohida balans yangilash YO'Q — aks holda fantom kredit qolib ketardi.
+    let created;
+    try {
+      created = await Payment.create(
+        [
+          {
+            invoice: invoice._id,
+            student: invoice.student,
+            amount: amt,
+            type: "payment",
+            method: methodId,
+            paidAt: paidAt ? new Date(paidAt) : new Date(),
+            receivedBy: currentUser._id,
+            note: note || "",
+            idempotencyKey: idemKey,
+          },
+        ],
+        session ? { session } : undefined,
+      );
+    } catch (err) {
+      // Race: ikkita parallel so'rov bir xil idempotencyKey bilan kelsa,
+      // ikkinchisi unique index xatosi (E11000) oladi — mavjudini qaytaramiz.
+      if (err?.code === 11000 && idemKey) {
+        const existing = await Payment.findOne({ idempotencyKey: idemKey });
+        if (existing) return existing;
+      }
+      throw err;
+    }
 
     await recomputeInvoice(invoice._id, session);
-
-    // Qarzdan ortiq summa — balansga (keyingi oy hisobidan yechiladi)
-    if (overflow > 0) {
-      const student = await User.findById(invoice.student, null, opts);
-      if (student) {
-        student.balance = (Number(student.balance) || 0) + overflow;
-        await student.save(opts);
-      }
-    }
 
     return created[0];
   });
@@ -188,9 +196,33 @@ export const refund = async (paymentId, { amount, reason }, currentUser) => {
       throw new ApiError(400, "Faqat oddiy to'lovni qaytarish mumkin");
     }
 
+    // (1) Invoice darajasida: refund umumiy net to'lovdan oshmasin
     const netPaid = await computeNetPaid(original.invoice, session);
     if (amt > netPaid) {
       throw new ApiError(400, "Refund summasi qolgan to'lovdan oshmasin");
+    }
+
+    // (2) Per-payment chegara (P-2 fix): aynan SHU to'lovga qarshi avval
+    // qaytarilgan summalar yig'indisi original to'lov summasidan oshmasligi
+    // kerak. Aks holda bitta to'lovni boshqa to'lovlar hisobidan ortiqcha
+    // qaytarish mumkin bo'lib, per-payment rekonsiliatsiya buzilardi.
+    const prior = await Payment.aggregate([
+      {
+        $match: {
+          refundOf: original._id,
+          type: "refund",
+          isDeleted: { $ne: true },
+        },
+      },
+      { $group: { _id: null, sum: { $sum: "$amount" } } },
+    ]).session(session || null);
+    const alreadyRefunded = prior[0]?.sum || 0;
+    const refundableForThis = Math.max(0, original.amount - alreadyRefunded);
+    if (amt > refundableForThis) {
+      throw new ApiError(
+        400,
+        "Bu to'lov bo'yicha qaytarish mumkin bo'lgan summadan oshib ketdi",
+      );
     }
 
     const created = await Payment.create(

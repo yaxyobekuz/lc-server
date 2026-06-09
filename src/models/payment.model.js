@@ -37,12 +37,24 @@ const paymentSchema = new mongoose.Schema(
     },
     refundReason: { type: String, default: "" },
     note: { type: String, default: "" },
+    // Dublikat to'lovlardan himoya (P-4): klient har bir to'lov urinishi uchun
+    // noyob kalit yuboradi. Double-click yoki retry bir xil kalit bilan kelsa,
+    // ikkinchisi unique index xatosi bilan rad etiladi.
+    idempotencyKey: { type: String, default: null },
   },
   { timestamps: true },
 );
 
 paymentSchema.index({ invoice: 1, type: 1 });
 paymentSchema.index({ student: 1, paidAt: -1 });
+// Faqat kalit mavjud bo'lgan hujjatlar uchun noyoblik (partial — null'lar erkin)
+paymentSchema.index(
+  { idempotencyKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { idempotencyKey: { $type: "string" } },
+  },
+);
 
 paymentSchema.set("toJSON", {
   transform: (_doc, ret) => {

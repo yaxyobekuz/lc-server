@@ -10,5 +10,7 @@ export const recordSchema = z.object({
     methodId: z.string().min(1, "To'lov usuli kerak"),
     paidAt: z.coerce.date().optional(),
     note: z.string().max(300).optional(),
+    // Dublikat to'lovlardan himoya (P-4) — ixtiyoriy noyob kalit
+    idempotencyKey: z.string().min(8).max(100).optional(),
   }),
 });

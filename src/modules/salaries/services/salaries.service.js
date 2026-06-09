@@ -388,6 +388,16 @@ export const recordPayout = async (salaryId, body, currentUser) => {
   if (!amount || amount <= 0) throw new ApiError(400, "Summa noto'g'ri");
   await ensureMethod(body.methodId);
 
+  const idemKey = body.idempotencyKey ? String(body.idempotencyKey) : null;
+  // Dublikat himoyasi (S-2): shu kalit bilan payout allaqachon yozilgan bo'lsa,
+  // qaytadan yozmasdan mavjudini qaytaramiz (idempotent retry/double-click).
+  if (idemKey) {
+    const existing = await SalaryPayout.findOne({ idempotencyKey: idemKey });
+    if (existing) {
+      return { payout: existing, carriedToAdvance: 0 };
+    }
+  }
+
   const { created, salary, excess } = await runWithSession(async (session) => {
     const opts = session ? { session } : {};
     const salary = await Salary.findById(salaryId, null, opts);
@@ -402,26 +412,37 @@ export const recordPayout = async (salaryId, body, currentUser) => {
     const payoutForThis = Math.round(Math.min(amount, remaining));
     const excess = Math.round(amount - payoutForThis);
 
-    const created = await SalaryPayout.create(
-      [
-        {
-          salary: salary._id,
-          teacher: salary.teacher,
-          amount: payoutForThis,
-          method: body.methodId,
-          paidAt: body.paidAt ? new Date(body.paidAt) : new Date(),
-          paidBy: currentUser._id,
-          note: body.note || "",
-        },
-      ],
-      session ? { session } : undefined,
-    );
+    let createdArr;
+    try {
+      createdArr = await SalaryPayout.create(
+        [
+          {
+            salary: salary._id,
+            teacher: salary.teacher,
+            amount: payoutForThis,
+            method: body.methodId,
+            paidAt: body.paidAt ? new Date(body.paidAt) : new Date(),
+            paidBy: currentUser._id,
+            note: body.note || "",
+            idempotencyKey: idemKey,
+          },
+        ],
+        session ? { session } : undefined,
+      );
+    } catch (err) {
+      // Race: parallel so'rov bir xil kalit bilan — mavjudini qaytaramiz
+      if (err?.code === 11000 && idemKey) {
+        const existing = await SalaryPayout.findOne({ idempotencyKey: idemKey });
+        if (existing) return { created: existing, salary, excess: 0 };
+      }
+      throw err;
+    }
 
     salary.paidAmount = Math.round((salary.paidAmount || 0) + payoutForThis);
     salary.status = computePaymentStatus(salary.finalAmount, salary.paidAmount);
     await salary.save(opts);
 
-    return { created: created[0], salary, excess };
+    return { created: createdArr[0], salary, excess };
   });
 
   // Ortiqcha to'lov -> keyingi oy avansiga (transaksiyadan tashqari, best-effort)
@@ -522,7 +543,15 @@ export const removePayout = async (payoutId, currentUser) => {
       0,
       Math.round((salary.paidAmount || 0) - payout.amount),
     );
-    salary.status = computePaymentStatus(salary.finalAmount, salary.paidAmount);
+    // S-6: payout o'chirilib paidAmount 0 ga tushsa, maoshni xato "approved"ga
+    // ko'tarmaymiz — faqat haqiqatan approve qilingan bo'lsa (approvedAt bor)
+    // "approved", aks holda "calculated" ga qaytadi.
+    const prevStatus = salary.approvedAt ? "approved" : "calculated";
+    salary.status = computePaymentStatus(
+      salary.finalAmount,
+      salary.paidAmount,
+      prevStatus,
+    );
     await salary.save(opts);
     return { ok: true };
   });

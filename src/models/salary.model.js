@@ -95,12 +95,16 @@ const salarySchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-// Bir o'qituvchi-oy uchun faqat bitta non-cancelled salary
+// Bir o'qituvchi-oy uchun faqat bitta non-cancelled salary.
+// MongoDB partial index'da $ne QO'LLAB-QUVVATLANMAYDI (index qurilmaydi) — shuning
+// uchun bekor qilinmagan statuslarni $in bilan aniq sanab beramiz (S-7 fix).
 salarySchema.index(
   { teacher: 1, "period.year": 1, "period.month": 1 },
   {
     unique: true,
-    partialFilterExpression: { status: { $ne: "cancelled" } },
+    partialFilterExpression: {
+      status: { $in: ["calculated", "approved", "partial", "paid"] },
+    },
   },
 );
 salarySchema.index({ "period.year": -1, "period.month": -1 });

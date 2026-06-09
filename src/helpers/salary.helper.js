@@ -230,9 +230,19 @@ export const assertCanReceivePayout = (salary) => {
   // Ortiqcha to'lovga ruxsat: ortiqcha qism keyingi oy avansiga yoziladi
 };
 
-// Payouts ro'yxatidan paidAmount va status hisoblash
-export const computePaymentStatus = (finalAmount, paidAmount) => {
-  if (paidAmount <= 0) return "approved";
+// Payouts ro'yxatidan paidAmount va status hisoblash.
+// prevStatus — to'lov bo'lmaganda qaytariladigan asl status (S-6 fix): payout
+// olib tashlanib paidAmount 0 ga tushganda statusni "approved" deb fabrikatsiya
+// qilmaymiz — agar maosh hali approve qilinmagan bo'lsa "calculated" qoladi.
+export const computePaymentStatus = (
+  finalAmount,
+  paidAmount,
+  prevStatus = "approved",
+) => {
+  if (paidAmount <= 0) {
+    // Faqat to'lovga oid statuslardan qaytamiz; approve qadami saqlanadi.
+    return prevStatus === "approved" ? "approved" : "calculated";
+  }
   if (paidAmount + 0.01 >= finalAmount) return "paid";
   return "partial";
 };

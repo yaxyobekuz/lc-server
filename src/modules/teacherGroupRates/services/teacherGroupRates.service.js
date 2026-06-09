@@ -112,8 +112,16 @@ export const update = async (id, body, currentUser) => {
   const old = await TeacherGroupRate.findById(id);
   if (!old) throw new ApiError(404, "Stavka topilmadi");
 
-  // Eski yozuvni deaktivatsiya
+  // Yangi stavka qaysi sanadan kuchga kiradi (eski stavka shu sanada yopiladi)
+  const effectiveFrom = body.effectiveFrom
+    ? new Date(body.effectiveFrom)
+    : new Date();
+
+  // Eski yozuvni deaktivatsiya + DAVRINI YOPAMIZ (effectiveTo).
+  // Aks holda maosh hisobi eski va yangi stavkani bir oyda ikki marta
+  // sanab, o'qituvchiga ortiqcha to'lov yozadi (effectiveTo: null qolib ketardi).
   old.isActive = false;
+  old.effectiveTo = effectiveFrom;
   await old.save();
 
   const merged = {
@@ -149,7 +157,7 @@ export const update = async (id, body, currentUser) => {
   return TeacherGroupRate.create({
     ...buildPayload(merged),
     isActive: true,
-    effectiveFrom: body.effectiveFrom ? new Date(body.effectiveFrom) : new Date(),
+    effectiveFrom,
     createdBy: currentUser?._id || null,
   });
 };

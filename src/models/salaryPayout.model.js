@@ -28,12 +28,22 @@ const salaryPayoutSchema = new mongoose.Schema(
       required: true,
     },
     note: { type: String, default: "" },
+    // Dublikat payout'lardan himoya (S-2): double-click/retry bir xil kalit
+    // bilan kelsa, ikkinchisi unique index xatosi bilan rad etiladi.
+    idempotencyKey: { type: String, default: null },
   },
   { timestamps: true },
 );
 
 salaryPayoutSchema.index({ salary: 1, paidAt: -1 });
 salaryPayoutSchema.index({ teacher: 1, paidAt: -1 });
+salaryPayoutSchema.index(
+  { idempotencyKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { idempotencyKey: { $type: "string" } },
+  },
+);
 
 salaryPayoutSchema.set("toJSON", {
   transform: (_doc, ret) => {

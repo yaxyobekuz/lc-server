@@ -6,10 +6,16 @@ import TeacherAbsence from "../../../models/teacherAbsence.model.js";
 import Group from "../../../models/group.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import {
-  toUtcMidnight,
+  parseLocalDay,
   dateKeyOf,
   dayOfWeekOf,
 } from "../../../helpers/attendance.helper.js";
+
+const parseDay = (dateInput) => {
+  const date = parseLocalDay(dateInput);
+  if (!date) throw new ApiError(400, "Sana noto'g'ri");
+  return date;
+};
 
 const isClassDayFor = (group, dow) =>
   (group.schedule || []).some((s) => s.day === dow);
@@ -18,7 +24,7 @@ const isClassDayFor = (group, dow) =>
 export const getStatus = async (groupId, dateInput) => {
   const group = await Group.findById(groupId);
   if (!group) throw new ApiError(404, "Guruh topilmadi");
-  const date = toUtcMidnight(dateInput);
+  const date = parseDay(dateInput);
   const dKey = dateKeyOf(date);
   const absence = await TeacherAbsence.findOne({ group: groupId, dateKey: dKey });
   return {
@@ -33,7 +39,7 @@ export const getStatus = async (groupId, dateInput) => {
 export const setAbsent = async (groupId, dateInput, currentUser) => {
   const group = await Group.findById(groupId);
   if (!group) throw new ApiError(404, "Guruh topilmadi");
-  const date = toUtcMidnight(dateInput);
+  const date = parseDay(dateInput);
   const dKey = dateKeyOf(date);
   if (!isClassDayFor(group, dayOfWeekOf(date))) {
     throw new ApiError(400, "Bu kun bu guruh uchun dars kuni emas");
@@ -53,7 +59,7 @@ export const setAbsent = async (groupId, dateInput, currentUser) => {
 
 // O'qituvchi keldi — belgini olib tashlaymiz.
 export const setPresent = async (groupId, dateInput) => {
-  const date = toUtcMidnight(dateInput);
+  const date = parseDay(dateInput);
   const dKey = dateKeyOf(date);
   const res = await TeacherAbsence.deleteOne({ group: groupId, dateKey: dKey });
   return { removed: res.deletedCount > 0 };

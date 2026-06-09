@@ -33,6 +33,11 @@ export const requireStudentAccess =
     try {
       if (!req.user) return next(new ApiError(401, "Avtorizatsiyadan o'tilmagan"));
       const sid = String(extractStudentId(req) || "");
+      // scopeGroupIds: handler ma'lumotni qaysi guruhlar bilan cheklashini
+      // belgilaydi. Owner/student uchun null (barcha guruhlar ko'rinadi —
+      // student baribir faqat o'zini so'raydi). Teacher uchun esa faqat o'zi
+      // o'qitadigan guruhlar (A-1 cross-group disclosure fix).
+      req.scopeGroupIds = null;
       if (req.user.role === ROLES.OWNER) return next();
       if (req.user.role === ROLES.STUDENT) {
         if (sid && sid === String(req.user._id)) return next();
@@ -51,7 +56,10 @@ export const requireStudentAccess =
           group: { $in: groupIds },
           isDeleted: { $ne: true },
         }).lean();
-        if (membership) return next();
+        if (membership) {
+          req.scopeGroupIds = groupIds;
+          return next();
+        }
         return next(new ApiError(403, "Bu o'quvchi sizning guruhlaringizda emas"));
       }
       return next(new ApiError(403, "Ruxsat etilmagan"));

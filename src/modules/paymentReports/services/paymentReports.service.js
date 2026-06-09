@@ -191,11 +191,14 @@ export const groupStats = async ({ year, month }) => {
 export const topDebtors = async ({ limit = 10 }) => {
   const items = await Invoice.aggregate([
     { $match: { status: { $in: ["unpaid", "partial"] }, isDeleted: { $ne: true } } },
+    // Eng eski ochiq hisob birinchi bo'lsin — $first uni oladi (inline "To'lash" uchun)
+    { $sort: { dueDate: 1, createdAt: 1 } },
     {
       $group: {
         _id: "$student",
         debt: { $sum: { $subtract: ["$totalDue", "$paidAmount"] } },
         invoicesCount: { $sum: 1 },
+        oldestOpenInvoiceId: { $first: "$_id" },
       },
     },
     {
@@ -216,6 +219,7 @@ export const topDebtors = async ({ limit = 10 }) => {
         phone: "$student.phone",
         debt: 1,
         invoicesCount: 1,
+        oldestOpenInvoiceId: 1,
       },
     },
     { $sort: { debt: -1 } },

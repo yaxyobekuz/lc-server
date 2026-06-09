@@ -515,6 +515,25 @@ export const recompute = async (invoiceId, session = null) => {
   // Qarzdan ortig'i balansga ketgani uchun paidAmount totalDue bilan cheklanadi.
   const credited = net + (invoice.appliedBalance || 0);
 
+  // ── Overflow kredit invariantini tiklash (P-1 fix) ──
+  // Hisobga to'langan summa totalDue dan oshsa, oshig'i o'quvchi balansiga
+  // o'tishi kerak. Bu yerda DESIRED overflow'ni qayta hisoblab, avval
+  // qo'shilgan overflowCredit bilan farqini balansga qo'llaymiz. Shunda
+  // to'lov o'chirilsa/refund qilinsa overflow o'z-o'zidan teskari qaytadi
+  // (alohida reversal kerak emas — har recompute invariantni tiklaydi).
+  const desiredOverflow = Math.max(0, credited - invoice.totalDue);
+  const prevOverflow = Number(invoice.overflowCredit) || 0;
+  const delta = desiredOverflow - prevOverflow;
+  if (delta !== 0) {
+    const student = await User.findById(invoice.student, null, opts);
+    if (student) {
+      // delta < 0 bo'lsa balansdan ayiriladi, lekin 0 dan past tushmaydi
+      student.balance = Math.max(0, (Number(student.balance) || 0) + delta);
+      await student.save(opts);
+    }
+    invoice.overflowCredit = desiredOverflow;
+  }
+
   invoice.paidAmount = Math.min(invoice.totalDue, credited);
   invoice.status = computeStatus(invoice.totalDue, credited);
   await invoice.save(opts);
@@ -542,24 +561,18 @@ export const applyAbsenceDeduction = async (invoiceId, amount, session = null) =
     (invoice.baseAmount || 0) - (invoice.discountAmount || 0) - after,
   );
 
-  const net = await computeNetPaid(invoice._id, session);
-  const credited = net + (invoice.appliedBalance || 0);
-  let balanceCredited = 0;
+  // totalDue kamaydi → appliedBalance undan oshmasligi kerak; oshig'i
+  // recompute ichida overflowCredit orqali balansga qaytariladi (P-1 fix).
   let appliedBalanceReduced = 0;
-  if (credited > invoice.totalDue) {
-    const overflow = credited - invoice.totalDue;
-    appliedBalanceReduced = Math.min(overflow, invoice.appliedBalance || 0);
-    invoice.appliedBalance = (invoice.appliedBalance || 0) - appliedBalanceReduced;
-    balanceCredited = overflow;
-    const student = await User.findById(invoice.student, null, opts);
-    if (student) {
-      student.balance = (Number(student.balance) || 0) + overflow;
-      await student.save(opts);
-    }
+  if ((invoice.appliedBalance || 0) > invoice.totalDue) {
+    appliedBalanceReduced = (invoice.appliedBalance || 0) - invoice.totalDue;
+    invoice.appliedBalance = invoice.totalDue;
   }
   await invoice.save(opts);
+  // recompute overflow kreditni (haqiqiy to'lovlar + appliedBalance − totalDue)
+  // markazlashgan tarzda balansga o'tkazadi — bu yerda qo'lda qo'shmaymiz.
   await recompute(invoice._id, session);
-  return { deducted, balanceCredited, appliedBalanceReduced };
+  return { deducted, appliedBalanceReduced };
 };
 
 // applyAbsenceDeduction ning aniq teskarisi (o'qituvchi qaytadan "keldi" bo'lganda).
@@ -578,20 +591,12 @@ export const reverseAbsenceDeduction = async (invoiceId, app, session = null) =>
       (invoice.discountAmount || 0) -
       invoice.teacherAbsenceDeduction,
   );
+  // totalDue qaytib oshdi → avval kamaytirilgan appliedBalance'ni tiklaymiz
   invoice.appliedBalance =
     (invoice.appliedBalance || 0) + (app.appliedBalanceReduced || 0);
   await invoice.save(opts);
-
-  if (app.balanceCredited > 0) {
-    const student = await User.findById(invoice.student, null, opts);
-    if (student) {
-      student.balance = Math.max(
-        0,
-        (Number(student.balance) || 0) - app.balanceCredited,
-      );
-      await student.save(opts);
-    }
-  }
+  // Balansga qaytarilgan overflow recompute ichida overflowCredit orqali
+  // teskari qaytariladi (qo'lda balans yangilash kerak emas — P-1 fix).
   await recompute(invoice._id, session);
 };
 
@@ -679,21 +684,31 @@ export const update = async (id, body) => {
 
   if (body.notes !== undefined) invoice.notes = body.notes;
 
+  let discountChanged = false;
   if (body.discountAmount !== undefined) {
     const v = Math.max(0, Math.min(invoice.baseAmount, Number(body.discountAmount)));
     invoice.discountAmount = v;
-    invoice.totalDue = Math.max(0, invoice.baseAmount - v);
-    // paidAmount'ni HAQIQIY to'lov yozuvlaridan qayta hisoblaymiz —
-    // stale paidAmount bilan status sakrab ketmasligi uchun
-    const realPaid = await computeNetPaid(invoice._id);
-    invoice.paidAmount = realPaid;
-    invoice.status = computeStatus(invoice.totalDue, realPaid);
+    // totalDue diskont + o'qituvchi-yo'qlik chegirmasini hisobga oladi
+    invoice.totalDue = Math.max(
+      0,
+      invoice.baseAmount - v - (invoice.teacherAbsenceDeduction || 0),
+    );
+    // totalDue kamaygan bo'lsa, balansdan yechilgan summa undan oshmasin;
+    // oshig'i recompute ichida overflowCredit orqali balansga qaytadi (P-5 fix).
+    if ((invoice.appliedBalance || 0) > invoice.totalDue) {
+      invoice.appliedBalance = invoice.totalDue;
+    }
+    discountChanged = true;
   }
   if (body.dueDate !== undefined) {
     invoice.dueDate = new Date(body.dueDate);
   }
 
   await invoice.save();
+  // paidAmount/status/overflow ni markazlashgan recompute aniqlaydi —
+  // u appliedBalance'ni ham hisobga oladi (avval u tashlab yuborilardi → qarz
+  // noto'g'ri oshib ketardi).
+  if (discountChanged) await recompute(invoice._id);
   return invoice;
 };
 
@@ -706,14 +721,32 @@ export const cancel = async (id, { reason = "" } = {}, currentUser) => {
     throw new ApiError(400, "Bekor qilish sababi majburiy");
   }
 
-  // Balansdan yechilgan bo'lsa — o'quvchi balansiga qaytaramiz
-  if (invoice.appliedBalance > 0) {
+  // P-6: Hisobga HAQIQIY naqd to'lov tushgan bo'lsa, uni shunchaki "bekor"
+  // qilib bo'lmaydi — aks holda kassadagi pul hisobotlardan jimgina yo'qolardi
+  // (cancel paidAmount=0 qiladi, reports bekor qilingan to'lovlarni chiqarib
+  // tashlaydi). Avval to'lovlar refund qilinishi (qaytarilishi) shart.
+  const netPaid = await computeNetPaid(invoice._id);
+  if (netPaid > 0) {
+    throw new ApiError(
+      400,
+      "Hisobda qaytarilmagan to'lov bor. Avval to'lovlarni qaytaring (refund), keyin bekor qiling.",
+    );
+  }
+
+  // Balansdan yechilgan (appliedBalance) summa va bu hisob orqali balansga
+  // o'tkazilgan ortiqcha (overflowCredit) summa — ikkalasini ham qaytaramiz.
+  // cancel'dan keyin recompute chaqirilmaydi, shuning uchun overflow shu yerda
+  // teskari qilinadi (aks holda fantom kredit qolib ketardi — P-1).
+  const restoreToBalance =
+    (Number(invoice.appliedBalance) || 0) + (Number(invoice.overflowCredit) || 0);
+  if (restoreToBalance > 0) {
     const student = await User.findById(invoice.student);
     if (student) {
-      student.balance = (Number(student.balance) || 0) + invoice.appliedBalance;
+      student.balance = (Number(student.balance) || 0) + restoreToBalance;
       await student.save();
     }
     invoice.appliedBalance = 0;
+    invoice.overflowCredit = 0;
   }
 
   invoice.status = "cancelled";

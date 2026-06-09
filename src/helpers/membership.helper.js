@@ -1,9 +1,15 @@
 import GroupMembership from "../models/groupMembership.model.js";
 import ApiError from "../utils/ApiError.js";
 
-// O'quvchining faol (leftAt=null) guruh a'zoligi bormi
+// O'quvchining faol (leftAt=null) guruh a'zoligi bormi.
+// isDeleted filtri shart (P-9): soft-delete qilingan a'zolik "faol" deb
+// sanalmasligi kerak — aks holda o'chirilgan o'quvchi tekshiruvdan o'tib ketardi.
 export const hasActiveGroup = async (studentId, session) => {
-  const query = GroupMembership.exists({ student: studentId, leftAt: null });
+  const query = GroupMembership.exists({
+    student: studentId,
+    leftAt: null,
+    isDeleted: { $ne: true },
+  });
   if (session) query.session(session);
   return Boolean(await query);
 };
@@ -14,6 +20,7 @@ export const isActiveInGroup = async (studentId, groupId, session) => {
     student: studentId,
     group: groupId,
     leftAt: null,
+    isDeleted: { $ne: true },
   });
   if (session) query.session(session);
   return Boolean(await query);

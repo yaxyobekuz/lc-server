@@ -8,6 +8,8 @@ const list = asyncHandler(async (req, res) => {
     role: req.query.role,
     search: req.query.search,
     archived: req.query.archived === "1" || req.query.archived === "true",
+    sort: req.query.sort,
+    order: req.query.order,
     page,
     limit,
   });

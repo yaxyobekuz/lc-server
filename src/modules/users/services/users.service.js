@@ -1,5 +1,6 @@
 import User from "../../../models/user.model.js";
 import GroupMembership from "../../../models/groupMembership.model.js";
+import Invoice from "../../../models/invoice.model.js";
 import LeadSource from "../../../models/leadSource.model.js";
 import RefreshToken from "../../../models/refreshToken.model.js";
 import ApiError from "../../../utils/ApiError.js";
@@ -18,12 +19,70 @@ const TEACHER_ONLY_FIELDS = [
   "teacherAbsenceAmount",
 ];
 
+// Ro'yxatda saralash mumkin bo'lgan maydonlar (xavfsiz oq ro'yxat).
+// `debt` — maxsus: u User hujjatida yo'q, qarz hisoblangach JS'da saralanadi.
+const USER_SORT_FIELDS = {
+  createdAt: "createdAt",
+  firstName: "firstName",
+  lastName: "lastName",
+};
+
+// O'quvchilar ro'yxatiga qarz (currentDebt) va faol guruhlarni qo'shadi —
+// ro'yxatdan profil ochmasdan ko'rinishi uchun (at-a-glance).
+const enrichStudents = async (items) => {
+  const studentIds = items
+    .filter((u) => u.role === ROLES.STUDENT)
+    .map((u) => u._id);
+  if (studentIds.length === 0) return items.map((u) => u.toObject());
+
+  const [debtRows, membershipRows] = await Promise.all([
+    Invoice.aggregate([
+      {
+        $match: {
+          student: { $in: studentIds },
+          status: { $in: ["unpaid", "partial"] },
+          isDeleted: { $ne: true },
+        },
+      },
+      {
+        $group: {
+          _id: "$student",
+          debt: { $sum: { $subtract: ["$totalDue", "$paidAmount"] } },
+        },
+      },
+    ]),
+    GroupMembership.find({ student: { $in: studentIds }, leftAt: null })
+      .populate("group", { name: 1 })
+      .lean(),
+  ]);
+
+  const debtMap = new Map(debtRows.map((d) => [String(d._id), d.debt]));
+  const groupsMap = new Map();
+  for (const m of membershipRows) {
+    if (!m.group) continue;
+    const key = String(m.student);
+    if (!groupsMap.has(key)) groupsMap.set(key, []);
+    groupsMap.get(key).push({ _id: m.group._id, name: m.group.name });
+  }
+
+  return items.map((u) => {
+    const obj = u.toObject();
+    if (u.role === ROLES.STUDENT) {
+      obj.currentDebt = debtMap.get(String(u._id)) || 0;
+      obj.activeGroups = groupsMap.get(String(u._id)) || [];
+    }
+    return obj;
+  });
+};
+
 export const list = async ({
   role,
   search,
   archived = false,
   page = 1,
   limit = 20,
+  sort = "createdAt",
+  order = "desc",
 }) => {
   const filter = { isActive: archived ? false : true, isDeleted: { $ne: true } };
   if (role) filter.role = role;
@@ -38,13 +97,36 @@ export const list = async ({
     ];
   }
 
+  const dir = order === "asc" ? 1 : -1;
+  // `debt` bo'yicha saralash maxsus: qarz aggregatsiyada hisoblanadi.
+  // Bunda butun mos to'plamni olib (DB sort'siz), qarzni biriktirib, JS'da
+  // saralaymiz va keyin sahifalaymiz — to'g'ri tartib ta'minlanadi.
+  const sortByDebt = sort === "debt" && (!role || role === ROLES.STUDENT);
+
   const skip = (page - 1) * limit;
+
+  if (sortByDebt) {
+    const [all, total] = await Promise.all([
+      User.find(filter),
+      User.countDocuments(filter),
+    ]);
+    const enriched = await enrichStudents(all);
+    enriched.sort((a, b) => ((a.currentDebt || 0) - (b.currentDebt || 0)) * dir);
+    const items = enriched.slice(skip, skip + limit);
+    return { items, total, page, limit };
+  }
+
+  const sortField = USER_SORT_FIELDS[sort] || "createdAt";
   const [items, total] = await Promise.all([
-    User.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
+    User.find(filter)
+      .sort({ [sortField]: dir })
+      .skip(skip)
+      .limit(limit),
     User.countDocuments(filter),
   ]);
 
-  return { items, total, page, limit };
+  const enriched = await enrichStudents(items);
+  return { items: enriched, total, page, limit };
 };
 
 export const getById = async (id) => {

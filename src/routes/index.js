@@ -32,6 +32,7 @@ import expensesRouter from "../modules/expenses/expenses.routes.js";
 import expenseTypesRouter from "../modules/expenseTypes/expenseTypes.routes.js";
 import activityLogsRouter from "../modules/activityLogs/activityLogs.routes.js";
 import adminDashboardRouter from "../modules/adminDashboard/adminDashboard.routes.js";
+import searchRouter from "../modules/search/search.routes.js";
 
 const router = Router();
 
@@ -40,6 +41,7 @@ router.get("/health", (_req, res) =>
 );
 
 router.use("/auth", authRouter);
+router.use("/search", searchRouter);
 router.use("/users", usersRouter);
 router.use("/groups", groupsRouter);
 router.use("/lead-sources", leadSourcesRouter);

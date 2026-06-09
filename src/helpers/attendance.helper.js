@@ -25,6 +25,8 @@ export const toUtcMidnight = (date) => {
   );
 };
 
+const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 // ─── Mahalliy vaqt zonasi (Asia/Tashkent = UTC+5, DST yo'q) ───
 // Server qaysi vaqt zonasida ishlashidan qat'i nazar "bugun" mahalliy kalendar
 // kuni bo'yicha hisoblanadi. Aks holda yarim tundan keyin (00:00–05:00 mahalliy)
@@ -45,6 +47,31 @@ export const localTodayMidnight = (now = new Date()) => {
 export const localTodayKey = (now = new Date()) => dateKeyOf(shiftToLocal(now));
 
 export const localDayOfWeek = (now = new Date()) => dayOfWeekOf(shiftToLocal(now));
+
+// Kiruvchi sanani timezone-xavfsiz ravishda mahalliy kalendar kuniga (UTC-midnight
+// ko'rinishida) keltiradi. Saqlanadigan `date`/`dateKey` shu funksiya orqali olinadi
+// va "bugun" (localTodayMidnight) bilan bir xil ta'rifga ega bo'ladi.
+//   • "YYYY-MM-DD" string  → aynan shu kalendar kuni (timezone'siz, eng ishonchli)
+//   • Date/ISO instant      → mahalliy (Asia/Tashkent) zonadagi kalendar kuni
+// Noto'g'ri qiymat uchun null qaytaradi (chaqiruvchi tomon 400 bilan rad etadi).
+export const parseLocalDay = (input) => {
+  if (typeof input === "string" && DATE_KEY_RE.test(input)) {
+    const [y, m, d] = input.split("-").map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0));
+    // Date overflow qo'riqlovi (mas. 2026-02-31 → mart) — noto'g'ri sana rad etiladi
+    if (dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null;
+    return dt;
+  }
+  const instant = new Date(input);
+  if (Number.isNaN(instant.getTime())) return null;
+  return localTodayMidnight(instant);
+};
+
+// parseLocalDay natijasidan dateKey (har doim mos keladi)
+export const parseLocalDayKey = (input) => {
+  const d = parseLocalDay(input);
+  return d ? dateKeyOf(d) : null;
+};
 
 // Diapazonda har bir kunni iteratsiya qiladi (UTC)
 const iterateDays = function* (fromDate, toDate) {
@@ -69,6 +96,10 @@ export const getClassDaysInRange = (group, fromDate, toDate, holidaySet = null) 
     if (!dayMap.has(item.day)) dayMap.set(item.day, []);
     dayMap.get(item.day).push({ startTime: item.startTime, endTime: item.endTime });
   }
+  // Slotlarni vaqt bo'yicha tartiblaymiz — "birinchi slot" deterministik bo'lsin
+  // (slot-fallback eski slot="" yozuvini aynan birinchi slotga bog'laydi).
+  for (const arr of dayMap.values())
+    arr.sort((a, b) => a.startTime.localeCompare(b.startTime));
   const startTs = group?.startDate ? toUtcMidnight(group.startDate).getTime() : null;
   const result = [];
   for (const d of iterateDays(fromDate, toDate)) {
@@ -79,7 +110,7 @@ export const getClassDaysInRange = (group, fromDate, toDate, holidaySet = null) 
     const dKey = dateKeyOf(d);
     if (holidaySet && holidaySet.has(dKey)) continue;
     const multi = slots.length > 1;
-    for (const s of slots) {
+    slots.forEach((s, idx) => {
       result.push({
         date: d,
         dateKey: dKey,
@@ -87,8 +118,9 @@ export const getClassDaysInRange = (group, fromDate, toDate, holidaySet = null) 
         slot: multi ? s.startTime : "",
         startTime: s.startTime,
         endTime: s.endTime,
+        isFirstSlot: idx === 0,
       });
-    }
+    });
   }
   return result;
 };
