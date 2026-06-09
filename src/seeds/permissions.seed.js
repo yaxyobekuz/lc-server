@@ -43,6 +43,9 @@ const seed = async () => {
         permIds[PERMISSIONS.USERS_READ],
         permIds[PERMISSIONS.ATTENDANCE_READ],
         permIds[PERMISSIONS.ATTENDANCE_RECORD],
+        permIds[PERMISSIONS.GRADES_READ],
+        permIds[PERMISSIONS.GRADES_RECORD],
+        permIds[PERMISSIONS.RATING_READ],
         permIds[PERMISSIONS.NOTIFICATIONS_SEND],
       ].filter(Boolean);
       await Role.findOneAndUpdate(

@@ -45,6 +45,13 @@ export const PERMISSIONS = Object.freeze({
   ATTENDANCE_RECORD: "attendance.record",
   ATTENDANCE_MANAGE: "attendance.manage",
 
+  // Grades (baholash) + Rating (reyting)
+  GRADES_READ: "grades.read",
+  GRADES_RECORD: "grades.record",
+  GRADES_MANAGE: "grades.manage",
+  RATING_READ: "rating.read",
+  RATING_MANAGE: "rating.manage",
+
   // Salaries
   SALARIES_READ: "salaries.read",
   SALARIES_MANAGE: "salaries.manage",
@@ -137,6 +144,12 @@ export const PERMISSION_LABELS = {
   [PERMISSIONS.ATTENDANCE_READ]: { label: "Davomatni ko'rish", group: "attendance" },
   [PERMISSIONS.ATTENDANCE_RECORD]: { label: "Davomatni belgilash", group: "attendance" },
   [PERMISSIONS.ATTENDANCE_MANAGE]: { label: "Davomatni boshqarish", group: "attendance" },
+
+  [PERMISSIONS.GRADES_READ]: { label: "Baholarni ko'rish", group: "grades" },
+  [PERMISSIONS.GRADES_RECORD]: { label: "Baho qo'yish", group: "grades" },
+  [PERMISSIONS.GRADES_MANAGE]: { label: "Baholashni boshqarish", group: "grades" },
+  [PERMISSIONS.RATING_READ]: { label: "Reytingni ko'rish", group: "rating" },
+  [PERMISSIONS.RATING_MANAGE]: { label: "Reyting sozlamalarini boshqarish", group: "rating" },
 
   [PERMISSIONS.SALARIES_READ]: { label: "Maoshlarni ko'rish", group: "salaries" },
   [PERMISSIONS.SALARIES_MANAGE]: {
