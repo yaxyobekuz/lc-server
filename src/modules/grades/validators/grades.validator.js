@@ -55,3 +55,19 @@ export const studentRangeSchema = z.object({
     toDate: dateInputSchema.optional(),
   }),
 });
+
+export const leaderboardSchema = z.object({
+  query: z.object({
+    scope: z.string().optional(), // "all" yoki groupId
+    fromDate: dateInputSchema.optional(),
+    toDate: dateInputSchema.optional(),
+    limit: z.coerce.number().int().positive().max(1000).optional(),
+  }),
+});
+
+export const ratingSettingsUpdateSchema = z.object({
+  body: z.object({
+    gradeWeight: z.coerce.number().min(0).max(1).optional(),
+    attendanceWeight: z.coerce.number().min(0).max(1).optional(),
+  }),
+});
