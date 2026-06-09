@@ -57,14 +57,13 @@ const seed = async () => {
         { upsert: true, new: true },
       );
     } else {
+      // Student: reytingni ko'rishi mumkin (faqat o'qish). Har seedda qo'shamiz.
+      const studentDefaults = [permIds[PERMISSIONS.RATING_READ]].filter(Boolean);
       await Role.findOneAndUpdate(
         { value },
         {
-          $setOnInsert: {
-            value,
-            label: labels[value],
-            permissions: [],
-          },
+          $setOnInsert: { value, label: labels[value] },
+          $addToSet: { permissions: { $each: studentDefaults } },
         },
         { upsert: true, new: true },
       );
