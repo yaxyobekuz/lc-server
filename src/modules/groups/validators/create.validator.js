@@ -8,7 +8,11 @@ export const createSchema = z.object({
       .min(2, "Kamida 2 belgidan iborat bo'lishi kerak")
       .max(120, "120 belgidan oshmasligi kerak"),
     schedule: scheduleArray.default([]),
-    teachers: z.array(z.string().min(1)).default([]),
+    // Guruhda ko'pi bilan bitta o'qituvchi (keyinchalik faqat "Almashtirish")
+    teachers: z
+      .array(z.string().min(1))
+      .max(1, "Guruhda faqat bitta o'qituvchi bo'lishi mumkin")
+      .default([]),
     monthlyPrice: z.coerce
       .number({ invalid_type_error: "Raqam bo'lishi kerak" })
       .min(0, "0 dan kichik bo'lmasin")
