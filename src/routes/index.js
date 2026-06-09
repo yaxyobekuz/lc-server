@@ -2,7 +2,6 @@ import { Router } from "express";
 import authRouter from "../modules/auth/auth.routes.js";
 import usersRouter from "../modules/users/users.routes.js";
 import groupsRouter from "../modules/groups/groups.routes.js";
-import leadSourcesRouter from "../modules/leadSources/leadSources.routes.js";
 import paymentMethodsRouter from "../modules/paymentMethods/paymentMethods.routes.js";
 import discountKindsRouter from "../modules/discountKinds/discountKinds.routes.js";
 import discountsRouter from "../modules/discounts/discounts.routes.js";
@@ -19,11 +18,8 @@ import gradesRouter from "../modules/grades/grades.routes.js";
 import salariesRouter from "../modules/salaries/salaries.routes.js";
 import teacherGroupRatesRouter from "../modules/teacherGroupRates/teacherGroupRates.routes.js";
 import salarySettingsRouter from "../modules/salarySettings/salarySettings.routes.js";
-import leadsRouter from "../modules/leads/leads.routes.js";
-import leadDirectionsRouter from "../modules/leadDirections/leadDirections.routes.js";
-import leadStatusesRouter from "../modules/leadStatuses/leadStatuses.routes.js";
-import leadSettingsRouter from "../modules/leadSettings/leadSettings.routes.js";
 import notificationsRouter from "../modules/notifications/notifications.routes.js";
+import systemNotificationsRouter from "../modules/systemNotifications/systemNotifications.routes.js";
 import notificationTemplatesRouter from "../modules/notificationTemplates/notificationTemplates.routes.js";
 import holidaysRouter from "../modules/holidays/holidays.routes.js";
 import feedbackRouter from "../modules/feedback/feedback.routes.js";
@@ -45,7 +41,6 @@ router.use("/auth", authRouter);
 router.use("/search", searchRouter);
 router.use("/users", usersRouter);
 router.use("/groups", groupsRouter);
-router.use("/lead-sources", leadSourcesRouter);
 
 // Payments subsystem
 router.use("/payment-methods", paymentMethodsRouter);
@@ -71,14 +66,9 @@ router.use("/salaries", salariesRouter);
 router.use("/teacher-group-rates", teacherGroupRatesRouter);
 router.use("/salary-settings", salarySettingsRouter);
 
-// Leads / CRM subsystem
-router.use("/leads", leadsRouter);
-router.use("/lead-directions", leadDirectionsRouter);
-router.use("/lead-statuses", leadStatusesRouter);
-router.use("/lead-settings", leadSettingsRouter);
-
 // Communication: Notifications + Feedback
 router.use("/notifications", notificationsRouter);
+router.use("/system-notifications", systemNotificationsRouter);
 router.use("/notification-templates", notificationTemplatesRouter);
 router.use("/holidays", holidaysRouter);
 router.use("/feedback", feedbackRouter);
