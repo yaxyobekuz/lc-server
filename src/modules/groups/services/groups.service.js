@@ -54,6 +54,11 @@ const ensureStudent = async (studentId) => {
 
 const ensureTeachers = async (teacherIds) => {
   if (!teacherIds || teacherIds.length === 0) return;
+  // Guruhda ko'pi bilan bitta o'qituvchi bo'lishi mumkin — o'qituvchi faqat
+  // "Almashtirish" orqali o'zgartiriladi, qo'shilmaydi.
+  if (teacherIds.length > 1) {
+    throw new ApiError(400, "Guruhda faqat bitta o'qituvchi bo'lishi mumkin");
+  }
   const ids = teacherIds.map(toObjectId);
   const count = await User.countDocuments({
     _id: { $in: ids },

@@ -11,7 +11,12 @@ export const updateSchema = z.object({
         .max(120, "120 belgidan oshmasligi kerak")
         .optional(),
       schedule: scheduleArray.optional(),
-      teachers: z.array(z.string().min(1)).optional(),
+      // Ko'pi bilan bitta o'qituvchi. Tahrirlashda o'qituvchi odatda yuborilmaydi —
+      // u "Almashtirish" orqali boshqariladi.
+      teachers: z
+        .array(z.string().min(1))
+        .max(1, "Guruhda faqat bitta o'qituvchi bo'lishi mumkin")
+        .optional(),
       monthlyPrice: z.coerce
         .number({ invalid_type_error: "Raqam bo'lishi kerak" })
         .min(0, "0 dan kichik bo'lmasin")
