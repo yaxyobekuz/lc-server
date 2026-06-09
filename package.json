@@ -10,7 +10,6 @@
     "seed:permissions": "node src/seeds/permissions.seed.js",
     "seed:owner": "node src/seeds/owner.seed.js",
     "seed:payments": "node src/seeds/paymentDefaults.seed.js",
-    "seed:leads": "node src/seeds/leadDefaults.seed.js",
     "seed:communication": "node src/seeds/communicationDefaults.seed.js",
     "seed:expense-types": "node src/seeds/expenseTypeDefaults.seed.js",
     "seed:fake-data": "node src/seeds/fakeData.seed.js",
@@ -19,7 +18,7 @@
     "seed:fake-payments": "node src/seeds/fakeCurrentPayments.seed.js",
     "migrate:attendance-slot": "node src/seeds/migrateAttendanceSlot.seed.js",
     "migrate:membership-index": "node src/seeds/migrateMembershipIndex.seed.js",
-    "seed:all": "npm run seed:permissions && npm run seed:owner && npm run seed:payments && npm run seed:leads && npm run seed:communication && npm run seed:expense-types && npm run seed:fake-data && npm run seed:fake-extras && npm run seed:fake-extras2 && npm run seed:fake-payments"
+    "seed:all": "npm run seed:permissions && npm run seed:owner && npm run seed:payments && npm run seed:communication && npm run seed:expense-types && npm run seed:fake-data && npm run seed:fake-extras && npm run seed:fake-extras2 && npm run seed:fake-payments"
   },
   "dependencies": {
     "agenda": "^5.0.0",

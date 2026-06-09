@@ -147,18 +147,6 @@ export const listForGroupOnDate = async (groupId, dateInput, slotInput = null) =
       };
     });
 
-  // Shu guruh + sana uchun sinov darsiga belgilangan lidlar (a'zo emas) —
-  // o'qituvchi davomat sahifasidan ularning kelgan/kelmaganini belgilashi uchun.
-  let trials = [];
-  try {
-    const { getTrialsForDate } = await import(
-      "../../leads/services/leads.service.js"
-    );
-    trials = await getTrialsForDate(date, groupId);
-  } catch {
-    trials = [];
-  }
-
   return {
     group: {
       _id: group._id,
@@ -173,7 +161,6 @@ export const listForGroupOnDate = async (groupId, dateInput, slotInput = null) =
     sessions, // [{ slot, startTime, endTime }] — kunning sessiyalari
     slot: selectedSlot, // tanlangan sessiya
     rows,
-    trials,
   };
 };
 

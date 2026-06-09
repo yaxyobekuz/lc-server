@@ -17,7 +17,6 @@ export const updateSchema = z.object({
 
       // Student-only
       enrolledAt: z.union([z.coerce.date(), z.null()]).optional(),
-      leadSource: z.union([z.string().min(1), z.null()]).optional(),
 
       // Teacher-only
       hiredAt: z.union([z.coerce.date(), z.null()]).optional(),

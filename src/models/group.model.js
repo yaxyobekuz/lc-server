@@ -28,12 +28,6 @@ const groupSchema = new mongoose.Schema(
     teachers: [
       { type: mongoose.Schema.Types.ObjectId, ref: "User", index: true },
     ],
-    direction: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "LeadDirection",
-      default: null,
-      index: true,
-    },
     monthlyPrice: { type: Number, default: 0, min: 0 },
     // Dars boshlanish sanasi — undan oldin davomat/maosh hisoblanmaydi.
     startDate: { type: Date, default: null },

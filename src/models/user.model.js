@@ -29,11 +29,6 @@ const userSchema = new mongoose.Schema(
     enrolledAt: { type: Date, default: null },
     // O'quvchi oldindan/ortiqcha to'lagan pul (keyingi oy hisoblaridan yechiladi)
     balance: { type: Number, default: 0, min: 0 },
-    leadSource: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "LeadSource",
-      default: null,
-    },
 
     // Faqat teacher rolidagi maydon
     hiredAt: { type: Date, default: null },

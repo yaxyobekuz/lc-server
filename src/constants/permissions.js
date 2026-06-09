@@ -23,8 +23,6 @@ export const PERMISSIONS = Object.freeze({
   GROUPS_DELETE: "groups.delete",
   GROUPS_MANAGE_STUDENTS: "groups.manage_students",
 
-  LEAD_SOURCES_MANAGE: "lead_sources.manage",
-
   // Payments
   PAYMENTS_READ: "payments.read",
   PAYMENTS_CREATE: "payments.create",
@@ -56,15 +54,6 @@ export const PERMISSIONS = Object.freeze({
   SALARIES_READ: "salaries.read",
   SALARIES_MANAGE: "salaries.manage",
   SALARIES_DISTRIBUTE: "salaries.distribute",
-
-  // Leads (CRM)
-  LEADS_READ: "leads.read",
-  LEADS_CREATE: "leads.create",
-  LEADS_UPDATE: "leads.update",
-  LEADS_DELETE: "leads.delete",
-  LEADS_CONVERT: "leads.convert",
-  LEAD_DIRECTIONS_MANAGE: "lead_directions.manage",
-  LEAD_STATUSES_MANAGE: "lead_statuses.manage",
 
   // Notifications + Feedback
   NOTIFICATIONS_READ: "notifications.read",
@@ -108,11 +97,6 @@ export const PERMISSION_LABELS = {
   [PERMISSIONS.GROUPS_MANAGE_STUDENTS]: {
     label: "Guruh o'quvchilarini boshqarish",
     group: "groups",
-  },
-
-  [PERMISSIONS.LEAD_SOURCES_MANAGE]: {
-    label: "Lead manbalarini boshqarish",
-    group: "lead_sources",
   },
 
   [PERMISSIONS.PAYMENTS_READ]: { label: "To'lovlarni ko'rish", group: "payments" },
@@ -159,23 +143,6 @@ export const PERMISSION_LABELS = {
   [PERMISSIONS.SALARIES_DISTRIBUTE]: {
     label: "Maosh to'lab berish",
     group: "salaries",
-  },
-
-  [PERMISSIONS.LEADS_READ]: { label: "Lidlarni ko'rish", group: "leads" },
-  [PERMISSIONS.LEADS_CREATE]: { label: "Lid yaratish", group: "leads" },
-  [PERMISSIONS.LEADS_UPDATE]: { label: "Lidni tahrirlash", group: "leads" },
-  [PERMISSIONS.LEADS_DELETE]: { label: "Lidni o'chirish", group: "leads" },
-  [PERMISSIONS.LEADS_CONVERT]: {
-    label: "Lidni o'quvchiga aylantirish",
-    group: "leads",
-  },
-  [PERMISSIONS.LEAD_DIRECTIONS_MANAGE]: {
-    label: "Lid yo'nalishlarini boshqarish",
-    group: "lead_directions",
-  },
-  [PERMISSIONS.LEAD_STATUSES_MANAGE]: {
-    label: "Lid statuslarini boshqarish",
-    group: "lead_statuses",
   },
 
   [PERMISSIONS.NOTIFICATIONS_READ]: {

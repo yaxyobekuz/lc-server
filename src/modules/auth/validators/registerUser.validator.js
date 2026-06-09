@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ROLES } from "../../../constants/roles.js";
 
-const STUDENT_FIELDS = ["enrolledAt", "leadSource"];
+const STUDENT_FIELDS = ["enrolledAt"];
 const TEACHER_FIELDS = ["hiredAt"];
 
 export const registerUserSchema = z.object({
@@ -19,7 +19,6 @@ export const registerUserSchema = z.object({
 
       // Student-only
       enrolledAt: z.union([z.coerce.date(), z.null()]).optional(),
-      leadSource: z.string().min(1).optional(),
 
       // Teacher-only
       hiredAt: z.union([z.coerce.date(), z.null()]).optional(),

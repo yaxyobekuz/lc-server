@@ -9,7 +9,6 @@ import { monthsBackSchema } from "./validators/monthsBack.validator.js";
 
 import overview from "./handlers/overview.handler.js";
 import monthlyFinancials from "./handlers/monthlyFinancials.handler.js";
-import incomeByDirection from "./handlers/incomeByDirection.handler.js";
 import incomeByTeacher from "./handlers/incomeByTeacher.handler.js";
 import studentFlow from "./handlers/studentFlow.handler.js";
 import forecast from "./handlers/forecast.handler.js";
@@ -29,13 +28,6 @@ router.get(
   requirePermission(PERMISSIONS.ADMIN_DASHBOARD_READ),
   validate(monthsBackSchema),
   monthlyFinancials,
-);
-router.get(
-  "/income-by-direction",
-  requireAuth,
-  requirePermission(PERMISSIONS.ADMIN_DASHBOARD_READ),
-  validate(periodSchema),
-  incomeByDirection,
 );
 router.get(
   "/income-by-teacher",

@@ -45,11 +45,6 @@ export const buildUserProfile = async (userInput) => {
   }
   if (!user) return null;
 
-  // leadSource populate (faqat student uchun ma'noli)
-  if (user.role === ROLES.STUDENT && user.leadSource) {
-    user = await user.populate({ path: "leadSource" });
-  }
-
   const base = sanitizeUser(user);
   const telegram = await fetchTelegram(user._id);
 

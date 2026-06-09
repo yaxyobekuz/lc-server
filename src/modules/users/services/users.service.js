@@ -1,7 +1,6 @@
 import User from "../../../models/user.model.js";
 import GroupMembership from "../../../models/groupMembership.model.js";
 import Invoice from "../../../models/invoice.model.js";
-import LeadSource from "../../../models/leadSource.model.js";
 import RefreshToken from "../../../models/refreshToken.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import { ROLES } from "../../../constants/roles.js";
@@ -12,7 +11,7 @@ import { toUtcMidnight } from "../../../helpers/attendance.helper.js";
 import { reconcileOnLeave } from "../../invoices/services/invoices.service.js";
 import { deleteUser, restoreUser } from "../../../helpers/cascadeDelete.helper.js";
 
-const STUDENT_ONLY_FIELDS = ["enrolledAt", "leadSource", "leaveStatus"];
+const STUDENT_ONLY_FIELDS = ["enrolledAt", "leaveStatus"];
 const TEACHER_ONLY_FIELDS = [
   "hiredAt",
   "teacherAbsenceMode",
@@ -189,15 +188,6 @@ export const update = async (id, body) => {
         throw new ApiError(400, "Ro'yxatga olingan sana kelajakda bo'lmasin");
       }
       user.enrolledAt = d;
-    }
-    if (body.leadSource !== undefined) {
-      if (body.leadSource) {
-        const exists = await LeadSource.exists({ _id: body.leadSource });
-        if (!exists) throw new ApiError(400, "Lead manba topilmadi");
-        user.leadSource = body.leadSource;
-      } else {
-        user.leadSource = null;
-      }
     }
     if (body.leaveStatus !== undefined) {
       user.leaveStatus = body.leaveStatus || null;

@@ -5,12 +5,10 @@ import GroupMembership from "../../../models/groupMembership.model.js";
 import Invoice from "../../../models/invoice.model.js";
 import Payment from "../../../models/payment.model.js";
 import Attendance from "../../../models/attendance.model.js";
-import LeadDirection from "../../../models/leadDirection.model.js";
 import { ROLES } from "../../../constants/roles.js";
 
 import * as paymentReports from "../../paymentReports/services/paymentReports.service.js";
 import * as expenses from "../../expenses/services/expenses.service.js";
-import * as leads from "../../leads/services/leads.service.js";
 
 // === Sana yordamchilari (UTC) ===
 const monthRange = (year, month) => {
@@ -117,49 +115,6 @@ const computeCurrentMonthDebt = async (year, month) => {
   return result[0]?.debt || 0;
 };
 
-const computeMostPopularDirection = async () => {
-  // Faol o'quvchilar joylashgan guruhlar bo'yicha groupBy direction
-  const result = await GroupMembership.aggregate([
-    { $match: { leftAt: null, isDeleted: { $ne: true } } },
-    {
-      $lookup: {
-        from: Group.collection.name,
-        localField: "group",
-        foreignField: "_id",
-        as: "group",
-      },
-    },
-    { $unwind: "$group" },
-    { $match: { "group.isActive": true } },
-    {
-      $group: {
-        _id: "$group.direction",
-        studentsCount: { $sum: 1 },
-      },
-    },
-    { $sort: { studentsCount: -1 } },
-    { $limit: 1 },
-    {
-      $lookup: {
-        from: LeadDirection.collection.name,
-        localField: "_id",
-        foreignField: "_id",
-        as: "direction",
-      },
-    },
-    { $unwind: { path: "$direction", preserveNullAndEmptyArrays: true } },
-    {
-      $project: {
-        _id: 0,
-        directionId: "$_id",
-        name: { $ifNull: ["$direction.name", "Ko'rsatilmagan"] },
-        studentsCount: 1,
-      },
-    },
-  ]);
-  return result[0] || null;
-};
-
 const DAY_LABELS = ["Yak", "Du", "Se", "Ch", "Pa", "Ju", "Sh"];
 
 const computeWeekdayActivity = async () => {
@@ -212,12 +167,10 @@ export const getOverview = async ({ year, month } = {}) => {
     studentsCount,
     teachersCount,
     activeGroupsCount,
-    leadStats,
     todayAttendanceRate,
     currentMonthDebt,
     newStudentsThisMonth,
     lostStudentsThisMonth,
-    mostPopularDirection,
     weekdayActivity,
   ] = await Promise.all([
     paymentReports.summary({ year: y, month: m }),
@@ -225,7 +178,6 @@ export const getOverview = async ({ year, month } = {}) => {
     User.countDocuments({ role: ROLES.STUDENT, isActive: true, isDeleted: { $ne: true } }),
     User.countDocuments({ role: ROLES.TEACHER, isActive: true, isDeleted: { $ne: true } }),
     Group.countDocuments({ isActive: true, isDeleted: { $ne: true } }),
-    leads.getDashboardStats({ fromDate: start, toDate: end }),
     computeTodayAttendanceRate(),
     computeCurrentMonthDebt(y, m),
     GroupMembership.countDocuments({
@@ -236,7 +188,6 @@ export const getOverview = async ({ year, month } = {}) => {
       leftAt: { $gte: start, $lte: end },
       isDeleted: { $ne: true },
     }),
-    computeMostPopularDirection(),
     computeWeekdayActivity(),
   ]);
 
@@ -253,16 +204,10 @@ export const getOverview = async ({ year, month } = {}) => {
     studentsCount,
     teachersCount,
     activeGroupsCount,
-    leadsConversion: {
-      total: leadStats?.total || 0,
-      converted: leadStats?.totalConverted || 0,
-      rate: leadStats?.conversionRate || 0,
-    },
     todayAttendanceRate,
     currentMonthDebt,
     newStudentsThisMonth,
     lostStudentsThisMonth,
-    mostPopularDirection,
     weekdayActivity,
   };
 };
@@ -286,64 +231,6 @@ export const getMonthlyFinancials = async ({ months = 6 } = {}) => {
     });
   }
   return result;
-};
-
-// === getIncomeByDirection ===
-export const getIncomeByDirection = async ({ year, month } = {}) => {
-  const now = new Date();
-  const y = year ? Number(year) : now.getUTCFullYear();
-  const m = month ? Number(month) : now.getUTCMonth() + 1;
-
-  const rows = await Invoice.aggregate([
-    {
-      $match: {
-        "period.year": y,
-        "period.month": m,
-        status: { $ne: "cancelled" },
-        isDeleted: { $ne: true },
-      },
-    },
-    {
-      $lookup: {
-        from: Group.collection.name,
-        localField: "group",
-        foreignField: "_id",
-        as: "group",
-      },
-    },
-    { $unwind: { path: "$group", preserveNullAndEmptyArrays: true } },
-    {
-      $group: {
-        _id: "$group.direction",
-        invoicesCount: { $sum: 1 },
-        totalDue: { $sum: "$totalDue" },
-        paidAmount: { $sum: "$paidAmount" },
-      },
-    },
-    {
-      $lookup: {
-        from: LeadDirection.collection.name,
-        localField: "_id",
-        foreignField: "_id",
-        as: "direction",
-      },
-    },
-    { $unwind: { path: "$direction", preserveNullAndEmptyArrays: true } },
-    {
-      $project: {
-        _id: 0,
-        directionId: "$_id",
-        name: { $ifNull: ["$direction.name", "Ko'rsatilmagan"] },
-        invoicesCount: 1,
-        totalDue: 1,
-        paidAmount: 1,
-        outstanding: { $subtract: ["$totalDue", "$paidAmount"] },
-      },
-    },
-    { $sort: { paidAmount: -1 } },
-  ]);
-
-  return rows;
 };
 
 // === getIncomeByTeacher ===

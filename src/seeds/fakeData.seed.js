@@ -6,7 +6,6 @@ import { ROLES } from "../constants/roles.js";
 import User from "../models/user.model.js";
 import Group from "../models/group.model.js";
 import GroupMembership from "../models/groupMembership.model.js";
-import LeadDirection from "../models/leadDirection.model.js";
 import PaymentMethod from "../models/paymentMethod.model.js";
 import TeacherGroupRate from "../models/teacherGroupRate.model.js";
 import Invoice from "../models/invoice.model.js";
@@ -16,9 +15,6 @@ import SalaryPayout from "../models/salaryPayout.model.js";
 import Attendance from "../models/attendance.model.js";
 import AttendanceSettings from "../models/attendanceSettings.model.js";
 import AttendanceExemption from "../models/attendanceExemption.model.js";
-import Lead from "../models/lead.model.js";
-import LeadSource from "../models/leadSource.model.js";
-import LeadStatus from "../models/leadStatus.model.js";
 import Discount from "../models/discount.model.js";
 import DiscountKind from "../models/discountKind.model.js";
 import Feedback from "../models/feedback.model.js";
@@ -145,17 +141,6 @@ const seed = async () => {
     throw new Error("Owner yo'q. Avval `npm run seed:owner` ishga tushiring.");
   }
 
-  const directions = [];
-  for (const name of DIRECTIONS) {
-    const doc = await LeadDirection.findOneAndUpdate(
-      { name, isActive: true },
-      { $setOnInsert: { name, isActive: true } },
-      { upsert: true, new: true, setDefaultsOnInsert: true },
-    );
-    directions.push(doc);
-  }
-  logger.info(`${directions.length} ta yo'nalish tayyor`);
-
   const passwordHash = await hashPassword(COMMON_PASSWORD);
   const now = new Date(2026, 4, 26);
   const yearAgo = new Date(2025, 4, 26);
@@ -213,15 +198,14 @@ const seed = async () => {
 
   const groupDocs = [];
   for (let i = 0; i < GROUP_COUNT; i++) {
-    const dir = directions[i % directions.length];
+    const dirName = DIRECTIONS[i % DIRECTIONS.length];
     const teacher = teachers[i];
     const letter = String.fromCharCode(65 + Math.floor(i / 6));
     const num = (i % 6) + 1;
     groupDocs.push({
-      name: `${dir.name} ${letter}-${num}`,
+      name: `${dirName} ${letter}-${num}`,
       schedule: genSchedule(),
       teachers: [teacher._id],
-      direction: dir._id,
       monthlyPrice: randInt(6, 16) * 50000,
       isActive: true,
     });
@@ -505,29 +489,13 @@ const seed = async () => {
   logger.info(`${totalSalaries} ta salary va ${totalPayouts} ta payout yaratildi`);
 
   // --- Reference data for ancillary collections ---
-  const leadStatuses = await LeadStatus.find({ isActive: true });
-  const leadSources = await LeadSource.find({ isActive: true });
   const discountKinds = await DiscountKind.find({ isActive: true });
   const feedbackTypes = await FeedbackType.find({ isActive: true });
-  if (
-    leadStatuses.length === 0 ||
-    leadSources.length === 0 ||
-    discountKinds.length === 0 ||
-    feedbackTypes.length === 0
-  ) {
+  if (discountKinds.length === 0 || feedbackTypes.length === 0) {
     throw new Error(
-      "Reference data yo'q. Avval `npm run seed:leads` va `npm run seed:communication` ishga tushiring.",
+      "Reference data yo'q. Avval `npm run seed:communication` ishga tushiring.",
     );
   }
-  const initialStatus =
-    leadStatuses.find((s) => s.isInitial) || leadStatuses[0];
-  const convertedStatus =
-    leadStatuses.find((s) => s.isConverted) ||
-    leadStatuses.find((s) => s.isFinal && s.name !== "Rad etdi") ||
-    leadStatuses[0];
-  const rejectedStatus =
-    leadStatuses.find((s) => s.isFinal && !s.isConverted) ||
-    leadStatuses[leadStatuses.length - 1];
 
   // AttendanceSettings (singleton)
   await AttendanceSettings.findOneAndUpdate(
@@ -656,60 +624,6 @@ const seed = async () => {
   if (discountDocs.length > 0) await Discount.insertMany(discountDocs);
   logger.info(`${discountDocs.length} ta chegirma yaratildi`);
 
-  // Lead: ~200 lid
-  const LEAD_FIRST_NAMES = [...MALE_FIRST, ...FEMALE_FIRST];
-  const leadDocs = [];
-  for (let i = 0; i < 200; i++) {
-    const first = pick(LEAD_FIRST_NAMES);
-    const last = pick(LAST_NAMES);
-    const status = weighted([
-      { value: initialStatus, weight: 35 },
-      { value: leadStatuses[Math.min(1, leadStatuses.length - 1)], weight: 25 },
-      { value: leadStatuses[Math.min(2, leadStatuses.length - 1)], weight: 15 },
-      { value: leadStatuses[Math.min(3, leadStatuses.length - 1)], weight: 10 },
-      { value: convertedStatus, weight: 10 },
-      { value: rejectedStatus, weight: 5 },
-    ]);
-    const requestDate = randDate(yearAgo, now);
-    const isConverted =
-      status._id.toString() === convertedStatus._id.toString();
-    const isRejected = status._id.toString() === rejectedStatus._id.toString();
-    const lead = {
-      firstName: first,
-      lastName: last,
-      phone: genPhone(i + 9000),
-      birthDate: randDate(new Date(2003, 0, 1), new Date(2015, 11, 31)),
-      source: pick(leadSources)._id,
-      direction: pick(directions)._id,
-      status: status._id,
-      assignedTo: pick(teachers)._id,
-      requestDate,
-      contactCount: randInt(0, 5),
-      lastContactAt: requestDate,
-      createdBy: owner._id,
-    };
-    if (isConverted) {
-      const matched = pick(students);
-      lead.convertedUser = matched._id;
-      lead.convertedAt = randDate(requestDate, now);
-    }
-    if (isRejected) {
-      lead.rejectionReason = pick(["price", "time", "other_center", "other"]);
-      lead.rejectionNote = "Avtomatik fake data";
-    }
-    if (Math.random() < 0.3) {
-      lead.trialDate = randDate(requestDate, now);
-      lead.trialGroup = pick(groups)._id;
-    }
-    if (Math.random() < 0.2) {
-      lead.followUpDate = randDate(now, new Date(2026, 6, 30));
-      lead.followUpNote = "Keyingi haftada qayta bog'lanish";
-    }
-    leadDocs.push(lead);
-  }
-  await Lead.insertMany(leadDocs);
-  logger.info(`${leadDocs.length} ta lid yaratildi`);
-
   // Xarajat turlari (dinamik lug'at) — avval yaratamiz, keyin xarajatlar ularga havola qiladi
   const EXPENSE_TYPE_NAMES = ["Oylik", "Ijara", "Kommunal", "Reklama", "Boshqa"];
   const expenseTypeByName = new Map();
@@ -822,7 +736,7 @@ const seed = async () => {
 
   const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
   logger.info(
-    `Fake data tayyor (${elapsed}s): ${teachers.length} teacher, ${students.length} student, ${groups.length} group, ${memberships.length} membership, ${totalInvoices} invoice, ${totalPayments} payment, ${totalSalaries} salary, ${totalPayouts} payout, ${totalAttendance} attendance, ${leadDocs.length} lead, ${expenseDocs.length} expense, ${discountDocs.length} discount, ${feedbackDocs.length} feedback`,
+    `Fake data tayyor (${elapsed}s): ${teachers.length} teacher, ${students.length} student, ${groups.length} group, ${memberships.length} membership, ${totalInvoices} invoice, ${totalPayments} payment, ${totalSalaries} salary, ${totalPayouts} payout, ${totalAttendance} attendance, ${expenseDocs.length} expense, ${discountDocs.length} discount, ${feedbackDocs.length} feedback`,
   );
   logger.info(`Login parol (barcha fake userlar): ${COMMON_PASSWORD}`);
   logger.info(`Username prefiks: student_<i>_${RUN_TAG} | teacher_<i>_${RUN_TAG}`);

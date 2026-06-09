@@ -267,7 +267,6 @@ const seed = async () => {
     ["POST", "/api/groups", "group", 201],
     ["PATCH", "/api/users/:id", "user", 200],
     ["DELETE", "/api/users/:id", "user", 200],
-    ["POST", "/api/leads", "lead", 201],
     ["GET", "/api/notifications/:id/recipients", "notification", 403],
     ["POST", "/api/auth/login", "auth", 200],
     ["GET", "/api/salaries", "salary", 200],

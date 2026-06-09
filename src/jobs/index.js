@@ -12,9 +12,6 @@ import definePaymentReminders, {
 import defineSalaryAutoCalculate, {
   JOB_NAME as SALARY_JOB,
 } from "./salaryAutoCalculate.job.js";
-import defineLeadReminders, {
-  JOB_NAME as LEAD_REMINDERS_JOB,
-} from "./leadReminders.job.js";
 import defineHolidayGreetings, {
   JOB_NAME as HOLIDAY_JOB,
 } from "./holidayGreetings.job.js";
@@ -26,7 +23,6 @@ import defineLowAttendanceDigest, {
 } from "./lowAttendanceDigest.job.js";
 import defineNotificationDeliver from "./notificationDeliver.job.js";
 import { get as getSalarySettings } from "../modules/salarySettings/services/salarySettings.service.js";
-import { get as getLeadSettings } from "../modules/leadSettings/services/leadSettings.service.js";
 
 // Barcha cron jadvallari mahalliy (Asia/Tashkent) vaqt bo'yicha ishlaydi —
 // server qaysi TZ da bo'lishidan qat'i nazar. Aks holda UTC serverда "20:00"
@@ -40,7 +36,6 @@ export const startJobs = async () => {
   defineGenerateMonthlyInvoices(agenda);
   definePaymentReminders(agenda);
   defineSalaryAutoCalculate(agenda);
-  defineLeadReminders(agenda);
   defineHolidayGreetings(agenda);
   defineAttendanceReminders(agenda);
   defineLowAttendanceDigest(agenda);
@@ -59,10 +54,6 @@ export const startJobs = async () => {
   const salarySettings = await getSalarySettings();
   await every(`30 2 ${salarySettings.autoCalculateOnDay} * *`, SALARY_JOB);
 
-  // Lid eslatmalari - har kuni sozlamadagi soatda
-  const leadSettings = await getLeadSettings();
-  await every(`0 ${leadSettings.remindHourOfDay} * * *`, LEAD_REMINDERS_JOB);
-
   // Bayram tabriklari - har kuni 08:30 da (past davomat bilan to'qnashmasin)
   await every("30 8 * * *", HOLIDAY_JOB);
 
@@ -79,12 +70,6 @@ export const rescheduleSalaryJob = async (dayOfMonth) => {
   await agenda.cancel({ name: SALARY_JOB });
   await every(`30 2 ${dayOfMonth} * *`, SALARY_JOB);
   logger.info({ dayOfMonth }, "Maosh hisoblash jobi qayta sozlandi");
-};
-
-export const rescheduleLeadReminders = async (hourOfDay) => {
-  await agenda.cancel({ name: LEAD_REMINDERS_JOB });
-  await every(`0 ${hourOfDay} * * *`, LEAD_REMINDERS_JOB);
-  logger.info({ hourOfDay }, "Lid eslatma jobi qayta sozlandi");
 };
 
 export const stopJobs = async () => {

@@ -3,7 +3,6 @@ import Group from "../../../models/group.model.js";
 import GroupMembership from "../../../models/groupMembership.model.js";
 import User from "../../../models/user.model.js";
 import BotUser from "../../../models/botUser.model.js";
-import LeadDirection from "../../../models/leadDirection.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import { ROLES } from "../../../constants/roles.js";
 import { toUtcMidnight, localTodayMidnight } from "../../../helpers/attendance.helper.js";
@@ -51,12 +50,6 @@ const ensureStudent = async (studentId) => {
     throw new ApiError(400, "O'quvchi topilmadi");
   }
   return user;
-};
-
-const ensureDirection = async (directionId) => {
-  if (directionId === null || directionId === undefined) return;
-  const exists = await LeadDirection.exists({ _id: toObjectId(directionId) });
-  if (!exists) throw new ApiError(400, "Yo'nalish topilmadi");
 };
 
 const ensureTeachers = async (teacherIds) => {
@@ -131,20 +124,6 @@ export const list = async ({
         as: "teachers",
       },
     },
-    {
-      $lookup: {
-        from: LeadDirection.collection.name,
-        localField: "direction",
-        foreignField: "_id",
-        as: "direction",
-        pipeline: [{ $project: { name: 1 } }],
-      },
-    },
-    {
-      $addFields: {
-        direction: { $arrayElemAt: ["$direction", 0] },
-      },
-    },
   ];
 
   const [items, total] = await Promise.all([
@@ -177,8 +156,7 @@ const attachTelegram = async (userObjs) => {
 
 export const getById = async (id) => {
   const group = await Group.findById(id)
-    .populate("teachers", safeUserProjection)
-    .populate("direction", { name: 1 });
+    .populate("teachers", safeUserProjection);
   if (!group) throw new ApiError(404, "Guruh topilmadi");
 
   const memberships = await GroupMembership.find({
@@ -214,13 +192,11 @@ export const getById = async (id) => {
 
 export const create = async (body) => {
   await ensureTeachers(body.teachers);
-  if (body.direction) await ensureDirection(body.direction);
   return Group.create({
     name: body.name.trim(),
     schedule: body.schedule || [],
     teachers: body.teachers || [],
     monthlyPrice: body.monthlyPrice ?? 0,
-    direction: body.direction || null,
     startDate: body.startDate ? toUtcMidnight(body.startDate) : null,
     durationMonths: body.durationMonths ?? null,
     teacherAbsenceMode: body.teacherAbsenceMode ?? "inherit",
@@ -234,10 +210,6 @@ export const update = async (id, body) => {
   if (body.teachers !== undefined) {
     await ensureTeachers(body.teachers);
     group.teachers = body.teachers;
-  }
-  if (body.direction !== undefined) {
-    if (body.direction) await ensureDirection(body.direction);
-    group.direction = body.direction || null;
   }
   if (body.name !== undefined) group.name = body.name.trim();
   if (body.schedule !== undefined) group.schedule = body.schedule;

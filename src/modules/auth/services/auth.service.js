@@ -1,6 +1,5 @@
 import User from "../../../models/user.model.js";
 import RefreshToken from "../../../models/refreshToken.model.js";
-import LeadSource from "../../../models/leadSource.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import { signAccess, signRefresh, verifyRefresh } from "../../../utils/jwt.js";
 import {
@@ -195,12 +194,6 @@ export const registerUser = async (body) => {
 
   if (body.role === ROLES.STUDENT) {
     doc.enrolledAt = body.enrolledAt ? new Date(body.enrolledAt) : new Date();
-
-    if (body.leadSource) {
-      const exists = await LeadSource.exists({ _id: body.leadSource });
-      if (!exists) throw new ApiError(400, "Lead manba topilmadi");
-      doc.leadSource = body.leadSource;
-    }
   }
 
   if (body.role === ROLES.TEACHER) {
