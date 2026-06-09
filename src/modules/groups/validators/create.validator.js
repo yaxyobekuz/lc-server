@@ -13,13 +13,7 @@ export const createSchema = z.object({
       .array(z.string().min(1))
       .max(1, "Guruhda faqat bitta o'qituvchi bo'lishi mumkin")
       .default([]),
-    monthlyPrice: z.coerce
-      .number({ invalid_type_error: "Raqam bo'lishi kerak" })
-      .min(0, "0 dan kichik bo'lmasin")
-      .default(0),
     startDate: z.coerce.date().nullable().optional(),
     durationMonths: z.coerce.number().min(0).nullable().optional(),
-    teacherAbsenceMode: z.enum(["inherit", "auto", "fixed", "none"]).optional(),
-    teacherAbsenceAmount: z.coerce.number().min(0).optional(),
   }),
 });

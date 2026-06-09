@@ -7,11 +7,6 @@ import ApiError from "../../../utils/ApiError.js";
 import { ROLES } from "../../../constants/roles.js";
 import { toUtcMidnight, localTodayMidnight } from "../../../helpers/attendance.helper.js";
 import {
-  reconcileOnLeave,
-  repriceCurrentCycle,
-} from "../../invoices/services/invoices.service.js";
-import { get as getPaymentSettings } from "../../paymentSettings/services/paymentSettings.service.js";
-import {
   deleteGroup as cascadeDeleteGroup,
   restoreGroup as cascadeRestoreGroup,
 } from "../../../helpers/cascadeDelete.helper.js";
@@ -23,7 +18,6 @@ export const safeUserProjection = {
   phone: 1,
   role: 1,
   isActive: 1,
-  balance: 1,
 };
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -201,11 +195,8 @@ export const create = async (body) => {
     name: body.name.trim(),
     schedule: body.schedule || [],
     teachers: body.teachers || [],
-    monthlyPrice: body.monthlyPrice ?? 0,
     startDate: body.startDate ? toUtcMidnight(body.startDate) : null,
     durationMonths: body.durationMonths ?? null,
-    teacherAbsenceMode: body.teacherAbsenceMode ?? "inherit",
-    teacherAbsenceAmount: body.teacherAbsenceAmount ?? 0,
   });
 };
 
@@ -219,75 +210,23 @@ export const update = async (id, body) => {
   if (body.name !== undefined) group.name = body.name.trim();
   if (body.schedule !== undefined) group.schedule = body.schedule;
 
-  // Narx o'zgarishini aniqlaymiz — saqlangach sozlamadagi siyosatni qo'llaymiz
-  const oldPrice = Number(group.monthlyPrice) || 0;
-  let priceChanged = false;
-  if (body.monthlyPrice !== undefined) {
-    group.monthlyPrice = body.monthlyPrice;
-    priceChanged = (Number(body.monthlyPrice) || 0) !== oldPrice;
-  }
-
   if (body.startDate !== undefined) {
     group.startDate = body.startDate ? toUtcMidnight(body.startDate) : null;
   }
   if (body.durationMonths !== undefined) {
     group.durationMonths = body.durationMonths ?? null;
   }
-  if (body.teacherAbsenceMode !== undefined) {
-    group.teacherAbsenceMode = body.teacherAbsenceMode;
-  }
-  if (body.teacherAbsenceAmount !== undefined) {
-    group.teacherAbsenceAmount = body.teacherAbsenceAmount;
-  }
 
   await group.save();
-
-  // Narx o'zgargan bo'lsa — sozlamadagi siyosat bo'yicha joriy oy hisoblarini moslaymiz
-  if (priceChanged) {
-    const settings = await getPaymentSettings();
-    const mode = settings.groupPriceChangeMode || "current_unpaid";
-
-    let priceChange = {
-      oldPrice,
-      newPrice: Math.round(Number(group.monthlyPrice) || 0),
-      mode,
-      repriced: 0,
-      newDebtCount: 0,
-    };
-    if (mode !== "future_only") {
-      // Reprice xatosi narx saqlanishini buzmasin (keyingi oy baribir to'g'ri).
-      try {
-        const result = await repriceCurrentCycle(group, {
-          includePaid: mode === "include_paid",
-        });
-        priceChange = { ...priceChange, ...result };
-      } catch {
-        priceChange = { ...priceChange, error: true };
-      }
-    }
-    return { ...group.toJSON(), priceChange };
-  }
-
   return group;
-};
-
-// Guruh tugatilganda/arxivlanganda — har bir faol o'quvchining joriy oy hisobini
-// o'qigan qismiga (prorate) moslaydi. A'zoliklar yopilmaydi (tiklash toza bo'lsin).
-const reconcileGroupInvoices = async (group, endDate) => {
-  const period = { year: endDate.getUTCFullYear(), month: endDate.getUTCMonth() + 1 };
-  const memberships = await GroupMembership.find({ group: group._id, leftAt: null });
-  for (const m of memberships) {
-    await reconcileOnLeave(m.student, group, m._id, period, endDate, {});
-  }
 };
 
 export const remove = async (id) => {
   const group = await ensureGroup(id);
   group.isActive = false;
-  // Arxivlangach to'lov/maosh to'xtashi uchun tugash sanasini belgilaymiz
+  // Arxivlangach davomat to'xtashi uchun tugash sanasini belgilaymiz
   if (!group.finishedAt) group.finishedAt = toUtcMidnight(new Date());
   await group.save();
-  await reconcileGroupInvoices(group, group.finishedAt);
   return group;
 };
 
@@ -301,7 +240,7 @@ export const restore = async (id) => {
   return group;
 };
 
-// Butunlay o'chirish (soft) — guruh + a'zolik/hisob/to'lov/davomat/stavka isDeleted=true
+// Butunlay o'chirish (soft) — guruh + a'zolik/davomat isDeleted=true
 export const permanentRemove = async (id, currentUser) => {
   const group = await Group.findById(id);
   if (!group) throw new ApiError(404, "Guruh topilmadi");
@@ -317,14 +256,13 @@ export const restoreDeleted = async (id) => {
   return Group.findById(id);
 };
 
-// Kursni yakunlash — status=finished + finishedAt; joriy oy hisoblari o'qigan qismiga prorate qilinadi.
+// Kursni yakunlash — status=finished + finishedAt (undan keyin davomat to'xtaydi).
 export const finish = async (id, { finishedAt } = {}) => {
   const group = await ensureGroup(id);
   const end = toUtcMidnight(finishedAt || new Date());
   group.status = "finished";
   group.finishedAt = end;
   await group.save();
-  await reconcileGroupInvoices(group, end);
   return group;
 };
 
@@ -355,13 +293,10 @@ export const addStudent = async (groupId, studentId, { joinedAt } = {}) => {
     joinedAt: joinedAt ? toUtcMidnight(joinedAt) : localTodayMidnight(),
   });
 
-  // O'quvchi yana o'qishni boshladi — "chiqib ketgan" holatini tozalaymiz
-  await User.findByIdAndUpdate(studentId, { leaveStatus: null });
-
   return membership;
 };
 
-export const removeStudent = async (groupId, studentId, leaveStatus) => {
+export const removeStudent = async (groupId, studentId) => {
   const leftAt = toUtcMidnight(new Date());
   const membership = await GroupMembership.findOneAndUpdate(
     { group: groupId, student: studentId, leftAt: null, isDeleted: { $ne: true } },
@@ -370,22 +305,6 @@ export const removeStudent = async (groupId, studentId, leaveStatus) => {
   );
   if (!membership) {
     throw new ApiError(404, "Faol a'zolik topilmadi");
-  }
-
-  // O'qigan qismi uchun joriy oy hisobini prorate qilamiz (arxiv/yakunlash bilan bir xil)
-  const group = await Group.findById(groupId);
-  if (group) {
-    const period = { year: leftAt.getUTCFullYear(), month: leftAt.getUTCMonth() + 1 };
-    await reconcileOnLeave(studentId, group, membership._id, period, leftAt, {});
-  }
-
-  // Oxirgi guruhdan chiqdimi? — chiqib ketish holatini belgilaymiz
-  const stillActive = await GroupMembership.exists({
-    student: studentId,
-    leftAt: null,
-  });
-  if (!stillActive && (leaveStatus === "left_unpaid" || leaveStatus === "left_paid")) {
-    await User.findByIdAndUpdate(studentId, { leaveStatus });
   }
 
   return membership;

@@ -9,19 +9,15 @@ import {
 import User from "../models/user.model.js";
 import Group from "../models/group.model.js";
 import GroupMembership from "../models/groupMembership.model.js";
-import Invoice from "../models/invoice.model.js";
-import Payment from "../models/payment.model.js";
-import PaymentMethod from "../models/paymentMethod.model.js";
 import Attendance from "../models/attendance.model.js";
 import TeacherAttendance from "../models/teacherAttendance.model.js";
 import Holiday from "../models/holiday.model.js";
 import ActivityLog from "../models/activityLog.model.js";
 import AttendanceSettings from "../models/attendanceSettings.model.js";
-import SalarySettings from "../models/salarySettings.model.js";
 
 // fakeData + fakeExtras dan keyin ishlaydi. Avval QAMRALMAGAN kolleksiyalarni
 // to'ldiradi: Holiday, TeacherAttendance, refund-to'lovlar, Attendance.history,
-// arxivlangan o'quvchilar, ActivityLog, SalarySettings/AttendanceSettings singleton.
+// arxivlangan o'quvchilar, ActivityLog, AttendanceSettings singleton.
 // Idempotent: o'zi egalik qiladigan ma'lumotni qayta ishlashdan oldin tozalaydi.
 
 const NOW = new Date();
@@ -59,7 +55,6 @@ const seed = async () => {
   if (!owner) throw new Error("Owner yo'q. Avval `npm run seed:owner`.");
   const teachers = await User.find({ role: ROLES.TEACHER, isActive: true }).lean();
   const groups = await Group.find({ isDeleted: { $ne: true } }).lean();
-  const methods = await PaymentMethod.find({ isActive: true }).lean();
   if (groups.length === 0 || teachers.length === 0) {
     throw new Error("Avval `npm run seed:fake-data` ishga tushiring.");
   }
@@ -69,7 +64,6 @@ const seed = async () => {
     Holiday.deleteMany({}),
     TeacherAttendance.deleteMany({}),
     ActivityLog.deleteMany({}),
-    Payment.deleteMany({ type: "refund" }),
   ]);
 
   // ───────── Singleton settings ─────────
@@ -78,12 +72,7 @@ const seed = async () => {
     { $setOnInsert: { _id: "default" } },
     { upsert: true, setDefaultsOnInsert: true },
   );
-  await SalarySettings.findOneAndUpdate(
-    { _id: "default" },
-    { $setOnInsert: { _id: "default" } },
-    { upsert: true, setDefaultsOnInsert: true },
-  );
-  logger.info("Settings singleton'lar tayyor (attendance, salary)");
+  logger.info("Settings singleton tayyor (attendance)");
 
   // ───────── HOLIDAY ─────────
   const recurring = (name, month, day, message, audience = "all") => ({
@@ -165,39 +154,6 @@ const seed = async () => {
   const taCount = await bulkInsert(TeacherAttendance, taDocs);
   logger.info(`${taCount} ta o'qituvchi davomati (absent/excused) yaratildi`);
 
-  // ───────── REFUND PAYMENTS ─────────
-  const refundable = await Invoice.find({
-    status: { $in: ["paid", "partial"] },
-    paidAmount: { $gt: 0 },
-    isDeleted: { $ne: true },
-  })
-    .select("student paidAmount totalDue period")
-    .limit(400)
-    .lean();
-  const refundTargets = sample(refundable, Math.min(30, refundable.length));
-  const refundDocs = [];
-  for (const inv of refundTargets) {
-    const refundAmount = Math.floor((inv.paidAmount * (0.2 + Math.random() * 0.4)) / 10000) * 10000;
-    if (refundAmount <= 0) continue;
-    const paidAt = randDate(daysAgo(120), NOW);
-    refundDocs.push({
-      invoice: inv._id,
-      student: inv.student,
-      amount: refundAmount,
-      type: "refund",
-      method: pick(methods)._id,
-      paidAt,
-      receivedBy: owner._id,
-      refundReason: pick(["Ortiqcha to'lov", "Kursni tark etdi", "Xato to'lov"]),
-    });
-    // invoice paidAmount/status ni mos ravishda yangilaymiz (recompute bilan bir xil mantiq)
-    const newPaid = Math.max(0, inv.paidAmount - refundAmount);
-    const status = newPaid <= 0 ? "unpaid" : newPaid < inv.totalDue ? "partial" : "paid";
-    await Invoice.updateOne({ _id: inv._id }, { $set: { paidAmount: newPaid, status } });
-  }
-  if (refundDocs.length) await Payment.insertMany(refundDocs);
-  logger.info(`${refundDocs.length} ta refund (qaytarish) to'lovi yaratildi`);
-
   // ───────── ATTENDANCE HISTORY (tahrirlangan yozuvlar — ✎ indikatori uchun) ─────────
   const attSample = await Attendance.find({ isDeleted: { $ne: true } })
     .select("status recordedBy recordedAt source")
@@ -261,15 +217,12 @@ const seed = async () => {
   const PATHS = [
     ["POST", "/api/attendance/groups/:id/bulk", "attendance", 201],
     ["GET", "/api/attendance/dashboard", "attendance", 200],
-    ["POST", "/api/payments", "payment", 201],
-    ["PATCH", "/api/invoices/:id", "invoice", 200],
     ["POST", "/api/notifications", "notification", 201],
     ["POST", "/api/groups", "group", 201],
     ["PATCH", "/api/users/:id", "user", 200],
     ["DELETE", "/api/users/:id", "user", 200],
     ["GET", "/api/notifications/:id/recipients", "notification", 403],
     ["POST", "/api/auth/login", "auth", 200],
-    ["GET", "/api/salaries", "salary", 200],
   ];
   const logDocs = [];
   for (let i = 0; i < 150; i++) {

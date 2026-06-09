@@ -1,7 +1,7 @@
 import { getLinkedUser } from "../services/botUser.service.js";
 import * as groupsService from "../../modules/groups/services/groups.service.js";
 import { ROLES } from "../../constants/roles.js";
-import { formatSchedule, formatMoney } from "../utils/format.js";
+import { formatSchedule } from "../utils/format.js";
 
 const myGroupsHandler = async (bot, msg) => {
   const chatId = msg.chat.id;
@@ -25,7 +25,6 @@ const myGroupsHandler = async (bot, msg) => {
       [
         `${i + 1}) ${g.name} - ${g.studentsCount || 0} o'quvchi`,
         `   Dars: ${formatSchedule(g.schedule)}`,
-        `   Narx: ${formatMoney(g.monthlyPrice)}`,
       ].join("\n"),
     );
     buttons.push([

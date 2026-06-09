@@ -23,21 +23,6 @@ export const PERMISSIONS = Object.freeze({
   GROUPS_DELETE: "groups.delete",
   GROUPS_MANAGE_STUDENTS: "groups.manage_students",
 
-  // Payments
-  PAYMENTS_READ: "payments.read",
-  PAYMENTS_CREATE: "payments.create",
-  PAYMENTS_REFUND: "payments.refund",
-
-  INVOICES_READ: "invoices.read",
-  INVOICES_CREATE: "invoices.create",
-  INVOICES_UPDATE: "invoices.update",
-  INVOICES_CANCEL: "invoices.cancel",
-
-  DISCOUNTS_MANAGE: "discounts.manage",
-  PAYMENT_METHODS_MANAGE: "payment_methods.manage",
-  DISCOUNT_KINDS_MANAGE: "discount_kinds.manage",
-  PAYMENT_SETTINGS_MANAGE: "payment_settings.manage",
-
   // Attendance
   ATTENDANCE_READ: "attendance.read",
   ATTENDANCE_RECORD: "attendance.record",
@@ -50,11 +35,6 @@ export const PERMISSIONS = Object.freeze({
   RATING_READ: "rating.read",
   RATING_MANAGE: "rating.manage",
 
-  // Salaries
-  SALARIES_READ: "salaries.read",
-  SALARIES_MANAGE: "salaries.manage",
-  SALARIES_DISTRIBUTE: "salaries.distribute",
-
   // Notifications + Feedback
   NOTIFICATIONS_READ: "notifications.read",
   NOTIFICATIONS_SEND: "notifications.send",
@@ -64,10 +44,8 @@ export const PERMISSIONS = Object.freeze({
   FEEDBACK_RESPOND: "feedback.respond",
   FEEDBACK_TYPES_MANAGE: "feedback_types.manage",
 
-  // Admin dashboard + audit + expenses (Bo'lak 9)
+  // Admin dashboard + audit (Bo'lak 9)
   ADMIN_DASHBOARD_READ: "admin_dashboard.read",
-  EXPENSES_READ: "expenses.read",
-  EXPENSES_MANAGE: "expenses.manage",
   ACTIVITY_LOGS_READ: "activity_logs.read",
 });
 
@@ -99,32 +77,6 @@ export const PERMISSION_LABELS = {
     group: "groups",
   },
 
-  [PERMISSIONS.PAYMENTS_READ]: { label: "To'lovlarni ko'rish", group: "payments" },
-  [PERMISSIONS.PAYMENTS_CREATE]: { label: "To'lov qabul qilish", group: "payments" },
-  [PERMISSIONS.PAYMENTS_REFUND]: { label: "To'lovni qaytarish", group: "payments" },
-
-  [PERMISSIONS.INVOICES_READ]: { label: "Hisoblarni ko'rish", group: "invoices" },
-  [PERMISSIONS.INVOICES_CREATE]: { label: "Hisob yaratish", group: "invoices" },
-  [PERMISSIONS.INVOICES_UPDATE]: { label: "Hisobni tahrirlash", group: "invoices" },
-  [PERMISSIONS.INVOICES_CANCEL]: { label: "Hisobni bekor qilish", group: "invoices" },
-
-  [PERMISSIONS.DISCOUNTS_MANAGE]: {
-    label: "Chegirmalarni boshqarish",
-    group: "discounts",
-  },
-  [PERMISSIONS.PAYMENT_METHODS_MANAGE]: {
-    label: "To'lov usullarini boshqarish",
-    group: "payment_methods",
-  },
-  [PERMISSIONS.DISCOUNT_KINDS_MANAGE]: {
-    label: "Chegirma turlarini boshqarish",
-    group: "discount_kinds",
-  },
-  [PERMISSIONS.PAYMENT_SETTINGS_MANAGE]: {
-    label: "To'lov sozlamalarini boshqarish",
-    group: "payment_settings",
-  },
-
   [PERMISSIONS.ATTENDANCE_READ]: { label: "Davomatni ko'rish", group: "attendance" },
   [PERMISSIONS.ATTENDANCE_RECORD]: { label: "Davomatni belgilash", group: "attendance" },
   [PERMISSIONS.ATTENDANCE_MANAGE]: { label: "Davomatni boshqarish", group: "attendance" },
@@ -134,16 +86,6 @@ export const PERMISSION_LABELS = {
   [PERMISSIONS.GRADES_MANAGE]: { label: "Baholashni boshqarish", group: "grades" },
   [PERMISSIONS.RATING_READ]: { label: "Reytingni ko'rish", group: "rating" },
   [PERMISSIONS.RATING_MANAGE]: { label: "Reyting sozlamalarini boshqarish", group: "rating" },
-
-  [PERMISSIONS.SALARIES_READ]: { label: "Maoshlarni ko'rish", group: "salaries" },
-  [PERMISSIONS.SALARIES_MANAGE]: {
-    label: "Maoshlarni boshqarish",
-    group: "salaries",
-  },
-  [PERMISSIONS.SALARIES_DISTRIBUTE]: {
-    label: "Maosh to'lab berish",
-    group: "salaries",
-  },
 
   [PERMISSIONS.NOTIFICATIONS_READ]: {
     label: "Bildirishnomalarni ko'rish",
@@ -177,14 +119,6 @@ export const PERMISSION_LABELS = {
   [PERMISSIONS.ADMIN_DASHBOARD_READ]: {
     label: "Boshqaruv panelini ko'rish",
     group: "admin",
-  },
-  [PERMISSIONS.EXPENSES_READ]: {
-    label: "Xarajatlarni ko'rish",
-    group: "expenses",
-  },
-  [PERMISSIONS.EXPENSES_MANAGE]: {
-    label: "Xarajatlarni boshqarish",
-    group: "expenses",
   },
   [PERMISSIONS.ACTIVITY_LOGS_READ]: {
     label: "Faoliyat loglarini ko'rish",

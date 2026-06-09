@@ -6,21 +6,11 @@ import { ROLES } from "../constants/roles.js";
 import User from "../models/user.model.js";
 import Group from "../models/group.model.js";
 import GroupMembership from "../models/groupMembership.model.js";
-import PaymentMethod from "../models/paymentMethod.model.js";
-import TeacherGroupRate from "../models/teacherGroupRate.model.js";
-import Invoice from "../models/invoice.model.js";
-import Payment from "../models/payment.model.js";
-import Salary from "../models/salary.model.js";
-import SalaryPayout from "../models/salaryPayout.model.js";
 import Attendance from "../models/attendance.model.js";
 import AttendanceSettings from "../models/attendanceSettings.model.js";
 import AttendanceExemption from "../models/attendanceExemption.model.js";
-import Discount from "../models/discount.model.js";
-import DiscountKind from "../models/discountKind.model.js";
 import Feedback from "../models/feedback.model.js";
 import FeedbackType from "../models/feedbackType.model.js";
-import Expense from "../models/expense.model.js";
-import ExpenseType from "../models/expenseType.model.js";
 
 const TEACHER_COUNT = 40;
 const STUDENT_COUNT = 800;
@@ -130,12 +120,6 @@ const seed = async () => {
   await connectDB();
   const startedAt = Date.now();
 
-  const paymentMethods = await PaymentMethod.find({ isActive: true });
-  if (paymentMethods.length === 0) {
-    throw new Error(
-      "PaymentMethod yo'q. Avval `npm run seed:payments` ishga tushiring.",
-    );
-  }
   const owner = await User.findOne({ role: ROLES.OWNER });
   if (!owner) {
     throw new Error("Owner yo'q. Avval `npm run seed:owner` ishga tushiring.");
@@ -206,41 +190,11 @@ const seed = async () => {
       name: `${dirName} ${letter}-${num}`,
       schedule: genSchedule(),
       teachers: [teacher._id],
-      monthlyPrice: randInt(6, 16) * 50000,
       isActive: true,
     });
   }
   const groups = await Group.insertMany(groupDocs);
   logger.info(`${groups.length} ta guruh yaratildi`);
-
-  const rateDocs = [];
-  for (let i = 0; i < GROUP_COUNT; i++) {
-    const teacher = teachers[i];
-    const group = groups[i];
-    const calcType = weighted([
-      { value: "percentage", weight: 60 },
-      { value: "fixed", weight: 30 },
-      { value: "hourly", weight: 10 },
-    ]);
-    const rate = {
-      teacher: teacher._id,
-      group: group._id,
-      calculationType: calcType,
-      hoursPerSession: 2,
-      effectiveFrom: yearAgo,
-      isActive: true,
-      createdBy: owner._id,
-    };
-    if (calcType === "percentage") rate.percentageRate = randInt(40, 60);
-    else if (calcType === "fixed") rate.fixedAmount = randInt(40, 80) * 50000;
-    else rate.hourlyRate = randInt(16, 30) * 5000;
-    rateDocs.push(rate);
-  }
-  const rates = await TeacherGroupRate.insertMany(rateDocs);
-  logger.info(`${rates.length} ta teacher-group rate yaratildi`);
-
-  const rateByGroup = new Map();
-  for (const r of rates) rateByGroup.set(String(r.group), r);
 
   const membershipDocs = [];
   for (const student of students) {
@@ -271,227 +225,10 @@ const seed = async () => {
   const memberships = await bulkInsert(GroupMembership, membershipDocs);
   logger.info(`${memberships.length} ta group membership yaratildi`);
 
-  const groupById = new Map();
-  for (const g of groups) groupById.set(String(g._id), g);
-
-  // group-month → total payments yig'ish (oylik foiz hisobi uchun)
-  const groupMonthPayments = new Map();
-  let totalInvoices = 0;
-  let totalPayments = 0;
-
-  for (let mi = 0; mi < MONTHS.length; mi++) {
-    const { year, month } = MONTHS[mi];
-    const mStart = monthStart(year, month);
-    const mEnd = monthEnd(year, month);
-    const isCurrent = year === 2026 && month === 5;
-    const monthsAgo = MONTHS.length - mi - 1;
-
-    const invoicesThisMonth = [];
-    for (const m of memberships) {
-      if (m.joinedAt > mEnd) continue;
-      if (m.leftAt && m.leftAt < mStart) continue;
-      const group = groupById.get(String(m.group));
-      if (!group) continue;
-      const paidWeight = isCurrent ? 30 : Math.min(70 + monthsAgo * 2, 85);
-      const partialWeight = 12;
-      const unpaidWeight = isCurrent ? 58 : Math.max(15 - monthsAgo, 3);
-      const status = weighted([
-        { value: "paid", weight: paidWeight },
-        { value: "partial", weight: partialWeight },
-        { value: "unpaid", weight: unpaidWeight },
-      ]);
-      const baseAmount = group.monthlyPrice;
-      let paidAmount = 0;
-      if (status === "paid") paidAmount = baseAmount;
-      else if (status === "partial")
-        paidAmount =
-          Math.floor((baseAmount * (0.3 + Math.random() * 0.5)) / 10000) * 10000;
-      invoicesThisMonth.push({
-        student: m.student,
-        group: m.group,
-        membership: m._id,
-        period: { year, month },
-        baseAmount,
-        totalDue: baseAmount,
-        paidAmount,
-        status,
-        dueDate: new Date(year, month - 1, 5),
-        createdBy: owner._id,
-      });
-    }
-    const inserted = await bulkInsert(Invoice, invoicesThisMonth);
-    totalInvoices += inserted.length;
-
-    const paymentsThisMonth = [];
-    for (const inv of inserted) {
-      if (inv.paidAmount <= 0) continue;
-      const split = inv.status === "partial" && Math.random() < 0.3;
-      const paidAt = randDate(mStart, mEnd);
-      if (split) {
-        const a1 =
-          Math.floor((inv.paidAmount * (0.4 + Math.random() * 0.2)) / 10000) *
-          10000;
-        const a2 = inv.paidAmount - a1;
-        paymentsThisMonth.push({
-          invoice: inv._id,
-          student: inv.student,
-          amount: a1,
-          type: "payment",
-          method: pick(paymentMethods)._id,
-          paidAt,
-          receivedBy: owner._id,
-        });
-        if (a2 > 0) {
-          paymentsThisMonth.push({
-            invoice: inv._id,
-            student: inv.student,
-            amount: a2,
-            type: "payment",
-            method: pick(paymentMethods)._id,
-            paidAt: randDate(paidAt, mEnd),
-            receivedBy: owner._id,
-          });
-        }
-      } else {
-        paymentsThisMonth.push({
-          invoice: inv._id,
-          student: inv.student,
-          amount: inv.paidAmount,
-          type: "payment",
-          method: pick(paymentMethods)._id,
-          paidAt,
-          receivedBy: owner._id,
-        });
-      }
-      const k = `${String(inv.group)}-${year}-${month}`;
-      groupMonthPayments.set(k, (groupMonthPayments.get(k) || 0) + inv.paidAmount);
-    }
-    await bulkInsert(Payment, paymentsThisMonth);
-    totalPayments += paymentsThisMonth.length;
-    logger.info(
-      `[${year}-${String(month).padStart(2, "0")}] ${inserted.length} invoice, ${paymentsThisMonth.length} payment`,
-    );
-  }
-
-  let totalSalaries = 0;
-  let totalPayouts = 0;
-  for (let mi = 0; mi < MONTHS.length; mi++) {
-    const { year, month } = MONTHS[mi];
-    const isCurrent = year === 2026 && month === 5;
-    const salariesThisMonth = [];
-    for (const teacher of teachers) {
-      const teacherGroups = groups.filter(
-        (g) => String(g.teachers[0]) === String(teacher._id),
-      );
-      const breakdowns = [];
-      for (const group of teacherGroups) {
-        const rate = rateByGroup.get(String(group._id));
-        if (!rate) continue;
-        const b = {
-          group: group._id,
-          groupName: group.name,
-          calculationType: rate.calculationType,
-        };
-        if (rate.calculationType === "fixed") {
-          b.fixedAmount = rate.fixedAmount;
-          b.subtotal = rate.fixedAmount;
-        } else if (rate.calculationType === "hourly") {
-          const sessions = randInt(8, 12);
-          const hours = sessions * (rate.hoursPerSession || 2);
-          b.sessionsCount = sessions;
-          b.hoursPerSession = rate.hoursPerSession;
-          b.totalHours = hours;
-          b.hourlyRate = rate.hourlyRate;
-          b.hourlyAmount = hours * rate.hourlyRate;
-          b.subtotal = b.hourlyAmount;
-        } else if (rate.calculationType === "percentage") {
-          const k = `${String(group._id)}-${year}-${month}`;
-          const total = groupMonthPayments.get(k) || 0;
-          const amount =
-            Math.floor((total * rate.percentageRate) / 100 / 1000) * 1000;
-          b.studentPaymentsTotal = total;
-          b.percentageRate = rate.percentageRate;
-          b.percentageAmount = amount;
-          b.subtotal = amount;
-        }
-        breakdowns.push(b);
-      }
-      const baseAmount = breakdowns.reduce((s, b) => s + (b.subtotal || 0), 0);
-
-      const adjustments = [];
-      let bonusTotal = 0;
-      let penaltyTotal = 0;
-      if (Math.random() < 0.2) {
-        const isBonus = Math.random() < 0.6;
-        const amount = isBonus
-          ? randInt(200, 500) * 1000
-          : randInt(100, 300) * 1000;
-        if (isBonus) bonusTotal = amount;
-        else penaltyTotal = amount;
-        adjustments.push({
-          type: isBonus ? "bonus" : "penalty",
-          amount,
-          reason: isBonus ? "Yaxshi natija" : "Kechikkanlik",
-          createdBy: owner._id,
-          createdAt: monthEnd(year, month),
-        });
-      }
-      const finalAmount = Math.max(0, baseAmount + bonusTotal - penaltyTotal);
-      const status = isCurrent
-        ? weighted([
-            { value: "calculated", weight: 70 },
-            { value: "approved", weight: 25 },
-            { value: "paid", weight: 5 },
-          ])
-        : weighted([
-            { value: "paid", weight: 80 },
-            { value: "approved", weight: 15 },
-            { value: "calculated", weight: 5 },
-          ]);
-      const paidAmount = status === "paid" ? finalAmount : 0;
-      salariesThisMonth.push({
-        teacher: teacher._id,
-        period: { year, month },
-        groupBreakdowns: breakdowns,
-        baseAmount,
-        adjustments,
-        bonusTotal,
-        penaltyTotal,
-        advanceTotal: 0,
-        deductionTotal: 0,
-        finalAmount,
-        paidAmount,
-        status,
-        calculatedAt: monthEnd(year, month),
-        calculatedBy: owner._id,
-        approvedAt: status !== "calculated" ? monthEnd(year, month) : null,
-        approvedBy: status !== "calculated" ? owner._id : null,
-      });
-    }
-    const insertedSalaries = await Salary.insertMany(salariesThisMonth);
-    totalSalaries += insertedSalaries.length;
-
-    const payouts = [];
-    for (const sal of insertedSalaries) {
-      if (sal.status !== "paid" || sal.paidAmount <= 0) continue;
-      payouts.push({
-        salary: sal._id,
-        teacher: sal.teacher,
-        amount: sal.paidAmount,
-        method: pick(paymentMethods)._id,
-        paidAt: monthEnd(year, month),
-        paidBy: owner._id,
-      });
-    }
-    if (payouts.length > 0) await SalaryPayout.insertMany(payouts);
-    totalPayouts += payouts.length;
-  }
-  logger.info(`${totalSalaries} ta salary va ${totalPayouts} ta payout yaratildi`);
 
   // --- Reference data for ancillary collections ---
-  const discountKinds = await DiscountKind.find({ isActive: true });
   const feedbackTypes = await FeedbackType.find({ isActive: true });
-  if (discountKinds.length === 0 || feedbackTypes.length === 0) {
+  if (feedbackTypes.length === 0) {
     throw new Error(
       "Reference data yo'q. Avval `npm run seed:communication` ishga tushiring.",
     );
@@ -601,89 +338,6 @@ const seed = async () => {
   }
   logger.info(`${totalAttendance} ta davomat yozuvi yaratildi`);
 
-  // Discount: ~10% studentlarda
-  const discountDocs = [];
-  for (const student of students) {
-    if (Math.random() < 0.1) {
-      const kind = pick(discountKinds);
-      const valueType = Math.random() < 0.7 ? "percent" : "amount";
-      const value =
-        valueType === "percent" ? randInt(5, 30) : randInt(50, 200) * 1000;
-      discountDocs.push({
-        student: student._id,
-        kind: kind._id,
-        valueType,
-        value,
-        reason: `${kind.name} chegirma`,
-        startDate: student.enrolledAt || yearAgo,
-        endDate: null,
-        isActive: true,
-      });
-    }
-  }
-  if (discountDocs.length > 0) await Discount.insertMany(discountDocs);
-  logger.info(`${discountDocs.length} ta chegirma yaratildi`);
-
-  // Xarajat turlari (dinamik lug'at) — avval yaratamiz, keyin xarajatlar ularga havola qiladi
-  const EXPENSE_TYPE_NAMES = ["Oylik", "Ijara", "Kommunal", "Reklama", "Boshqa"];
-  const expenseTypeByName = new Map();
-  for (const name of EXPENSE_TYPE_NAMES) {
-    const t = await ExpenseType.findOneAndUpdate(
-      { name, isActive: true },
-      { $setOnInsert: { name, isActive: true } },
-      { upsert: true, new: true, setDefaultsOnInsert: true },
-    );
-    expenseTypeByName.set(name, t._id);
-  }
-
-  // Expense: 12 oy davomida har oy ijara, kommunal, reklama + ad-hoc
-  const expenseDocs = [];
-  for (const { year, month } of MONTHS) {
-    const mStart = monthStart(year, month);
-    const mEnd = monthEnd(year, month);
-    expenseDocs.push({
-      type: expenseTypeByName.get("Ijara"),
-      amount: 10_000_000,
-      date: new Date(year, month - 1, 1),
-      description: `${year}-${String(month).padStart(2, "0")} oy uchun ijara`,
-      createdBy: owner._id,
-    });
-    expenseDocs.push({
-      type: expenseTypeByName.get("Kommunal"),
-      amount: randInt(120, 220) * 10000,
-      date: new Date(year, month - 1, 10),
-      description: "Kommunal to'lov (svet, suv, internet)",
-      createdBy: owner._id,
-    });
-    expenseDocs.push({
-      type: expenseTypeByName.get("Reklama"),
-      amount: randInt(20, 50) * 100000,
-      date: randDate(mStart, mEnd),
-      description: pick([
-        "Instagram reklama",
-        "Telegram kanal reklama",
-        "Bannerlar",
-        "Targetlangan reklama",
-      ]),
-      createdBy: owner._id,
-    });
-    if (Math.random() < 0.5) {
-      expenseDocs.push({
-        type: expenseTypeByName.get("Boshqa"),
-        amount: randInt(30, 150) * 10000,
-        date: randDate(mStart, mEnd),
-        description: pick([
-          "Kanslyariya tovarlari",
-          "Texnika ta'mirlash",
-          "Mehmonlar uchun choy-qahva",
-          "Bayram tadbirlari",
-        ]),
-        createdBy: owner._id,
-      });
-    }
-  }
-  await Expense.insertMany(expenseDocs);
-  logger.info(`${expenseDocs.length} ta xarajat yaratildi`);
 
   // Feedback: 80 ta
   const feedbackDocs = [];
@@ -736,7 +390,7 @@ const seed = async () => {
 
   const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
   logger.info(
-    `Fake data tayyor (${elapsed}s): ${teachers.length} teacher, ${students.length} student, ${groups.length} group, ${memberships.length} membership, ${totalInvoices} invoice, ${totalPayments} payment, ${totalSalaries} salary, ${totalPayouts} payout, ${totalAttendance} attendance, ${expenseDocs.length} expense, ${discountDocs.length} discount, ${feedbackDocs.length} feedback`,
+    `Fake data tayyor (${elapsed}s): ${teachers.length} teacher, ${students.length} student, ${groups.length} group, ${memberships.length} membership, ${totalAttendance} attendance, ${feedbackDocs.length} feedback`,
   );
   logger.info(`Login parol (barcha fake userlar): ${COMMON_PASSWORD}`);
   logger.info(`Username prefiks: student_<i>_${RUN_TAG} | teacher_<i>_${RUN_TAG}`);

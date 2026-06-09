@@ -1,7 +1,7 @@
 import { getLinkedUser } from "../services/botUser.service.js";
 import * as groupsService from "../../modules/groups/services/groups.service.js";
 import { ROLES } from "../../constants/roles.js";
-import { formatSchedule, formatMoney } from "../utils/format.js";
+import { formatSchedule } from "../utils/format.js";
 
 const myGroupHandler = async (bot, msg) => {
   const chatId = msg.chat.id;
@@ -27,7 +27,6 @@ const myGroupHandler = async (bot, msg) => {
     `Guruh: ${group.name}`,
     `Dars kunlari: ${formatSchedule(group.schedule)}`,
     `O'qituvchilar: ${teachers}`,
-    `Oylik narx: ${formatMoney(group.monthlyPrice)}`,
   ].join("\n");
 
   await bot.sendMessage(chatId, text);

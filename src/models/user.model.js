@@ -14,31 +14,15 @@ const userSchema = new mongoose.Schema(
     role: { type: String, enum: ALL_ROLES, default: ROLES.STUDENT, required: true },
     isActive: { type: Boolean, default: true },
 
-    // O'quvchi guruhlardan chiqib ketganda: qarzi bilan yoki to'lab chiqqani
-    leaveStatus: {
-      type: String,
-      enum: ["left_unpaid", "left_paid"],
-      default: null,
-    },
-
     // Profil ma'lumotlari (ixtiyoriy)
     birthDate: { type: Date, default: null },
     gender: { type: String, enum: ["male", "female"], default: null },
 
-    // Faqat student rolidagi maydonlar
+    // Faqat student rolidagi maydon
     enrolledAt: { type: Date, default: null },
-    // O'quvchi oldindan/ortiqcha to'lagan pul (keyingi oy hisoblaridan yechiladi)
-    balance: { type: Number, default: 0, min: 0 },
 
     // Faqat teacher rolidagi maydon
     hiredAt: { type: Date, default: null },
-    // O'qituvchi kelmagan kun jarimasi (o'qituvchi override). "inherit" → global sozlama.
-    teacherAbsenceMode: {
-      type: String,
-      enum: ["inherit", "auto", "fixed", "none"],
-      default: "inherit",
-    },
-    teacherAbsenceAmount: { type: Number, default: 0, min: 0 },
   },
   { timestamps: true },
 );

@@ -9,8 +9,8 @@ const webAppButton = {
 const STUDENT_KB = {
   reply_markup: {
     keyboard: [
-      [{ text: "Mening to'lovlarim" }, { text: "Dars jadvali" }],
-      [{ text: "Davomatim" }, { text: "Feedback" }],
+      [{ text: "Dars jadvali" }, { text: "Davomatim" }],
+      [{ text: "Feedback" }],
       [webAppButton],
       [{ text: "Yordam" }],
     ],
@@ -22,8 +22,8 @@ const TEACHER_KB = {
   reply_markup: {
     keyboard: [
       [{ text: "Mening guruhlarim" }, { text: "Dars jadvali" }],
-      [{ text: "Davomat" }, { text: "Oyligim" }],
-      [{ text: "Feedback" }, webAppButton],
+      [{ text: "Davomat" }, { text: "Feedback" }],
+      [webAppButton],
       [{ text: "Yordam" }],
     ],
     resize_keyboard: true,

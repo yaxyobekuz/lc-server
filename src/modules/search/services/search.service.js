@@ -1,7 +1,6 @@
 import User from "../../../models/user.model.js";
 import Group from "../../../models/group.model.js";
 import GroupMembership from "../../../models/groupMembership.model.js";
-import Invoice from "../../../models/invoice.model.js";
 import { ROLES } from "../../../constants/roles.js";
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -38,28 +37,6 @@ export const globalSearch = async (term, { limit = 5 } = {}) => {
       .lean(),
   ]);
 
-  // O'quvchilar uchun qarzni biriktiramiz — natija qatorida qizil badge ko'rsatish uchun
-  const studentIds = students.map((s) => s._id);
-  let debtMap = new Map();
-  if (studentIds.length > 0) {
-    const debtRows = await Invoice.aggregate([
-      {
-        $match: {
-          student: { $in: studentIds },
-          status: { $in: ["unpaid", "partial"] },
-          isDeleted: { $ne: true },
-        },
-      },
-      {
-        $group: {
-          _id: "$student",
-          debt: { $sum: { $subtract: ["$totalDue", "$paidAmount"] } },
-        },
-      },
-    ]);
-    debtMap = new Map(debtRows.map((d) => [String(d._id), d.debt]));
-  }
-
   // Guruhlar uchun o'quvchilar sonini ko'rsatamiz (yengil kontekst)
   const groupIds = groups.map((g) => g._id);
   let countMap = new Map();
@@ -77,7 +54,6 @@ export const globalSearch = async (term, { limit = 5 } = {}) => {
       firstName: s.firstName,
       lastName: s.lastName,
       phone: s.phone || null,
-      currentDebt: debtMap.get(String(s._id)) || 0,
     })),
     teachers: teachers.map((t) => ({
       _id: t._id,

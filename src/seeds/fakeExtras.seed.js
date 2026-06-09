@@ -6,18 +6,15 @@ import {
   dateKeyOf,
   getClassDaysInRange,
 } from "../helpers/attendance.helper.js";
-import { computePerLessonAmount } from "../helpers/billing.helper.js";
 import User from "../models/user.model.js";
 import Group from "../models/group.model.js";
 import GroupMembership from "../models/groupMembership.model.js";
-import Invoice from "../models/invoice.model.js";
 import Feedback from "../models/feedback.model.js";
 import NotificationTemplate from "../models/notificationTemplate.model.js";
 import Notification from "../models/notification.model.js";
 import NotificationRecipient from "../models/notificationRecipient.model.js";
 import TeacherAbsence from "../models/teacherAbsence.model.js";
 import BotUser from "../models/botUser.model.js";
-import PaymentSettings from "../models/paymentSettings.model.js";
 
 // Mavjud fake datani (fakeData.seed) to'ldiruvchi: bo'sh qolgan kolleksiyalar uchun
 // realistik data — notifications, notificationrecipients, teacherabsences, botusers.
@@ -143,7 +140,6 @@ const seed = async () => {
   const students = await User.find({ role: ROLES.STUDENT }).lean();
   const groups = await Group.find({}).lean();
   const templates = await NotificationTemplate.find({ isActive: true }).lean();
-  const settings = (await PaymentSettings.findOne({}).lean()) || {};
 
   const activeStudents = students.filter((s) => s.isActive !== false);
   const teacherIds = teachers.map((t) => t._id);
@@ -471,28 +467,6 @@ const seed = async () => {
   );
 
   // ---------- TEACHER ABSENCES ----------
-  // Invoice map: student|group|year|month -> invoiceId (applications uchun)
-  const invoices = await Invoice.find({ status: { $ne: "cancelled" } })
-    .select("student group period")
-    .lean();
-  const invoiceMap = new Map();
-  for (const inv of invoices) {
-    invoiceMap.set(
-      `${inv.student}|${inv.group}|${inv.period.year}|${inv.period.month}`,
-      inv._id,
-    );
-  }
-  // Guruh -> a'zolik oraliqlari (joinedAt/leftAt) — sana bo'yicha faol a'zolarni topish uchun
-  const allMemberships = await GroupMembership.find({})
-    .select("group student joinedAt leftAt")
-    .lean();
-  const groupMemberRanges = new Map();
-  for (const m of allMemberships) {
-    const g = String(m.group);
-    if (!groupMemberRanges.has(g)) groupMemberRanges.set(g, []);
-    groupMemberRanges.get(g).push(m);
-  }
-
   const absenceDocs = [];
   for (const g of groups) {
     if (!g.schedule || g.schedule.length === 0) continue;
@@ -507,51 +481,22 @@ const seed = async () => {
     const count = Math.min(randInt(bucket[0], bucket[1]), classDays.length);
     if (count === 0) continue;
     const teacher = g.teachers?.[0] || null;
-    const ranges = groupMemberRanges.get(String(g._id)) || [];
     for (const cd of sample(classDays, count)) {
-      const t = cd.date.getTime();
-      const year = cd.date.getUTCFullYear();
-      const month = cd.date.getUTCMonth() + 1;
-      const perStudentAmount = computePerLessonAmount(g, { year, month }, settings);
-      const applications = [];
-      for (const m of ranges) {
-        const joined = new Date(m.joinedAt).getTime();
-        const left = m.leftAt ? new Date(m.leftAt).getTime() : null;
-        if (joined > t) continue;
-        if (left !== null && left <= t) continue;
-        const invId = invoiceMap.get(`${m.student}|${g._id}|${year}|${month}`);
-        if (!invId) continue;
-        applications.push({
-          student: m.student,
-          invoice: invId,
-          deducted: perStudentAmount,
-          balanceCredited: 0,
-          appliedBalanceReduced: 0,
-        });
-      }
       absenceDocs.push({
         group: g._id,
         teacher,
         date: cd.date,
         dateKey: cd.dateKey || dateKeyOf(cd.date),
-        perStudentAmount,
-        applications,
         recordedBy: owner._id,
       });
     }
   }
   await bulkInsert(TeacherAbsence, absenceDocs);
-  const totalApplications = absenceDocs.reduce((s, a) => s + a.applications.length, 0);
-  logger.info(
-    `${absenceDocs.length} ta teacher absence yaratildi (${totalApplications} ta application)`,
-  );
+  logger.info(`${absenceDocs.length} ta teacher absence yaratildi`);
 
   const secs = ((Date.now() - startedAt) / 1000).toFixed(1);
   logger.info(
     `Fake extras tayyor (${secs}s): ${botDocs.length} bot user, ${insertedNotifs.length} notification, ${recipientDocs.length} recipient, ${absenceDocs.length} teacher absence`,
-  );
-  logger.info(
-    "Eslatma: teacher absence chegirmalari mavjud invoice'larga qo'llanilmadi (invoice balanslari saqlandi).",
   );
 
   await disconnectDB();

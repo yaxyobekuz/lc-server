@@ -4,12 +4,6 @@ import { idParam, idStudentParams } from "./common.js";
 export const idParamSchema = z.object({ params: idParam });
 export const studentParamsSchema = z.object({
   params: idStudentParams,
-  // Oxirgi guruhdan chiqishda o'quvchi holati: to'lab/qarzi bilan
-  body: z
-    .object({
-      leaveStatus: z.enum(["left_unpaid", "left_paid"]).optional(),
-    })
-    .optional(),
 });
 
 export const historyQuerySchema = z.object({

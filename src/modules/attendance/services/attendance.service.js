@@ -5,7 +5,6 @@ import StudentFreeze from "../../../models/studentFreeze.model.js";
 import AttendanceSettings from "../../../models/attendanceSettings.model.js";
 import Group from "../../../models/group.model.js";
 import GroupMembership from "../../../models/groupMembership.model.js";
-import Invoice from "../../../models/invoice.model.js";
 import User from "../../../models/user.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import { buildMeta } from "../../../utils/pagination.js";
@@ -25,11 +24,7 @@ import {
 import { holidayKeySetForRange } from "../../holidays/services/holidays.service.js";
 import { listForTeacher } from "../../groups/services/groups.service.js";
 import logger from "../../../config/logger.js";
-import {
-  correlationCacheGet,
-  correlationCacheSet,
-  correlationCacheInvalidate,
-} from "../../../helpers/correlationCache.js";
+import { correlationCacheInvalidate } from "../../../helpers/correlationCache.js";
 
 // Backward-compat re-export (boshqa modullar shu yerdan import qiladi)
 export { correlationCacheInvalidate };
@@ -1373,76 +1368,6 @@ export const getDashboardStats = async ({ fromDate, toDate, page = 1, limit = 20
       total: groupBreakdownAll.length,
     }),
   };
-};
-
-// ─── correlation ───
-const CORRELATION_BATCH = 25;
-
-export const correlationReport = async ({ year, month }) => {
-  const cacheKey = `${year}-${month}`;
-  const cached = await correlationCacheGet(cacheKey);
-  if (cached) return cached;
-
-  const monthStart = startOfMonth(year, month);
-  const monthEnd = endOfMonth(year, month);
-
-  // Shu oy uchun barcha non-cancelled invoices — minimal proyeksiya
-  const invoices = await Invoice.find(
-    {
-      "period.year": Number(year),
-      "period.month": Number(month),
-      status: { $ne: "cancelled" },
-    },
-    "student group totalDue paidAmount status",
-  )
-    .populate("student", STUDENT_PROJECTION)
-    .populate("group", { name: 1 })
-    .lean();
-
-  // Studentlarning summary'larini batch'larda parallel hisoblash.
-  // Avval invoices'ni filtrlab, bekor nullable'larni olib tashlash.
-  const valid = invoices.filter((inv) => inv.student && inv.group);
-
-  // Bir studentning bir oy ichidagi summary'si bir xil — duplikatlarni dedupe qilamiz
-  const uniqueStudentIds = Array.from(
-    new Set(valid.map((inv) => String(inv.student._id))),
-  );
-  const summaryByStudent = new Map();
-  for (let i = 0; i < uniqueStudentIds.length; i += CORRELATION_BATCH) {
-    const batch = uniqueStudentIds.slice(i, i + CORRELATION_BATCH);
-    const summaries = await Promise.all(
-      batch.map((sid) =>
-        getStudentSummary(sid, { fromDate: monthStart, toDate: monthEnd }),
-      ),
-    );
-    batch.forEach((sid, idx) => summaryByStudent.set(sid, summaries[idx]));
-  }
-
-  const result = valid.map((inv) => {
-    const summary = summaryByStudent.get(String(inv.student._id)) || {
-      attendanceRate: null,
-      totalClasses: 0,
-      present: 0,
-      late: 0,
-    };
-    return {
-      studentId: inv.student._id,
-      firstName: inv.student.firstName,
-      lastName: inv.student.lastName,
-      groupId: inv.group._id,
-      groupName: inv.group.name,
-      attendanceRate: summary.attendanceRate,
-      totalClasses: summary.totalClasses,
-      attended: summary.present + summary.late,
-      invoiced: inv.totalDue,
-      paid: inv.paidAmount,
-      debt: Math.max(0, inv.totalDue - inv.paidAmount),
-      status: inv.status,
-    };
-  });
-
-  await correlationCacheSet(cacheKey, result);
-  return result;
 };
 
 // ─── consecutive absences ───

@@ -2,13 +2,8 @@ import mongoose from "mongoose";
 import User from "../../../models/user.model.js";
 import Group from "../../../models/group.model.js";
 import GroupMembership from "../../../models/groupMembership.model.js";
-import Invoice from "../../../models/invoice.model.js";
-import Payment from "../../../models/payment.model.js";
 import Attendance from "../../../models/attendance.model.js";
 import { ROLES } from "../../../constants/roles.js";
-
-import * as paymentReports from "../../paymentReports/services/paymentReports.service.js";
-import * as expenses from "../../expenses/services/expenses.service.js";
 
 // === Sana yordamchilari (UTC) ===
 const monthRange = (year, month) => {
@@ -49,30 +44,6 @@ const previousMonths = (count) => {
 };
 
 // === Atomic helpers ===
-const sumPaymentsInRange = async (start, end) => {
-  const result = await Payment.aggregate([
-    {
-      $match: {
-        paidAt: { $gte: start, $lte: end },
-        isDeleted: { $ne: true },
-      },
-    },
-    {
-      $group: {
-        _id: "$type",
-        sum: { $sum: "$amount" },
-      },
-    },
-  ]);
-  let payments = 0;
-  let refunds = 0;
-  for (const r of result) {
-    if (r._id === "payment") payments = r.sum || 0;
-    else if (r._id === "refund") refunds = r.sum || 0;
-  }
-  return Math.max(0, payments - refunds);
-};
-
 const computeTodayAttendanceRate = async () => {
   const { start, end } = todayRange();
   const result = await Attendance.aggregate([
@@ -93,26 +64,6 @@ const computeTodayAttendanceRate = async () => {
   if (denom === 0) return null;
   const numerator = counts.present + counts.late;
   return Math.round((numerator / denom) * 100);
-};
-
-const computeCurrentMonthDebt = async (year, month) => {
-  const result = await Invoice.aggregate([
-    {
-      $match: {
-        "period.year": Number(year),
-        "period.month": Number(month),
-        status: { $in: ["unpaid", "partial"] },
-        isDeleted: { $ne: true },
-      },
-    },
-    {
-      $group: {
-        _id: null,
-        debt: { $sum: { $subtract: ["$totalDue", "$paidAmount"] } },
-      },
-    },
-  ]);
-  return result[0]?.debt || 0;
 };
 
 const DAY_LABELS = ["Yak", "Du", "Se", "Ch", "Pa", "Ju", "Sh"];
@@ -162,24 +113,18 @@ export const getOverview = async ({ year, month } = {}) => {
   const { start, end } = monthRange(y, m);
 
   const [
-    paymentSummary,
-    expenseStats,
     studentsCount,
     teachersCount,
     activeGroupsCount,
     todayAttendanceRate,
-    currentMonthDebt,
     newStudentsThisMonth,
     lostStudentsThisMonth,
     weekdayActivity,
   ] = await Promise.all([
-    paymentReports.summary({ year: y, month: m }),
-    expenses.getStats({ fromDate: start, toDate: end }),
     User.countDocuments({ role: ROLES.STUDENT, isActive: true, isDeleted: { $ne: true } }),
     User.countDocuments({ role: ROLES.TEACHER, isActive: true, isDeleted: { $ne: true } }),
     Group.countDocuments({ isActive: true, isDeleted: { $ne: true } }),
     computeTodayAttendanceRate(),
-    computeCurrentMonthDebt(y, m),
     GroupMembership.countDocuments({
       joinedAt: { $gte: start, $lte: end },
       isDeleted: { $ne: true },
@@ -191,116 +136,16 @@ export const getOverview = async ({ year, month } = {}) => {
     computeWeekdayActivity(),
   ]);
 
-  const income = paymentSummary?.collected || 0;
-  const expensesTotal = expenseStats?.total || 0;
-
   return {
     period: { year: y, month: m },
-    income,
-    incomeOwed: paymentSummary?.outstanding || 0,
-    plannedIncome: paymentSummary?.planned || 0,
-    expenses: expensesTotal,
-    netProfit: income - expensesTotal,
     studentsCount,
     teachersCount,
     activeGroupsCount,
     todayAttendanceRate,
-    currentMonthDebt,
     newStudentsThisMonth,
     lostStudentsThisMonth,
     weekdayActivity,
   };
-};
-
-// === getMonthlyFinancials ===
-export const getMonthlyFinancials = async ({ months = 6 } = {}) => {
-  const periods = previousMonths(months);
-  const result = [];
-  for (const p of periods) {
-    const { start, end } = monthRange(p.year, p.month);
-    const [income, expensesSum] = await Promise.all([
-      sumPaymentsInRange(start, end),
-      expenses.sumInRange(start, end),
-    ]);
-    result.push({
-      year: p.year,
-      month: p.month,
-      income,
-      expenses: expensesSum,
-      netProfit: income - expensesSum,
-    });
-  }
-  return result;
-};
-
-// === getIncomeByTeacher ===
-export const getIncomeByTeacher = async ({ year, month } = {}) => {
-  const now = new Date();
-  const y = year ? Number(year) : now.getUTCFullYear();
-  const m = month ? Number(month) : now.getUTCMonth() + 1;
-
-  const rows = await Invoice.aggregate([
-    {
-      $match: {
-        "period.year": y,
-        "period.month": m,
-        status: { $ne: "cancelled" },
-        isDeleted: { $ne: true },
-      },
-    },
-    {
-      $lookup: {
-        from: Group.collection.name,
-        localField: "group",
-        foreignField: "_id",
-        as: "group",
-      },
-    },
-    { $unwind: { path: "$group", preserveNullAndEmptyArrays: true } },
-    {
-      $unwind: {
-        path: "$group.teachers",
-        preserveNullAndEmptyArrays: true,
-      },
-    },
-    {
-      $group: {
-        _id: "$group.teachers",
-        invoicesCount: { $sum: 1 },
-        totalDue: { $sum: "$totalDue" },
-        paidAmount: { $sum: "$paidAmount" },
-      },
-    },
-    {
-      $lookup: {
-        from: User.collection.name,
-        localField: "_id",
-        foreignField: "_id",
-        as: "teacher",
-      },
-    },
-    { $unwind: { path: "$teacher", preserveNullAndEmptyArrays: true } },
-    {
-      $project: {
-        _id: 0,
-        teacherId: "$_id",
-        firstName: { $ifNull: ["$teacher.firstName", ""] },
-        lastName: { $ifNull: ["$teacher.lastName", ""] },
-        invoicesCount: 1,
-        totalDue: 1,
-        paidAmount: 1,
-        outstanding: { $subtract: ["$totalDue", "$paidAmount"] },
-      },
-    },
-    { $sort: { paidAmount: -1 } },
-  ]);
-
-  // teacher=null bo'lsa "Biriktirilmagan" deb belgilash
-  return rows.map((r) =>
-    r.teacherId
-      ? r
-      : { ...r, firstName: "Biriktirilmagan", lastName: "" },
-  );
 };
 
 // === getStudentFlow ===
@@ -328,30 +173,4 @@ export const getStudentFlow = async ({ months = 6 } = {}) => {
     });
   }
   return result;
-};
-
-// === forecastNextMonth (sodda baseline) ===
-export const forecastNextMonth = async () => {
-  const months = await getMonthlyFinancials({ months: 3 });
-  if (months.length < 3) return null;
-
-  const avg = (arr) => arr.reduce((s, v) => s + v, 0) / arr.length;
-  const avgIncome = Math.round(avg(months.map((m) => m.income)));
-  const avgExpenses = Math.round(avg(months.map((m) => m.expenses)));
-
-  const now = new Date();
-  const nextMonth = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1),
-  );
-
-  return {
-    period: {
-      year: nextMonth.getUTCFullYear(),
-      month: nextMonth.getUTCMonth() + 1,
-    },
-    income: avgIncome,
-    expenses: avgExpenses,
-    netProfit: avgIncome - avgExpenses,
-    basedOn: months.length,
-  };
 };

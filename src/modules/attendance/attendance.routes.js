@@ -21,7 +21,6 @@ import {
   studentRangeSchema,
   groupRangeSchema,
 } from "./validators/range.validator.js";
-import { correlationSchema } from "./validators/correlation.validator.js";
 import {
   teacherStatusSchema,
   teacherSetSchema,
@@ -38,7 +37,6 @@ import studentSummary from "./handlers/studentSummary.handler.js";
 import groupSummary from "./handlers/groupSummary.handler.js";
 import teacherSummary from "./handlers/teacherSummary.handler.js";
 import dashboard from "./handlers/dashboard.handler.js";
-import correlation from "./handlers/correlation.handler.js";
 
 const router = Router();
 
@@ -53,14 +51,6 @@ router.get(
   requirePermission(PERMISSIONS.ATTENDANCE_MANAGE),
   validate(rangeQuerySchema),
   dashboard,
-);
-
-router.get(
-  "/correlation",
-  requireAuth,
-  requirePermission(PERMISSIONS.ATTENDANCE_MANAGE),
-  validate(correlationSchema),
-  correlation,
 );
 
 router.get(

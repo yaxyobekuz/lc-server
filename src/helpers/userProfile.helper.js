@@ -50,13 +50,8 @@ export const buildUserProfile = async (userInput) => {
 
   if (user.role === ROLES.STUDENT) {
     const activeGroups = await findAllActiveForStudent(user._id);
-    // Lazy import - circular dependency oldini olish
-    const { getStudentSummary } = await import(
-      "../modules/payments/services/payments.service.js"
-    );
-    const paymentSummary = await getStudentSummary(user._id);
 
-    // Davomat summary (joriy oy)
+    // Davomat summary (joriy oy) — lazy import (circular dependency oldini olish)
     const { getStudentSummary: getAttSummary } = await import(
       "../modules/attendance/services/attendance.service.js"
     );
@@ -75,7 +70,6 @@ export const buildUserProfile = async (userInput) => {
     return {
       ...base,
       activeGroups,
-      paymentSummary,
       attendanceSummary,
       telegram,
     };
@@ -91,22 +85,14 @@ export const buildUserProfile = async (userInput) => {
       _id: g._id,
       name: g.name,
       schedule: g.schedule,
-      monthlyPrice: g.monthlyPrice,
       studentsCount: g.studentsCount || 0,
     }));
-
-    // Maosh summary (joriy oy + so'nggi oy + yil)
-    const { getTeacherSummary } = await import(
-      "../modules/salaries/services/salaries.service.js"
-    );
-    const salarySummary = await getTeacherSummary(user._id);
 
     return {
       ...base,
       age: calcYears(user.birthDate),
       years: calcYears(user.hiredAt),
       groups,
-      salarySummary,
       telegram,
     };
   }

@@ -1,6 +1,5 @@
 import User from "../../../models/user.model.js";
 import GroupMembership from "../../../models/groupMembership.model.js";
-import Invoice from "../../../models/invoice.model.js";
 import RefreshToken from "../../../models/refreshToken.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import { ROLES } from "../../../constants/roles.js";
@@ -8,25 +7,19 @@ import { normalizePhone } from "../../../utils/phone.js";
 import { hashPassword } from "../../../helpers/password.helper.js";
 import { buildUserProfile } from "../../../helpers/userProfile.helper.js";
 import { toUtcMidnight } from "../../../helpers/attendance.helper.js";
-import { reconcileOnLeave } from "../../invoices/services/invoices.service.js";
 import { deleteUser, restoreUser } from "../../../helpers/cascadeDelete.helper.js";
 
-const STUDENT_ONLY_FIELDS = ["enrolledAt", "leaveStatus"];
-const TEACHER_ONLY_FIELDS = [
-  "hiredAt",
-  "teacherAbsenceMode",
-  "teacherAbsenceAmount",
-];
+const STUDENT_ONLY_FIELDS = ["enrolledAt"];
+const TEACHER_ONLY_FIELDS = ["hiredAt"];
 
 // Ro'yxatda saralash mumkin bo'lgan maydonlar (xavfsiz oq ro'yxat).
-// `debt` — maxsus: u User hujjatida yo'q, qarz hisoblangach JS'da saralanadi.
 const USER_SORT_FIELDS = {
   createdAt: "createdAt",
   firstName: "firstName",
   lastName: "lastName",
 };
 
-// O'quvchilar ro'yxatiga qarz (currentDebt) va faol guruhlarni qo'shadi —
+// O'quvchilar ro'yxatiga faol guruhlarni qo'shadi —
 // ro'yxatdan profil ochmasdan ko'rinishi uchun (at-a-glance).
 const enrichStudents = async (items) => {
   const studentIds = items
@@ -34,28 +27,13 @@ const enrichStudents = async (items) => {
     .map((u) => u._id);
   if (studentIds.length === 0) return items.map((u) => u.toObject());
 
-  const [debtRows, membershipRows] = await Promise.all([
-    Invoice.aggregate([
-      {
-        $match: {
-          student: { $in: studentIds },
-          status: { $in: ["unpaid", "partial"] },
-          isDeleted: { $ne: true },
-        },
-      },
-      {
-        $group: {
-          _id: "$student",
-          debt: { $sum: { $subtract: ["$totalDue", "$paidAmount"] } },
-        },
-      },
-    ]),
-    GroupMembership.find({ student: { $in: studentIds }, leftAt: null })
-      .populate("group", { name: 1 })
-      .lean(),
-  ]);
+  const membershipRows = await GroupMembership.find({
+    student: { $in: studentIds },
+    leftAt: null,
+  })
+    .populate("group", { name: 1 })
+    .lean();
 
-  const debtMap = new Map(debtRows.map((d) => [String(d._id), d.debt]));
   const groupsMap = new Map();
   for (const m of membershipRows) {
     if (!m.group) continue;
@@ -67,7 +45,6 @@ const enrichStudents = async (items) => {
   return items.map((u) => {
     const obj = u.toObject();
     if (u.role === ROLES.STUDENT) {
-      obj.currentDebt = debtMap.get(String(u._id)) || 0;
       obj.activeGroups = groupsMap.get(String(u._id)) || [];
     }
     return obj;
@@ -97,23 +74,7 @@ export const list = async ({
   }
 
   const dir = order === "asc" ? 1 : -1;
-  // `debt` bo'yicha saralash maxsus: qarz aggregatsiyada hisoblanadi.
-  // Bunda butun mos to'plamni olib (DB sort'siz), qarzni biriktirib, JS'da
-  // saralaymiz va keyin sahifalaymiz — to'g'ri tartib ta'minlanadi.
-  const sortByDebt = sort === "debt" && (!role || role === ROLES.STUDENT);
-
   const skip = (page - 1) * limit;
-
-  if (sortByDebt) {
-    const [all, total] = await Promise.all([
-      User.find(filter),
-      User.countDocuments(filter),
-    ]);
-    const enriched = await enrichStudents(all);
-    enriched.sort((a, b) => ((a.currentDebt || 0) - (b.currentDebt || 0)) * dir);
-    const items = enriched.slice(skip, skip + limit);
-    return { items, total, page, limit };
-  }
 
   const sortField = USER_SORT_FIELDS[sort] || "createdAt";
   const [items, total] = await Promise.all([
@@ -189,9 +150,6 @@ export const update = async (id, body) => {
       }
       user.enrolledAt = d;
     }
-    if (body.leaveStatus !== undefined) {
-      user.leaveStatus = body.leaveStatus || null;
-    }
   }
 
   // Teacher-specific
@@ -202,12 +160,6 @@ export const update = async (id, body) => {
         throw new ApiError(400, "Ishga olingan sana kelajakda bo'lmasin");
       }
       user.hiredAt = d;
-    }
-    if (body.teacherAbsenceMode !== undefined) {
-      user.teacherAbsenceMode = body.teacherAbsenceMode;
-    }
-    if (body.teacherAbsenceAmount !== undefined) {
-      user.teacherAbsenceAmount = Math.max(0, Number(body.teacherAbsenceAmount) || 0);
     }
   }
 
@@ -252,22 +204,17 @@ export const softRemove = async (id) => {
   user.isActive = false;
   await user.save();
 
-  // O'quvchi arxivlansa — faol a'zoliklarni yopamiz va joriy oy hisobini o'qigan qismiga (qarz) moslaymiz.
-  // Arxivdan keyingi oylarga hisob umuman yozilmaydi (generateForPeriod isActive=false ni o'tkazib yuboradi).
+  // O'quvchi arxivlansa — faol a'zoliklarni yopamiz.
   if (user.role === ROLES.STUDENT) {
     const today = toUtcMidnight(new Date());
-    const period = { year: today.getUTCFullYear(), month: today.getUTCMonth() + 1 };
     const memberships = await GroupMembership.find({
       student: user._id,
       leftAt: null,
-    }).populate("group");
+    });
     for (const m of memberships) {
       m.leftAt = today;
       m.leftReason = "removed";
       await m.save();
-      if (m.group) {
-        await reconcileOnLeave(user._id, m.group, m._id, period, today, {});
-      }
     }
   }
 
