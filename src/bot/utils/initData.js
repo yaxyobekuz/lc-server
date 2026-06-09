@@ -17,6 +17,10 @@ export const verifyInitData = (initData, botToken, maxAgeSec = 86400) => {
   const hash = params.get("hash");
   if (!hash) return { ok: false, reason: "no-hash" };
   params.delete("hash");
+  // `signature` (Ed25519, uchinchi tomon validatsiyasi uchun) HMAC check-string'ga
+  // KIRMAYDI — Telegram spetsifikatsiyasi bo'yicha uni ham olib tashlaymiz, aks holda
+  // computed hash mos kelmaydi.
+  params.delete("signature");
 
   // Alfavit tartibida key=value\n... ko'rinishida birlashtiramiz
   const checkArr = [];

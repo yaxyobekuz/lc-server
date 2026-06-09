@@ -2,6 +2,7 @@ import BotUser from "../../../models/botUser.model.js";
 import User from "../../../models/user.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import env from "../../../config/env.js";
+import logger from "../../../config/logger.js";
 import { verifyInitData } from "../../../bot/utils/initData.js";
 import { comparePassword } from "../../../helpers/password.helper.js";
 import { normalizePhone, isPhoneLike } from "../../../utils/phone.js";
@@ -17,6 +18,9 @@ const requireTgUser = (initData) => {
   }
   const result = verifyInitData(initData, env.TELEGRAM_BOT_TOKEN);
   if (!result.ok) {
+    // Diagnostika: nima uchun tekshiruv o'tmaganini logga yozamiz (initData maxfiy,
+    // shuning uchun faqat reason'ni qoldiramiz).
+    logger.warn({ reason: result.reason }, "Telegram initData verify failed");
     if (result.reason === "expired") {
       throw new ApiError(401, "Sessiya muddati tugagan, qayta oching");
     }
