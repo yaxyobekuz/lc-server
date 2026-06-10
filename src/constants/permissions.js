@@ -3,6 +3,9 @@ export const PERMISSIONS = Object.freeze({
   USERS_READ: "users.read",
   ARCHIVE_REASONS_MANAGE: "archive_reasons.manage",
 
+  LEADS_READ: "leads.read",
+  LEADS_MANAGE: "leads.manage",
+
   STUDENTS_READ: "students.read",
   STUDENTS_CREATE: "students.create",
   STUDENTS_UPDATE: "students.update",
@@ -57,6 +60,8 @@ export const PERMISSION_LABELS = {
     label: "Arxiv sabablarini boshqarish",
     group: "users",
   },
+  [PERMISSIONS.LEADS_READ]: { label: "Lidlarni ko'rish", group: "leads" },
+  [PERMISSIONS.LEADS_MANAGE]: { label: "Lidlarni boshqarish", group: "leads" },
 
   [PERMISSIONS.STUDENTS_READ]: { label: "O'quvchilarni ko'rish", group: "students" },
   [PERMISSIONS.STUDENTS_CREATE]: { label: "O'quvchilarni yaratish", group: "students" },

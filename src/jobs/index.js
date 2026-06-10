@@ -14,6 +14,9 @@ import defineLowAttendanceDigest, {
 } from "./lowAttendanceDigest.job.js";
 import defineNotificationDeliver from "./notificationDeliver.job.js";
 import defineNotificationSchedule from "./notificationSchedule.job.js";
+import defineLeadFollowupReminders, {
+  JOB_NAME as LEAD_FOLLOWUP_JOB,
+} from "./leadFollowupReminders.job.js";
 
 // Barcha cron jadvallari mahalliy (Asia/Tashkent) vaqt bo'yicha ishlaydi -
 // server qaysi TZ da bo'lishidan qat'i nazar. Aks holda UTC serverда "20:00"
@@ -29,6 +32,7 @@ export const startJobs = async () => {
   defineLowAttendanceDigest(agenda);
   defineNotificationDeliver(agenda);
   defineNotificationSchedule(agenda);
+  defineLeadFollowupReminders(agenda);
 
   await agenda.start();
 
@@ -42,6 +46,9 @@ export const startJobs = async () => {
   await every("0 20 * * *", ATTENDANCE_UNMARKED_JOB);
   // Past davomat hisoboti - har dushanba 09:30 da
   await every("30 9 * * 1", LOW_ATTENDANCE_JOB);
+
+  // Lid qayta bog'lanish eslatmalari - har 5 daqiqada vaqti kelganlarni tekshiradi
+  await every("*/5 * * * *", LEAD_FOLLOWUP_JOB);
 
   logger.info({ timezone: TZ }, "Agenda ishga tushirildi");
 };
