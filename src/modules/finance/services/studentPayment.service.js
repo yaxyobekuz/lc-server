@@ -239,7 +239,8 @@ export const list = async ({
 export const getById = async (id) => {
   const payment = await StudentPayment.findById(id)
     .populate("student", safeStudentProjection)
-    .populate("group", { name: 1 });
+    .populate("group", { name: 1 })
+    .populate("membership", { joinedAt: 1 });
   if (!payment) throw new ApiError(404, "To'lov topilmadi");
 
   const transactions = await PaymentTransaction.find({
