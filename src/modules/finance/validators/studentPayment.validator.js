@@ -15,3 +15,7 @@ export const listSchema = z.object({
 export const idParamSchema = z.object({
   params: z.object({ id: z.string().min(1) }),
 });
+
+export const studentIdParamSchema = z.object({
+  params: z.object({ studentId: z.string().min(1) }),
+});

@@ -44,6 +44,7 @@ const buildSnapshot = async ({ student, group, year, month, joinedAt }) => {
     joinedAt,
     freezes,
     discounts,
+    effectiveFrom: feeDoc ? feeDoc.effectiveFrom : null,
   });
 };
 
@@ -255,4 +256,53 @@ export const getById = async (id) => {
   }).sort({ paidAt: -1, createdAt: -1 });
 
   return { ...payment.toJSON(), transactions };
+};
+
+// Bitta o'quvchining barcha oylardagi to'lovlari + har biriga tegishli
+// tranzaksiyalar (to'lovlar tarixi sahifasi uchun). Eng yangi oy yuqorida.
+export const historyByStudent = async (studentId) => {
+  const sid = toObjectId(studentId);
+  const student = await User.findById(sid, safeStudentProjection).lean();
+  if (!student) throw new ApiError(404, "O'quvchi topilmadi");
+
+  const payments = await StudentPayment.find({ student: sid })
+    .populate("group", { name: 1 })
+    .sort({ year: -1, month: -1 })
+    .lean();
+
+  const ids = payments.map((p) => p._id);
+  const txs = ids.length
+    ? await PaymentTransaction.find({
+        payment: { $in: ids },
+        isDeleted: { $ne: true },
+      })
+        .sort({ paidAt: -1, createdAt: -1 })
+        .lean()
+    : [];
+
+  const txByPayment = new Map();
+  for (const t of txs) {
+    const key = String(t.payment);
+    if (!txByPayment.has(key)) txByPayment.set(key, []);
+    txByPayment.get(key).push(t);
+  }
+
+  const items = payments.map((p) => ({
+    ...p,
+    transactions: txByPayment.get(String(p._id)) || [],
+  }));
+
+  const totalExpected = items.reduce((s, p) => s + (p.expectedAmount || 0), 0);
+  const totalPaid = items.reduce((s, p) => s + (p.paidAmount || 0), 0);
+
+  return {
+    student,
+    items,
+    summary: {
+      months: items.length,
+      totalExpected,
+      totalPaid,
+      totalRemaining: Math.max(0, totalExpected - totalPaid),
+    },
+  };
 };

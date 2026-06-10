@@ -18,6 +18,8 @@ export const upsertSchema = z.object({
     year: z.coerce.number().int().min(2000).max(3000),
     month: z.coerce.number().int().min(1).max(12),
     amount: z.coerce.number().int().min(0, "Manfiy bo'lmasligi kerak"),
+    // Yangi summa qaysi sanadan kuchga kiradi. Ixtiyoriy; null → butun oy.
+    effectiveFrom: z.coerce.date().nullable().optional(),
   }),
 });
 

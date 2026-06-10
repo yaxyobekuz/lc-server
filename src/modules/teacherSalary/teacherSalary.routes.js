@@ -10,6 +10,7 @@ import {
   upsertSchema,
   regenerateSchema,
   obligationsSchema,
+  teacherIdParamSchema as salaryTeacherIdSchema,
 } from "./validators/teacherSalary.validator.js";
 import {
   createSchema as transactionCreateSchema,
@@ -25,6 +26,7 @@ import { monthlySchema } from "./validators/report.validator.js";
 
 import salaryList from "./handlers/salary.list.handler.js";
 import salaryGetById from "./handlers/salary.getById.handler.js";
+import salaryHistoryByTeacher from "./handlers/salary.historyByTeacher.handler.js";
 import salaryUpsert from "./handlers/salary.upsert.handler.js";
 import regenerate from "./handlers/regenerate.handler.js";
 import obligations from "./handlers/obligations.handler.js";
@@ -52,6 +54,13 @@ router.put(
   requirePermission(PERMISSIONS.SALARY_MANAGE),
   validate(upsertSchema),
   salaryUpsert,
+);
+router.get(
+  "/salaries/by-teacher/:teacherId",
+  requireAuth,
+  requirePermission(PERMISSIONS.SALARY_READ),
+  validate(salaryTeacherIdSchema),
+  salaryHistoryByTeacher,
 );
 router.get(
   "/salaries/:id",

@@ -17,6 +17,10 @@ export const idParamSchema = z.object({
   params: z.object({ id: z.string().min(1) }),
 });
 
+export const teacherIdParamSchema = z.object({
+  params: z.object({ teacherId: z.string().min(1) }),
+});
+
 export const upsertSchema = z.object({
   body: z.object({
     teacher: z.string({ required_error: "O'qituvchi kerak" }).min(1),

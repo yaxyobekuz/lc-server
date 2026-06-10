@@ -6,10 +6,30 @@ const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 export const daysInMonth = (year, month) =>
   new Date(Date.UTC(year, month, 0)).getUTCDate();
 
+// effectiveFrom (guruh fee'si qaysi sanadan kuchga kirgani) dan oy kunini chiqaradi.
+// Fee oyidan oldin bo'lsa → 1 (butun oy). Keyin bo'lsa → null (kuchga kirmagan).
+// Bir xil oy bo'lsa → o'sha sananing UTC kuni.
+const effectiveDayFor = (effectiveFrom, year, month) => {
+  if (!effectiveFrom) return 1;
+  const eff = toUtcMidnight(effectiveFrom);
+  const effIndex = eff.getUTCFullYear() * 12 + eff.getUTCMonth();
+  const feeIndex = year * 12 + (month - 1);
+  if (effIndex < feeIndex) return 1; // oydan oldin → butun oy
+  if (effIndex > feeIndex) return null; // oydan keyin → hali kuchga kirmagan
+  return eff.getUTCDate();
+};
+
 // Proratsiya (kalendar kun + muzlatish ayrimasi):
-// (qo'shilgan_kun..oy_oxiri) ichidagi muzlatilmagan kunlar / oydagi jami kunlar.
-// joinedAt oy boshidan oldin → butun oy (factor=1). Keyingi oyda → 0.
-export const computeProration = ({ year, month, joinedAt, freezes = [] }) => {
+// (startDay..oy_oxiri) ichidagi muzlatilmagan kunlar / oydagi jami kunlar.
+// startDay = max(qo'shilgan_kun, kuchga_kirgan_kun).
+// joinedAt oy boshidan oldin → 1. effectiveFrom berilmasa → 1 (butun oy).
+export const computeProration = ({
+  year,
+  month,
+  joinedAt,
+  freezes = [],
+  effectiveFrom = null,
+}) => {
   const totalDays = daysInMonth(year, month);
   const monthStart = new Date(Date.UTC(year, month - 1, 1));
   const monthEnd = new Date(Date.UTC(year, month, 0));
@@ -19,8 +39,15 @@ export const computeProration = ({ year, month, joinedAt, freezes = [] }) => {
     return { factor: 0, payableDays: 0, totalDays };
   }
 
-  const startDay =
+  const effectiveDay = effectiveDayFor(effectiveFrom, year, month);
+  if (effectiveDay === null) {
+    // Fee shu oydan keyin kuchga kiradi - hali to'lov yo'q
+    return { factor: 0, payableDays: 0, totalDays };
+  }
+
+  const joinStartDay =
     join.getTime() <= monthStart.getTime() ? 1 : join.getUTCDate();
+  const startDay = Math.max(joinStartDay, effectiveDay);
 
   let payable = 0;
   for (let d = startDay; d <= totalDays; d += 1) {
@@ -56,8 +83,15 @@ export const computePaymentSnapshot = ({
   joinedAt,
   freezes = [],
   discounts = [],
+  effectiveFrom = null,
 }) => {
-  const { factor } = computeProration({ year, month, joinedAt, freezes });
+  const { factor } = computeProration({
+    year,
+    month,
+    joinedAt,
+    freezes,
+    effectiveFrom,
+  });
   const proratedFee = Math.round((Number(baseFee) || 0) * factor);
   const discountApplied = resolveDiscountAmount(discounts, proratedFee);
   const expectedAmount = Math.max(0, proratedFee - discountApplied);

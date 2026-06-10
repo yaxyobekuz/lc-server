@@ -13,6 +13,7 @@ import {
 import {
   listSchema as paymentListSchema,
   idParamSchema as paymentIdSchema,
+  studentIdParamSchema as paymentStudentIdSchema,
 } from "./validators/studentPayment.validator.js";
 import {
   createSchema as transactionCreateSchema,
@@ -32,6 +33,7 @@ import groupFeeUpsert from "./handlers/groupFee.upsert.handler.js";
 import regenerate from "./handlers/regenerate.handler.js";
 import paymentList from "./handlers/studentPayment.list.handler.js";
 import paymentGetById from "./handlers/studentPayment.getById.handler.js";
+import paymentHistoryByStudent from "./handlers/studentPayment.historyByStudent.handler.js";
 import transactionCreate from "./handlers/transaction.create.handler.js";
 import transactionRemove from "./handlers/transaction.remove.handler.js";
 import discountList from "./handlers/discount.list.handler.js";
@@ -79,6 +81,13 @@ router.get(
   requirePermission(PERMISSIONS.FINANCE_READ),
   validate(paymentListSchema),
   paymentList,
+);
+router.get(
+  "/student-payments/by-student/:studentId",
+  requireAuth,
+  requirePermission(PERMISSIONS.FINANCE_READ),
+  validate(paymentStudentIdSchema),
+  paymentHistoryByStudent,
 );
 router.get(
   "/student-payments/:id",

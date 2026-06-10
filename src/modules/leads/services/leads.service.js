@@ -192,7 +192,10 @@ export const stats = async ({ from, to } = {}) => {
     direction: 1,
   }).lean();
 
-  const options = await LeadOption.find({}, { name: 1 }).lean();
+  // Faqat aktiv (o'chirilmagan) sozlamalar. O'chirilgan yoki yo'q bo'lib
+  // ketgan manba/yo'nalishlar statistikada alohida ko'rinmasligi kerak -
+  // ular "Noma'lum" guruhiga qo'shiladi.
+  const options = await LeadOption.find({ isActive: true }, { name: 1 }).lean();
   const nameOf = new Map(options.map((o) => [String(o._id), o.name]));
 
   const total = leads.length;
@@ -225,8 +228,11 @@ export const stats = async ({ from, to } = {}) => {
     }
 
     const isEnrolled = lead.status === "enrolled";
-    const sKey = lead.source ? String(lead.source) : "none";
-    const dKey = lead.direction ? String(lead.direction) : "none";
+    // Aktiv sozlamaga bog'lanmagan (o'chirilgan / yo'q) id'lar "none" -> Noma'lum
+    const rawSrc = lead.source ? String(lead.source) : null;
+    const rawDir = lead.direction ? String(lead.direction) : null;
+    const sKey = rawSrc && nameOf.has(rawSrc) ? rawSrc : "none";
+    const dKey = rawDir && nameOf.has(rawDir) ? rawDir : "none";
     if (!srcAgg.has(sKey)) srcAgg.set(sKey, { total: 0, enrolled: 0 });
     if (!dirAgg.has(dKey)) dirAgg.set(dKey, { total: 0, enrolled: 0 });
     srcAgg.get(sKey).total += 1;
@@ -243,7 +249,7 @@ export const stats = async ({ from, to } = {}) => {
     Array.from(agg.entries())
       .map(([key, v]) => ({
         id: key === "none" ? null : key,
-        name: key === "none" ? "Noma'lum" : nameOf.get(key) || "(o'chirilgan)",
+        name: key === "none" ? "Noma'lum" : nameOf.get(key),
         total: v.total,
         enrolled: v.enrolled,
         conversionRate: pct(v.enrolled, v.total),

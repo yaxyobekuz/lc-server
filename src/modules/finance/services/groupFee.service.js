@@ -61,6 +61,7 @@ export const list = async ({ year, month, search }) => {
       month: Number(month),
       feeId: fee ? fee._id : null,
       amount: fee ? fee.amount : null,
+      effectiveFrom: fee ? fee.effectiveFrom : null,
       source: fee ? fee.source : null,
     };
   });
@@ -79,14 +80,21 @@ export const byGroup = async (groupId) => {
 };
 
 // Guruh+oy to'lovini o'rnatadi (upsert). O'chirish yo'q. To'lovlarni qayta hisoblaydi.
-export const upsert = async ({ groupId, year, month, amount }, currentUser) => {
+export const upsert = async (
+  { groupId, year, month, amount, effectiveFrom },
+  currentUser,
+) => {
   const group = await Group.findById(groupId);
   if (!group) throw new ApiError(404, "Guruh topilmadi");
+
+  const set = { amount, source: "manual", updatedBy: currentUser?._id || null };
+  // Kalit body'da bo'lsa o'rnatamiz (null → tozalash). Bo'lmasa - tegmaymiz.
+  if (effectiveFrom !== undefined) set.effectiveFrom = effectiveFrom;
 
   const fee = await GroupFee.findOneAndUpdate(
     { group: groupId, year, month },
     {
-      $set: { amount, source: "manual", updatedBy: currentUser?._id || null },
+      $set: set,
       $setOnInsert: { group: groupId, year, month, createdBy: currentUser?._id || null },
     },
     { upsert: true, new: true },

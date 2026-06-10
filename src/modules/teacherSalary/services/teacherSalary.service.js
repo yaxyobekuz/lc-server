@@ -4,6 +4,7 @@ import SalaryTransaction from "../../../models/salaryTransaction.model.js";
 import SalaryAdjustment from "../../../models/salaryAdjustment.model.js";
 import StudentPayment from "../../../models/studentPayment.model.js";
 import Group from "../../../models/group.model.js";
+import User from "../../../models/user.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import { toUtcMidnight } from "../../../helpers/attendance.helper.js";
 import { computeSalarySnapshot, deriveStatus } from "./salaryCompute.helper.js";
@@ -278,6 +279,55 @@ export const getById = async (id) => {
   ]);
 
   return { ...salary.toJSON(), transactions, adjustments };
+};
+
+// Bitta o'qituvchining barcha oylardagi maoshlari + har biriga tegishli
+// to'lovlar (maosh to'lovlari tarixi sahifasi uchun). Eng yangi oy yuqorida.
+export const historyByTeacher = async (teacherId) => {
+  const tid = toObjectId(teacherId);
+  const teacher = await User.findById(tid, safeTeacherProjection).lean();
+  if (!teacher) throw new ApiError(404, "O'qituvchi topilmadi");
+
+  const salaries = await TeacherSalary.find({ teacher: tid })
+    .populate("group", { name: 1 })
+    .sort({ year: -1, month: -1 })
+    .lean();
+
+  const ids = salaries.map((s) => s._id);
+  const txs = ids.length
+    ? await SalaryTransaction.find({
+        salary: { $in: ids },
+        isDeleted: { $ne: true },
+      })
+        .sort({ paidAt: -1, createdAt: -1 })
+        .lean()
+    : [];
+
+  const txBySalary = new Map();
+  for (const t of txs) {
+    const key = String(t.salary);
+    if (!txBySalary.has(key)) txBySalary.set(key, []);
+    txBySalary.get(key).push(t);
+  }
+
+  const items = salaries.map((s) => ({
+    ...s,
+    transactions: txBySalary.get(String(s._id)) || [],
+  }));
+
+  const totalExpected = items.reduce((s, p) => s + (p.expectedAmount || 0), 0);
+  const totalPaid = items.reduce((s, p) => s + (p.paidAmount || 0), 0);
+
+  return {
+    teacher,
+    items,
+    summary: {
+      months: items.length,
+      totalExpected,
+      totalPaid,
+      totalRemaining: Math.max(0, totalExpected - totalPaid),
+    },
+  };
 };
 
 // Majburiyatlar: qoldig'i (expected - paid) > 0 bo'lgan maoshlar.
