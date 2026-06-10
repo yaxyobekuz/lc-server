@@ -19,7 +19,18 @@ const groupMembershipSchema = new mongoose.Schema(
     },
     joinedAt: { type: Date, default: Date.now },
     leftAt: { type: Date, default: null },
+    // Statik tur: guruh oqimi mantiqi uchun (transfer/chiqarish/bitirish).
     leftReason: { type: String, enum: LEFT_REASONS, default: null },
+    // Dinamik "nega chiqdi" sababi (owner boshqaradigan ArchiveReason).
+    // leftReason "removed" bo'lganda to'ldiriladi - retention tahlili shu bo'yicha.
+    leftReasonDetail: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ArchiveReason",
+      default: null,
+      index: true,
+    },
+    // Sabab keyin o'zgarsa/o'chsa ham hisobot buzilmasligi uchun snapshot.
+    leftReasonTitle: { type: String, default: "" },
     transferredTo: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Group",

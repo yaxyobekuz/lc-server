@@ -3,6 +3,7 @@ import Group from "../../../models/group.model.js";
 import GroupMembership from "../../../models/groupMembership.model.js";
 import User from "../../../models/user.model.js";
 import BotUser from "../../../models/botUser.model.js";
+import ArchiveReason from "../../../models/archiveReason.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import { ROLES } from "../../../constants/roles.js";
 import {
@@ -404,11 +405,22 @@ export const addStudent = async (groupId, studentId, { joinedAt } = {}) => {
   return membership;
 };
 
-export const removeStudent = async (groupId, studentId) => {
+export const removeStudent = async (groupId, studentId, { reasonId } = {}) => {
   const leftAt = toUtcMidnight(new Date());
+
+  // Dinamik chiqish sababi (ixtiyoriy) - snapshot title bilan birga yozamiz,
+  // shunda sabab keyin o'chsa/o'zgarsa ham retention hisoboti buzilmaydi.
+  const set = { leftAt, leftReason: "removed" };
+  if (reasonId) {
+    const reason = await ArchiveReason.findById(reasonId, { title: 1 }).lean();
+    if (!reason) throw new ApiError(400, "Chiqish sababi topilmadi");
+    set.leftReasonDetail = reason._id;
+    set.leftReasonTitle = reason.title;
+  }
+
   const membership = await GroupMembership.findOneAndUpdate(
     { group: groupId, student: studentId, leftAt: null, isDeleted: { $ne: true } },
-    { $set: { leftAt, leftReason: "removed" } },
+    { $set: set },
     { new: true },
   );
   if (!membership) {
