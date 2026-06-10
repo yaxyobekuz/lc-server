@@ -9,6 +9,7 @@ import {
   parseLocalDay,
   dateKeyOf,
   dayOfWeekOf,
+  scheduleActiveOn,
 } from "../../../helpers/attendance.helper.js";
 
 const parseDay = (dateInput) => {
@@ -17,8 +18,9 @@ const parseDay = (dateInput) => {
   return date;
 };
 
-const isClassDayFor = (group, dow) =>
-  (group.schedule || []).some((s) => s.day === dow);
+// Shu sanada AMAL QILGAN jadval versiyasi bo'yicha (versiyalash)
+const isClassDayFor = (group, dow, date = null) =>
+  scheduleActiveOn(group.schedule, date).some((s) => s.day === dow);
 
 // O'qituvchi shu kuni keldimi (faqat fakt - o'quvchilar hisobiga ta'sir qilmaydi)
 export const getStatus = async (groupId, dateInput) => {
@@ -29,7 +31,7 @@ export const getStatus = async (groupId, dateInput) => {
   const absence = await TeacherAbsence.findOne({ group: groupId, dateKey: dKey });
   return {
     dateKey: dKey,
-    isClassDay: isClassDayFor(group, dayOfWeekOf(date)),
+    isClassDay: isClassDayFor(group, dayOfWeekOf(date), date),
     present: !absence,
   };
 };
@@ -41,7 +43,7 @@ export const setAbsent = async (groupId, dateInput, currentUser) => {
   if (!group) throw new ApiError(404, "Guruh topilmadi");
   const date = parseDay(dateInput);
   const dKey = dateKeyOf(date);
-  if (!isClassDayFor(group, dayOfWeekOf(date))) {
+  if (!isClassDayFor(group, dayOfWeekOf(date), date)) {
     throw new ApiError(400, "Bu kun bu guruh uchun dars kuni emas");
   }
 

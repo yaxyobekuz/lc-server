@@ -4,6 +4,7 @@ import {
   listForTeacher,
   findAllActiveForStudent,
 } from "../../modules/groups/services/groups.service.js";
+import { scheduleActiveOn } from "../../helpers/attendance.helper.js";
 
 const DAY_NAMES_UZ = [
   "Yakshanba",
@@ -70,10 +71,10 @@ const buildScheduleText = (groups, monday) => {
     const dayName = DAY_NAMES_UZ[date.getUTCDay()];
     const dateLabel = `${date.getUTCDate()}-${MONTH_NAMES_UZ[date.getUTCMonth()]}`;
 
-    // Bu kunga mos slotlar (har guruh schedule ichidan)
+    // Bu kunga mos slotlar (shu sanada amal qilgan jadval versiyasidan - versiyalash)
     const slots = [];
     for (const g of groups) {
-      for (const s of g.schedule || []) {
+      for (const s of scheduleActiveOn(g.schedule, date)) {
         if (s.day === dayKey) {
           slots.push({ ...s, groupName: g.name });
         }

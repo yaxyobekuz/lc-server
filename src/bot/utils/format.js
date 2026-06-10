@@ -1,3 +1,5 @@
+import { scheduleActiveOn } from "../../helpers/attendance.helper.js";
+
 const DAY_LABELS = {
   mon: "Du",
   tue: "Se",
@@ -9,7 +11,8 @@ const DAY_LABELS = {
 };
 
 export const formatSchedule = (schedule = []) =>
-  schedule
+  // Faqat bugun amal qilayotgan versiyani ko'rsatamiz (versiyalash)
+  scheduleActiveOn(schedule)
     .map((s) => `${DAY_LABELS[s.day] || s.day} ${s.startTime}–${s.endTime}`)
     .join(", ") || "-";
 
