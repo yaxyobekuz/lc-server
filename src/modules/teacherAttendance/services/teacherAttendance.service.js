@@ -26,6 +26,7 @@ import {
   dateKeyOf,
   dayOfWeekOf,
   localTodayKey,
+  scheduleActiveOn,
 } from "../../../helpers/attendance.helper.js";
 import {
   setAbsent as setGroupTeacherAbsent,
@@ -34,8 +35,9 @@ import {
 
 const TEACHER_PROJECTION = { firstName: 1, lastName: 1, username: 1 };
 
-const isClassDayFor = (group, dow) =>
-  (group.schedule || []).some((s) => s.day === dow);
+// Shu sanada AMAL QILGAN jadval versiyasi bo'yicha (versiyalash)
+const isClassDayFor = (group, dow, date = null) =>
+  scheduleActiveOn(group.schedule, date).some((s) => s.day === dow);
 
 // O'qituvchi kunlik davomatini uning barcha (faol, yakunlanmagan) guruhlaridagi
 // "o'qituvchi keldi/kelmadi" bilan moslaydi. Kelmadi → dars kuni bo'lgan guruhlarga
@@ -49,7 +51,7 @@ const syncTeacherGroupAbsences = async (teacherId, date, isAbsent, currentUser) 
   }).select("schedule teachers");
   for (const g of groups) {
     if (isAbsent) {
-      if (!isClassDayFor(g, dow)) continue; // dars kuni bo'lmasa o'tkazib yuboramiz
+      if (!isClassDayFor(g, dow, date)) continue; // dars kuni bo'lmasa o'tkazib yuboramiz
       await setGroupTeacherAbsent(g._id, date, currentUser);
     } else {
       await setGroupTeacherPresent(g._id, date);

@@ -5,6 +5,7 @@ import { listForGroupOnDate } from "../../modules/attendance/services/attendance
 import {
   localTodayMidnight,
   localDayOfWeek,
+  scheduleActiveOn,
 } from "../../helpers/attendance.helper.js";
 
 const DAY_LABELS = {
@@ -31,7 +32,8 @@ const teacherAttendanceHandler = async (bot, msg) => {
   const groups = await listForTeacher(linked._id);
 
   const todayGroups = groups.filter((g) =>
-    (g.schedule || []).some((s) => s.day === todayDow),
+    // Bugun amal qilayotgan jadval versiyasi (versiyalash)
+    scheduleActiveOn(g.schedule, today).some((s) => s.day === todayDow),
   );
 
   if (todayGroups.length === 0) {

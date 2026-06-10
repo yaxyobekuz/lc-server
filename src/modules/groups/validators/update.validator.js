@@ -11,6 +11,9 @@ export const updateSchema = z.object({
         .max(120, "120 belgidan oshmasligi kerak")
         .optional(),
       schedule: scheduleArray.optional(),
+      // Versiyalash: yangi jadval qaysi sanadan amal qiladi (jadval o'zgargan
+      // bo'lsa). Berilmasa - bugundan. Eski versiya tarix uchun saqlanib qoladi.
+      scheduleEffectiveFrom: z.coerce.date().nullish(),
       // Ko'pi bilan bitta o'qituvchi. Tahrirlashda o'qituvchi odatda yuborilmaydi -
       // u "Almashtirish" orqali boshqariladi.
       teachers: z

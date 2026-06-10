@@ -5,7 +5,11 @@ import User from "../../../models/user.model.js";
 import BotUser from "../../../models/botUser.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import { ROLES } from "../../../constants/roles.js";
-import { toUtcMidnight, localTodayMidnight } from "../../../helpers/attendance.helper.js";
+import {
+  toUtcMidnight,
+  localTodayMidnight,
+  scheduleActiveOn,
+} from "../../../helpers/attendance.helper.js";
 import {
   deleteGroup as cascadeDeleteGroup,
   restoreGroup as cascadeRestoreGroup,
@@ -193,11 +197,70 @@ export const getById = async (id) => {
   };
 };
 
+// Jadval slotlaridagi effectiveFrom ni UTC-yarim tunga normalizatsiya qiladi
+// (yoki null). dropEffective=true bo'lsa - effectiveFrom butunlay null qilinadi
+// (yangi guruh: tarix yo'q, hamma slot boshidan amal qiladi).
+const normalizeSchedule = (schedule, { dropEffective = false } = {}) =>
+  (schedule || []).map((s) => ({
+    day: s.day,
+    startTime: s.startTime,
+    endTime: s.endTime,
+    effectiveFrom:
+      dropEffective || !s.effectiveFrom ? null : toUtcMidnight(s.effectiveFrom),
+  }));
+
+// (kun+vaqt) bo'yicha jadval to'plamini taqqoslash uchun kalit (effectiveFrom'siz)
+const slotSetKey = (slots) =>
+  (slots || [])
+    .map((s) => `${s.day}-${s.startTime}-${s.endTime}`)
+    .sort()
+    .join("|");
+
+// Versiyalash birlashtiruvi: yangi jadval joriy amaldagi versiyaga TENG bo'lsa -
+// eski jadvalni o'zgarishsiz qaytaramiz. Farq qilsa - eski (tarixiy) qatorlarni
+// saqlab, yangi qatorlarni effectiveFrom (default - bugun) bilan ustiga qo'shamiz.
+// Shunday qilib o'tgan sanalar eski versiya, yangi sanalar yangi versiya bo'yicha
+// hisoblanadi (BUG-4: tarixiy dars soni shishmaydi).
+const mergeScheduleVersion = (existing, incoming, effectiveFromInput) => {
+  const incomingClean = normalizeSchedule(incoming, { dropEffective: true });
+  const existingArr = existing || [];
+
+  // Joriy (bugun) amaldagi versiya bilan solishtiramiz
+  const currentActive = scheduleActiveOn(existingArr);
+  if (slotSetKey(currentActive) === slotSetKey(incomingClean)) {
+    return existingArr; // o'zgarish yo'q - tarixga tegmaymiz
+  }
+
+  const effectiveFrom = effectiveFromInput
+    ? toUtcMidnight(effectiveFromInput)
+    : localTodayMidnight();
+  const effTs = effectiveFrom.getTime();
+
+  // Aynan shu effectiveFrom ga ega eski qatorlarni olib tashlaymiz - bir kunda
+  // bir necha marta tahrirlansa yangi versiya eskisini ALMASHTIRADI (dublikat
+  // (kun+vaqt+effectiveFrom) bo'lib model rad etmasligi uchun).
+  const kept = existingArr.filter((s) => {
+    const ts = s.effectiveFrom ? toUtcMidnight(s.effectiveFrom).getTime() : null;
+    return ts !== effTs;
+  });
+
+  // Eski (tarixiy) qatorlar saqlanadi, yangi versiya effectiveFrom bilan ustiga
+  // qo'shiladi. scheduleActiveOn (eng so'nggi effectiveFrom <= sana) tufayli
+  // o'tgan sanalar eski, yangi sanalar yangi versiya bo'yicha hisoblanadi.
+  const newVersion = incomingClean.map((s) => ({ ...s, effectiveFrom }));
+  return [...kept, ...newVersion].map((s) => ({
+    day: s.day,
+    startTime: s.startTime,
+    endTime: s.endTime,
+    effectiveFrom: s.effectiveFrom ? toUtcMidnight(s.effectiveFrom) : null,
+  }));
+};
+
 export const create = async (body) => {
   await ensureTeachers(body.teachers);
   const group = await Group.create({
     name: body.name.trim(),
-    schedule: body.schedule || [],
+    schedule: normalizeSchedule(body.schedule, { dropEffective: true }),
     teachers: body.teachers || [],
     startDate: body.startDate ? toUtcMidnight(body.startDate) : null,
     durationMonths: body.durationMonths ?? null,
@@ -230,7 +293,17 @@ export const update = async (id, body) => {
     group.teachers = body.teachers;
   }
   if (body.name !== undefined) group.name = body.name.trim();
-  if (body.schedule !== undefined) group.schedule = body.schedule;
+  // Versiyalash: client HOZIRGI versiya qatorlarini + bitta "amal qilish sanasi"
+  // (scheduleEffectiveFrom) yuboradi. Yangi jadval joriy amaldagi versiyadan farq
+  // qilsa - eski versiyalar TARIX uchun saqlanib, yangi qatorlar shu sanadan
+  // boshlab amal qiladi. Farq bo'lmasa - hech narsa o'zgartirmaymiz.
+  if (body.schedule !== undefined) {
+    group.schedule = mergeScheduleVersion(
+      group.schedule,
+      body.schedule,
+      body.scheduleEffectiveFrom,
+    );
+  }
 
   if (body.startDate !== undefined) {
     group.startDate = body.startDate ? toUtcMidnight(body.startDate) : null;
