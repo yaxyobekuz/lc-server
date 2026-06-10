@@ -2,8 +2,10 @@ import mongoose from "mongoose";
 import GroupFee from "../../../models/groupFee.model.js";
 import Group from "../../../models/group.model.js";
 import ApiError from "../../../utils/ApiError.js";
+import logger from "../../../config/logger.js";
 import { localTodayMidnight } from "../../../helpers/attendance.helper.js";
 import * as studentPaymentService from "./studentPayment.service.js";
+import * as teacherSalaryService from "../../teacherSalary/services/teacherSalary.service.js";
 
 const toObjectId = (id) => {
   if (id instanceof mongoose.Types.ObjectId) return id;
@@ -90,7 +92,13 @@ export const upsert = async ({ groupId, year, month, amount }, currentUser) => {
     { upsert: true, new: true },
   );
 
+  // Avval o'quvchilar (billed manbai), keyin o'qituvchi foiz maoshi
   await studentPaymentService.recalcForGroupMonth(groupId, year, month);
+  try {
+    await teacherSalaryService.recalcForGroupMonth(groupId, year, month);
+  } catch (err) {
+    logger.warn({ err }, "Guruh to'lovi o'zgarishida o'qituvchi maoshi qayta hisoblanmadi");
+  }
   return fee;
 };
 

@@ -3,8 +3,23 @@ import Discount from "../../../models/discount.model.js";
 import User from "../../../models/user.model.js";
 import Group from "../../../models/group.model.js";
 import ApiError from "../../../utils/ApiError.js";
+import logger from "../../../config/logger.js";
 import { ROLES } from "../../../constants/roles.js";
 import * as studentPaymentService from "./studentPayment.service.js";
+import * as teacherSalaryService from "../../teacherSalary/services/teacherSalary.service.js";
+
+// Chegirma o'quvchi expected'ini → guruh billed tushumini → o'qituvchi foiz maoshini o'zgartiradi.
+const recalcTeacherForDiscount = async (doc) => {
+  try {
+    if (doc.scope === "monthly" && doc.year && doc.month) {
+      await teacherSalaryService.recalcForGroupMonth(doc.group, doc.year, doc.month);
+    } else {
+      await teacherSalaryService.recalcForGroup(doc.group);
+    }
+  } catch (err) {
+    logger.warn({ err }, "Chegirma o'zgarishida o'qituvchi maoshi qayta hisoblanmadi");
+  }
+};
 
 const toObjectId = (id) => {
   if (id instanceof mongoose.Types.ObjectId) return id;
@@ -69,6 +84,7 @@ export const create = async (body, currentUser) => {
     year: doc.year,
     month: doc.month,
   });
+  await recalcTeacherForDiscount(doc);
   return doc;
 };
 
@@ -95,6 +111,7 @@ export const update = async (id, body) => {
     year: doc.year,
     month: doc.month,
   });
+  await recalcTeacherForDiscount(doc);
   return doc;
 };
 
@@ -107,5 +124,6 @@ export const remove = async (id, currentUser) => {
     year: doc.year,
     month: doc.month,
   });
+  await recalcTeacherForDiscount(doc);
   return { _id: id };
 };

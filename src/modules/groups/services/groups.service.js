@@ -322,6 +322,8 @@ export const addStudent = async (groupId, studentId, { joinedAt } = {}) => {
     const month = today.getUTCMonth() + 1;
     await financeGroupFeeService.ensureGroupFee(groupId, year, month);
     await financePaymentService.ensurePaymentForMembership(membership, year, month);
+    // Yangi o'quvchi guruh billed tushumini oshiradi → o'qituvchi foiz maoshi
+    await teacherSalaryService.recalcForGroupMonth(groupId, year, month);
   } catch (err) {
     logger.warn({ err }, "Yangi o'quvchi uchun oylik to'lov yaratilmadi");
   }

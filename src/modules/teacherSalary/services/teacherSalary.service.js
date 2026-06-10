@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import TeacherSalary from "../../../models/teacherSalary.model.js";
 import SalaryTransaction from "../../../models/salaryTransaction.model.js";
 import SalaryAdjustment from "../../../models/salaryAdjustment.model.js";
-import PaymentTransaction from "../../../models/paymentTransaction.model.js";
+import StudentPayment from "../../../models/studentPayment.model.js";
 import Group from "../../../models/group.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import { toUtcMidnight } from "../../../helpers/attendance.helper.js";
@@ -21,11 +21,13 @@ const toObjectId = (id) => {
   return new mongoose.Types.ObjectId(String(id));
 };
 
-// Guruhning o'sha oy haqiqatda yiqqan tushumi (foiz maoshi bazasi).
+// Guruhning o'sha oy hisoblangan (billed) tushumi - foiz maoshi bazasi.
+// O'quvchilarning to'lashi kerak bo'lgan summalar yig'indisi (guruh to'lovi,
+// proratsiya va chegirma hisobga olingan). Guruh to'lovi o'zgarsa bu ham o'zgaradi.
 export const computeGroupRevenue = async (group, year, month) => {
-  const agg = await PaymentTransaction.aggregate([
-    { $match: { group: toObjectId(group), year, month, isDeleted: { $ne: true } } },
-    { $group: { _id: null, total: { $sum: "$amount" } } },
+  const agg = await StudentPayment.aggregate([
+    { $match: { group: toObjectId(group), year, month } },
+    { $group: { _id: null, total: { $sum: "$expectedAmount" } } },
   ]);
   return agg.length ? agg[0].total : 0;
 };
@@ -98,6 +100,13 @@ export const recalc = async (salaryId) => {
 // Guruh+oy bo'yicha barcha maoshlarni qayta hisoblaydi (guruh tushumi o'zgarganda).
 export const recalcForGroupMonth = async (group, year, month) => {
   const salaries = await TeacherSalary.find({ group, year, month }, { _id: 1 });
+  for (const s of salaries) await recalc(s._id);
+  return salaries.length;
+};
+
+// Guruhning barcha oylik maoshlarini qayta hisoblaydi (doimiy chegirma o'zgarganda).
+export const recalcForGroup = async (group) => {
+  const salaries = await TeacherSalary.find({ group }, { _id: 1 });
   for (const s of salaries) await recalc(s._id);
   return salaries.length;
 };
