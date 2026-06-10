@@ -124,21 +124,49 @@ export const scheduleActiveOn = (schedule, onDate = null) => {
 // group.startDate bo'lsa - undan oldingi kunlar hisoblanmaydi.
 // holidaySet berilsa - bayram kunlari hisoblanmaydi.
 export const getClassDaysInRange = (group, fromDate, toDate, holidaySet = null) => {
-  const dayMap = new Map();
+  // Versiyalash: har bir kun (dow) uchun slotlarni effectiveFrom bo'yicha
+  // guruhlaymiz, shunda har sanada o'sha sanada AMAL QILGAN versiyani tanlaymiz.
+  // dayMap: dow -> [{ effTs, slots: [{startTime,endTime}] }] (effTs bo'yicha o'suvchi)
+  const byDayEff = new Map(); // dow -> Map(effTs -> slots[])
   for (const item of group?.schedule || []) {
-    if (!dayMap.has(item.day)) dayMap.set(item.day, []);
-    dayMap.get(item.day).push({ startTime: item.startTime, endTime: item.endTime });
+    const effTs = item.effectiveFrom
+      ? toUtcMidnight(item.effectiveFrom).getTime()
+      : -Infinity;
+    if (!byDayEff.has(item.day)) byDayEff.set(item.day, new Map());
+    const versions = byDayEff.get(item.day);
+    if (!versions.has(effTs)) versions.set(effTs, []);
+    versions.get(effTs).push({ startTime: item.startTime, endTime: item.endTime });
   }
-  // Slotlarni vaqt bo'yicha tartiblaymiz - "birinchi slot" deterministik bo'lsin
-  // (slot-fallback eski slot="" yozuvini aynan birinchi slotga bog'laydi).
-  for (const arr of dayMap.values())
-    arr.sort((a, b) => a.startTime.localeCompare(b.startTime));
+  // Har versiya slotlarini vaqt bo'yicha tartiblaymiz + versiyalarni effTs o'suvchi
+  const dayMap = new Map(); // dow -> [{ effTs, slots }]
+  for (const [dow, versions] of byDayEff) {
+    const arr = [];
+    for (const [effTs, slots] of versions) {
+      slots.sort((a, b) => a.startTime.localeCompare(b.startTime));
+      arr.push({ effTs, slots });
+    }
+    arr.sort((a, b) => a.effTs - b.effTs);
+    dayMap.set(dow, arr);
+  }
+
+  // Berilgan sana (ts) uchun o'sha kunda amal qilgan versiyaning slotlari
+  const slotsActiveOn = (dow, ts) => {
+    const versions = dayMap.get(dow);
+    if (!versions) return null;
+    let active = null;
+    for (const v of versions) {
+      if (v.effTs <= ts) active = v.slots;
+      else break; // o'suvchi tartib - keyingilari kelajakda
+    }
+    return active;
+  };
+
   const startTs = group?.startDate ? toUtcMidnight(group.startDate).getTime() : null;
   const result = [];
   for (const d of iterateDays(fromDate, toDate)) {
     if (startTs !== null && d.getTime() < startTs) continue;
     const dow = dayOfWeekOf(d);
-    const slots = dayMap.get(dow);
+    const slots = slotsActiveOn(dow, d.getTime());
     if (!slots || slots.length === 0) continue;
     const dKey = dateKeyOf(d);
     if (holidaySet && holidaySet.has(dKey)) continue;

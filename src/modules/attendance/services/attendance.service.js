@@ -14,6 +14,7 @@ import {
   dayOfWeekOf,
   toUtcMidnight,
   getClassDaysInRange,
+  scheduleActiveOn,
   defaultStatusFor,
   withinCourseBounds,
   localTodayMidnight,
@@ -57,7 +58,8 @@ export const listForGroupOnDate = async (groupId, dateInput, slotInput = null) =
   const date = parseLocalDay(dateInput);
   if (!date) throw new ApiError(400, "Sana noto'g'ri");
   const dow = dayOfWeekOf(date);
-  const daySlots = (group.schedule || [])
+  // Shu sanada AMAL QILGAN jadval versiyasi (versiyalash)
+  const daySlots = scheduleActiveOn(group.schedule, date)
     .filter((s) => s.day === dow)
     .sort((a, b) => a.startTime.localeCompare(b.startTime))
     .map((s) => ({ startTime: s.startTime, endTime: s.endTime }));
@@ -241,8 +243,11 @@ export const bulkRecord = async (
   }
 
   // Faqat guruhning dars kunlari belgilanadi (dars vaqti o'tgan/oldin - farqi yo'q)
+  // Shu sanada AMAL QILGAN jadval versiyasi bo'yicha (versiyalash)
   const dow = dayOfWeekOf(date);
-  const daySlots = (group.schedule || []).filter((s) => s.day === dow);
+  const daySlots = scheduleActiveOn(group.schedule, date).filter(
+    (s) => s.day === dow,
+  );
   if (daySlots.length === 0) {
     throw new ApiError(400, "Bu kun bu guruh uchun dars kuni emas");
   }
@@ -647,19 +652,11 @@ export const getGroupMonthly = async (groupId, { year, month }) => {
   const monthStart = startOfMonth(year, month);
   const monthEnd = endOfMonth(year, month);
 
-  // Kun → slotlar (vaqt bo'yicha tartiblangan)
-  const slotsByDow = new Map();
-  for (const s of group.schedule || []) {
-    if (!slotsByDow.has(s.day)) slotsByDow.set(s.day, []);
-    slotsByDow.get(s.day).push({ startTime: s.startTime, endTime: s.endTime });
-  }
-  for (const arr of slotsByDow.values())
-    arr.sort((a, b) => a.startTime.localeCompare(b.startTime));
-
   const holidaySet = await holidayKeySetForRange(monthStart, monthEnd);
 
   // Har ustun bitta SESSIYA: kunda bir nechta dars bo'lsa - bir nechta ustun.
   // colKey - kataklar kaliti (bir slotli/no-class kunda = dateKey; ko'p slotli kunda = dateKey__HH:mm)
+  // Slotlar har sana uchun o'sha sanada AMAL QILGAN versiyadan olinadi (versiyalash).
   const dates = [];
   const dateKeys = new Set();
   const cur = new Date(monthStart);
@@ -667,7 +664,10 @@ export const getGroupMonthly = async (groupId, { year, month }) => {
     const dow = dayOfWeekOf(cur);
     const dKey = dateKeyOf(cur);
     dateKeys.add(dKey);
-    const daySlots = slotsByDow.get(dow) || [];
+    const daySlots = scheduleActiveOn(group.schedule, cur)
+      .filter((s) => s.day === dow)
+      .sort((a, b) => a.startTime.localeCompare(b.startTime))
+      .map((s) => ({ startTime: s.startTime, endTime: s.endTime }));
     const inBounds = withinCourseBounds(group, cur) && !holidaySet.has(dKey);
     const isClassDay = daySlots.length > 0 && inBounds;
     if (isClassDay && daySlots.length > 1) {

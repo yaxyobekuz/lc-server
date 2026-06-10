@@ -7,6 +7,7 @@ import {
   parseLocalDay,
   dateKeyOf,
   dayOfWeekOf,
+  scheduleActiveOn,
 } from "../../../helpers/attendance.helper.js";
 
 const STUDENT_PROJECTION = {
@@ -24,8 +25,9 @@ const ensureGroup = async (groupId) => {
 
 // Kunning sessiyalari (davomat bilan bir xil ta'rif): bir slotli kun → ""; ko'p
 // slotli kun → slot=startTime.
-const sessionsForDay = (group, dow) => {
-  const daySlots = (group.schedule || [])
+const sessionsForDay = (group, dow, date = null) => {
+  // Shu sanada AMAL QILGAN jadval versiyasi (versiyalash) - davomat bilan bir xil
+  const daySlots = scheduleActiveOn(group.schedule, date)
     .filter((s) => s.day === dow)
     .sort((a, b) => a.startTime.localeCompare(b.startTime))
     .map((s) => ({ startTime: s.startTime, endTime: s.endTime }));
@@ -54,7 +56,7 @@ export const listForGroupOnDate = async (groupId, dateInput, slotInput = null) =
   const date = parseLocalDay(dateInput);
   if (!date) throw new ApiError(400, "Sana noto'g'ri");
   const dow = dayOfWeekOf(date);
-  const sessions = sessionsForDay(group, dow);
+  const sessions = sessionsForDay(group, dow, date);
   const selectedSlot =
     slotInput !== null && slotInput !== undefined
       ? slotInput
@@ -142,7 +144,7 @@ export const bulkRecord = async (
   if (!date) throw new ApiError(400, "Sana noto'g'ri");
   const dKey = dateKeyOf(date);
   const dow = dayOfWeekOf(date);
-  const sessions = sessionsForDay(group, dow);
+  const sessions = sessionsForDay(group, dow, date);
   if (sessions.length === 0) {
     throw new ApiError(400, "Bu kun bu guruh uchun dars kuni emas");
   }
