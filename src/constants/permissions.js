@@ -1,6 +1,7 @@
 // Permission keys (the seed writes the same keys to the DB)
 export const PERMISSIONS = Object.freeze({
   USERS_READ: "users.read",
+  ARCHIVE_REASONS_MANAGE: "archive_reasons.manage",
 
   STUDENTS_READ: "students.read",
   STUDENTS_CREATE: "students.create",
@@ -52,6 +53,10 @@ export const PERMISSIONS = Object.freeze({
 // Human-readable labels (used by the seed)
 export const PERMISSION_LABELS = {
   [PERMISSIONS.USERS_READ]: { label: "Foydalanuvchilarni ko'rish", group: "users" },
+  [PERMISSIONS.ARCHIVE_REASONS_MANAGE]: {
+    label: "Arxiv sabablarini boshqarish",
+    group: "users",
+  },
 
   [PERMISSIONS.STUDENTS_READ]: { label: "O'quvchilarni ko'rish", group: "students" },
   [PERMISSIONS.STUDENTS_CREATE]: { label: "O'quvchilarni yaratish", group: "students" },

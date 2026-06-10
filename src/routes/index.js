@@ -1,6 +1,7 @@
 import { Router } from "express";
 import authRouter from "../modules/auth/auth.routes.js";
 import usersRouter from "../modules/users/users.routes.js";
+import archiveReasonsRouter from "../modules/archiveReasons/archiveReasons.routes.js";
 import groupsRouter from "../modules/groups/groups.routes.js";
 import attendanceRouter from "../modules/attendance/attendance.routes.js";
 import teacherAttendanceRouter from "../modules/teacherAttendance/teacherAttendance.routes.js";
@@ -28,6 +29,7 @@ router.get("/health", (_req, res) =>
 router.use("/auth", authRouter);
 router.use("/search", searchRouter);
 router.use("/users", usersRouter);
+router.use("/archive-reasons", archiveReasonsRouter);
 router.use("/groups", groupsRouter);
 
 // Attendance subsystem
