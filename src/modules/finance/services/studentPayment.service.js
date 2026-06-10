@@ -6,6 +6,7 @@ import Discount from "../../../models/discount.model.js";
 import StudentFreeze from "../../../models/studentFreeze.model.js";
 import GroupMembership from "../../../models/groupMembership.model.js";
 import Group from "../../../models/group.model.js";
+import User from "../../../models/user.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import { computePaymentSnapshot, deriveStatus } from "./proration.helper.js";
 
@@ -212,27 +213,32 @@ export const list = async ({
   if (month) filter.month = Number(month);
   if (status) filter.status = status;
 
-  const skip = (page - 1) * limit;
-  let query = StudentPayment.find(filter)
-    .populate("student", safeStudentProjection)
-    .populate("group", { name: 1 })
-    .sort({ createdAt: -1 });
-
-  let items = await query.skip(skip).limit(limit);
-
-  // Ism bo'yicha qidiruv (populate'dan keyin - oddiy filtr)
+  // Ism/username bo'yicha qidiruv: mos o'quvchilarni topib, filtrga qo'shamiz.
+  // Bu paginatsiya (skip/limit) va total ham qidiruvni hisobga olishini ta'minlaydi.
   if (search && search.trim()) {
-    const s = search.trim().toLowerCase();
-    items = items.filter((p) => {
-      const st = p.student;
-      if (!st) return false;
-      return `${st.firstName} ${st.lastName} ${st.username}`
-        .toLowerCase()
-        .includes(s);
-    });
+    const s = search.trim();
+    const rx = new RegExp(s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    const matchedStudents = await User.find(
+      {
+        role: "student",
+        $or: [{ firstName: rx }, { lastName: rx }, { username: rx }],
+      },
+      { _id: 1 },
+    );
+    filter.student = { $in: matchedStudents.map((u) => u._id) };
   }
 
-  const total = await StudentPayment.countDocuments(filter);
+  const skip = (page - 1) * limit;
+  const [items, total] = await Promise.all([
+    StudentPayment.find(filter)
+      .populate("student", safeStudentProjection)
+      .populate("group", { name: 1 })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit),
+    StudentPayment.countDocuments(filter),
+  ]);
+
   return { items, total, page, limit };
 };
 
