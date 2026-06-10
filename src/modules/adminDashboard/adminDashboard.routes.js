@@ -13,6 +13,7 @@ import overview from "./handlers/overview.handler.js";
 import studentFlow from "./handlers/studentFlow.handler.js";
 import studentStats from "./handlers/studentStats.handler.js";
 import retention from "./handlers/retention.handler.js";
+import churnedStudents from "./handlers/churnedStudents.handler.js";
 
 const router = Router();
 
@@ -43,6 +44,13 @@ router.get(
   requirePermission(PERMISSIONS.ADMIN_DASHBOARD_READ),
   validate(retentionSchema),
   retention,
+);
+router.get(
+  "/churned-students",
+  requireAuth,
+  requirePermission(PERMISSIONS.ADMIN_DASHBOARD_READ),
+  validate(retentionSchema),
+  churnedStudents,
 );
 
 export default router;

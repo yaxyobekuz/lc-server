@@ -45,6 +45,30 @@ const loadChurnedMemberships = async (fromDate, toDate) => {
   return rows.filter((m) => m.group && m.joinedAt && m.leftAt);
 };
 
+// Chiqib ketgan o'quvchilar ro'yxati (kartaga bosilganda modal'da ko'rsatish uchun).
+// Har bir membership = bitta qator: o'quvchi, guruh, muddat, sabab, chiqqan sana.
+export const getChurnedStudents = async ({ fromDate, toDate } = {}) => {
+  const rows = await GroupMembership.find(buildLeftRange(fromDate, toDate))
+    .populate({ path: "group", select: "name" })
+    .populate({ path: "student", select: "firstName lastName username" })
+    .sort({ leftAt: -1 })
+    .lean();
+
+  return rows
+    .filter((m) => m.student && m.joinedAt && m.leftAt)
+    .map((m) => ({
+      membershipId: String(m._id),
+      studentId: String(m.student._id),
+      studentName: `${m.student.firstName} ${m.student.lastName}`,
+      username: m.student.username,
+      groupName: m.group?.name || "(o'chirilgan)",
+      durationMonths:
+        Math.round(monthsBetween(m.joinedAt, m.leftAt) * 10) / 10,
+      reasonTitle: m.leftReasonTitle || "Sababsiz",
+      leftAt: m.leftAt,
+    }));
+};
+
 // O'rtacha / median davomiylikni hisoblaydi.
 const summarizeDurations = (durations) => {
   if (durations.length === 0) return { avgMonths: 0, medianMonths: 0 };
