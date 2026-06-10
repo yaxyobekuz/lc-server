@@ -6,6 +6,7 @@ const transferStudent = asyncHandler(async (req, res) => {
     req.params.id,
     req.params.studentId,
     req.body.targetGroupId,
+    { joinedAt: req.body.joinedAt },
   );
   res.json({
     success: true,

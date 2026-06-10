@@ -430,7 +430,7 @@ export const removeStudent = async (groupId, studentId, { reasonId } = {}) => {
   return membership;
 };
 
-const transferSequential = async (groupId, studentId, targetGroupId) => {
+const transferSequential = async (groupId, studentId, targetGroupId, joinDate) => {
   const closed = await GroupMembership.findOneAndUpdate(
     { group: groupId, student: studentId, leftAt: null, isDeleted: { $ne: true } },
     {
@@ -450,7 +450,7 @@ const transferSequential = async (groupId, studentId, targetGroupId) => {
     const opened = await GroupMembership.create({
       group: targetGroupId,
       student: studentId,
-      joinedAt: localTodayMidnight(),
+      joinedAt: joinDate,
     });
     return { closed, opened };
   } catch (err) {
@@ -463,7 +463,21 @@ const transferSequential = async (groupId, studentId, targetGroupId) => {
   }
 };
 
-export const transferStudent = async (groupId, studentId, targetGroupId) => {
+// Yangi guruh uchun joriy oy moliya to'lovini yaratadi (best-effort) - addStudent kabi.
+const ensureFinanceForMembership = async (groupId, membership) => {
+  try {
+    const today = localTodayMidnight();
+    const year = today.getUTCFullYear();
+    const month = today.getUTCMonth() + 1;
+    await financeGroupFeeService.ensureGroupFee(groupId, year, month);
+    await financePaymentService.ensurePaymentForMembership(membership, year, month);
+    await teacherSalaryService.recalcForGroupMonth(groupId, year, month);
+  } catch (err) {
+    logger.warn({ err }, "Ko'chirilgan o'quvchi uchun moliya to'lovi yaratilmadi");
+  }
+};
+
+export const transferStudent = async (groupId, studentId, targetGroupId, { joinedAt } = {}) => {
   if (String(groupId) === String(targetGroupId)) {
     throw new ApiError(400, "Bir xil guruhga ko'chirib bo'lmaydi");
   }
@@ -472,7 +486,11 @@ export const transferStudent = async (groupId, studentId, targetGroupId) => {
   await ensureGroup(targetGroupId);
   await ensureStudent(studentId);
 
+  // Yangi guruhga qo'shilish sanasi - berilsa o'sha kun, aks holda mahalliy "bugun"
+  const joinDate = joinedAt ? toUtcMidnight(joinedAt) : localTodayMidnight();
+
   // Mongo replica set bo'lsa transaction; aks holda sequential fallback
+  let result;
   let session;
   try {
     session = await mongoose.startSession();
@@ -492,12 +510,12 @@ export const transferStudent = async (groupId, studentId, targetGroupId) => {
     if (!closed) throw new ApiError(404, "Faol a'zolik topilmadi");
 
     const [opened] = await GroupMembership.create(
-      [{ group: targetGroupId, student: studentId, joinedAt: localTodayMidnight() }],
+      [{ group: targetGroupId, student: studentId, joinedAt: joinDate }],
       { session },
     );
     await session.commitTransaction();
     session.endSession();
-    return { closed, opened };
+    result = { closed, opened };
   } catch (err) {
     if (session) {
       try {
@@ -509,8 +527,12 @@ export const transferStudent = async (groupId, studentId, targetGroupId) => {
     }
     if (err instanceof ApiError) throw err;
     // Standalone Mongo (no transaction support) - fallback
-    return transferSequential(groupId, studentId, targetGroupId);
+    result = await transferSequential(groupId, studentId, targetGroupId, joinDate);
   }
+
+  // Yangi guruh uchun joriy oy to'lovini darhol yaratamiz
+  await ensureFinanceForMembership(targetGroupId, result.opened);
+  return result;
 };
 
 export const history = async (groupId, { page = 1, limit = 20 } = {}) => {
