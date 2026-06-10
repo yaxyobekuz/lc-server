@@ -8,6 +8,7 @@ import { hashPassword } from "../../../helpers/password.helper.js";
 import { buildUserProfile } from "../../../helpers/userProfile.helper.js";
 import { toUtcMidnight } from "../../../helpers/attendance.helper.js";
 import { deleteUser, restoreUser } from "../../../helpers/cascadeDelete.helper.js";
+import { logAction as logArchiveAction } from "../../archiveReasons/services/archiveReasons.service.js";
 
 const STUDENT_ONLY_FIELDS = ["enrolledAt"];
 const TEACHER_ONLY_FIELDS = ["hiredAt"];
@@ -196,7 +197,7 @@ export const setPassword = async (id, newPassword) => {
   return { username: user.username, password: newPassword };
 };
 
-export const softRemove = async (id) => {
+export const softRemove = async (id, { reasonId, by } = {}) => {
   const user = await getById(id);
   if (user.role === ROLES.OWNER) {
     throw new ApiError(403, "Owner foydalanuvchini o'chirib bo'lmaydi");
@@ -204,7 +205,7 @@ export const softRemove = async (id) => {
   user.isActive = false;
   await user.save();
 
-  // O'quvchi arxivlansa - faol a'zoliklarni yopamiz.
+  // O'quvchi arxivlansa - faol a'zoliklarni yopamiz va sababni logga yozamiz.
   if (user.role === ROLES.STUDENT) {
     const today = toUtcMidnight(new Date());
     const memberships = await GroupMembership.find({
@@ -216,15 +217,39 @@ export const softRemove = async (id) => {
       m.leftReason = "removed";
       await m.save();
     }
+    try {
+      await logArchiveAction({
+        user: user._id,
+        action: "archive",
+        reasonId,
+        by: by?._id,
+      });
+    } catch {
+      // log yozilmasa ham arxivlash buzilmasin
+    }
   }
 
   return user;
 };
 
-export const restore = async (id) => {
+export const restore = async (id, { reasonId, by } = {}) => {
   const user = await getById(id);
   user.isActive = true;
   await user.save();
+
+  if (user.role === ROLES.STUDENT) {
+    try {
+      await logArchiveAction({
+        user: user._id,
+        action: "restore",
+        reasonId,
+        by: by?._id,
+      });
+    } catch {
+      // log yozilmasa ham qaytarish buzilmasin
+    }
+  }
+
   return user;
 };
 

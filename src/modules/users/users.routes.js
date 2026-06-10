@@ -8,6 +8,7 @@ import { PERMISSIONS } from "../../constants/permissions.js";
 import { listSchema } from "./validators/list.validator.js";
 import { updateSchema, idSchema } from "./validators/update.validator.js";
 import { setPasswordSchema } from "./validators/password.validator.js";
+import { archiveActionSchema } from "./validators/archive.validator.js";
 import list from "./handlers/list.handler.js";
 import getById from "./handlers/getById.handler.js";
 import update from "./handlers/update.handler.js";
@@ -67,14 +68,14 @@ router.delete(
   "/:id",
   requireAuth,
   requireRole(ROLES.OWNER),
-  validate(idSchema),
+  validate(archiveActionSchema),
   remove,
 );
 router.post(
   "/:id/restore",
   requireAuth,
   requireRole(ROLES.OWNER),
-  validate(idSchema),
+  validate(archiveActionSchema),
   restore,
 );
 router.delete(
