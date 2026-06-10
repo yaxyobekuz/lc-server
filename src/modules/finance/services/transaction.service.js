@@ -1,8 +1,19 @@
 import PaymentTransaction from "../../../models/paymentTransaction.model.js";
 import StudentPayment from "../../../models/studentPayment.model.js";
 import ApiError from "../../../utils/ApiError.js";
+import logger from "../../../config/logger.js";
 import { parseLocalDay, localTodayMidnight } from "../../../helpers/attendance.helper.js";
 import * as studentPaymentService from "./studentPayment.service.js";
+import * as teacherSalaryService from "../../teacherSalary/services/teacherSalary.service.js";
+
+// Guruh tushumi o'zgargani uchun o'qituvchining foiz maoshini qayta hisoblaymiz (best-effort).
+const recalcTeacherPercentSalary = async (group, year, month) => {
+  try {
+    await teacherSalaryService.recalcForGroupMonth(group, year, month);
+  } catch (err) {
+    logger.warn({ err }, "O'qituvchi foiz maoshi qayta hisoblanmadi");
+  }
+};
 
 // Qisman to'lov qo'shadi (naqd/karta), so'ng oylik to'lov statusini yangilaydi.
 export const create = async ({ paymentId, amount, method, paidAt, note }, currentUser) => {
@@ -26,6 +37,7 @@ export const create = async ({ paymentId, amount, method, paidAt, note }, curren
   });
 
   await studentPaymentService.recalcStatus(payment._id);
+  await recalcTeacherPercentSalary(payment.group, payment.year, payment.month);
   return trx;
 };
 
@@ -35,5 +47,6 @@ export const remove = async (id, currentUser) => {
   if (!trx) throw new ApiError(404, "Tranzaksiya topilmadi");
   await trx.softDelete(currentUser?._id);
   await studentPaymentService.recalcStatus(trx.payment);
+  await recalcTeacherPercentSalary(trx.group, trx.year, trx.month);
   return { _id: id };
 };

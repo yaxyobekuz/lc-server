@@ -20,6 +20,9 @@ import defineLeadFollowupReminders, {
 import defineGenerateMonthlyFinance, {
   JOB_NAME as MONTHLY_FINANCE_JOB,
 } from "./generateMonthlyFinance.job.js";
+import defineGenerateMonthlySalary, {
+  JOB_NAME as MONTHLY_SALARY_JOB,
+} from "./generateMonthlySalary.job.js";
 
 // Barcha cron jadvallari mahalliy (Asia/Tashkent) vaqt bo'yicha ishlaydi -
 // server qaysi TZ da bo'lishidan qat'i nazar. Aks holda UTC serverда "20:00"
@@ -37,6 +40,7 @@ export const startJobs = async () => {
   defineNotificationSchedule(agenda);
   defineLeadFollowupReminders(agenda);
   defineGenerateMonthlyFinance(agenda);
+  defineGenerateMonthlySalary(agenda);
 
   await agenda.start();
 
@@ -56,6 +60,8 @@ export const startJobs = async () => {
 
   // Oylik moliya generatsiyasi - har oy 1-sanasi 00:05 da
   await every("5 0 1 * *", MONTHLY_FINANCE_JOB);
+  // Oylik maosh generatsiyasi - har oy 1-sanasi 00:06 da (moliyadan keyin)
+  await every("6 0 1 * *", MONTHLY_SALARY_JOB);
 
   logger.info({ timezone: TZ }, "Agenda ishga tushirildi");
 };

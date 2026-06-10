@@ -13,6 +13,7 @@ import {
 import logger from "../../../config/logger.js";
 import * as financeGroupFeeService from "../../finance/services/groupFee.service.js";
 import * as financePaymentService from "../../finance/services/studentPayment.service.js";
+import * as teacherSalaryService from "../../teacherSalary/services/teacherSalary.service.js";
 
 export const safeUserProjection = {
   firstName: 1,
@@ -194,13 +195,31 @@ export const getById = async (id) => {
 
 export const create = async (body) => {
   await ensureTeachers(body.teachers);
-  return Group.create({
+  const group = await Group.create({
     name: body.name.trim(),
     schedule: body.schedule || [],
     teachers: body.teachers || [],
     startDate: body.startDate ? toUtcMidnight(body.startDate) : null,
     durationMonths: body.durationMonths ?? null,
   });
+
+  // O'qituvchi biriktirilgan bo'lsa joriy oy maoshini yaratamiz (best-effort)
+  const teacherId = (group.teachers || [])[0];
+  if (teacherId) {
+    try {
+      const today = localTodayMidnight();
+      await teacherSalaryService.ensureSalaryForTeacherGroup(
+        teacherId,
+        group._id,
+        today.getUTCFullYear(),
+        today.getUTCMonth() + 1,
+      );
+    } catch (err) {
+      logger.warn({ err }, "Guruh o'qituvchisi uchun maosh yaratilmadi");
+    }
+  }
+
+  return group;
 };
 
 export const update = async (id, body) => {

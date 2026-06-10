@@ -56,6 +56,11 @@ export const PERMISSIONS = Object.freeze({
   FINANCE_READ: "finance.read",
   FINANCE_PAY: "finance.pay",
   FINANCE_MANAGE: "finance.manage",
+
+  // Teacher salary (O'qituvchi maoshlari)
+  SALARY_READ: "salary.read",
+  SALARY_PAY: "salary.pay",
+  SALARY_MANAGE: "salary.manage",
 });
 
 // Human-readable labels (used by the seed)
@@ -143,4 +148,8 @@ export const PERMISSION_LABELS = {
   [PERMISSIONS.FINANCE_READ]: { label: "Moliyani ko'rish", group: "finance" },
   [PERMISSIONS.FINANCE_PAY]: { label: "To'lov qabul qilish", group: "finance" },
   [PERMISSIONS.FINANCE_MANAGE]: { label: "Moliyani boshqarish", group: "finance" },
+
+  [PERMISSIONS.SALARY_READ]: { label: "Maoshlarni ko'rish", group: "finance" },
+  [PERMISSIONS.SALARY_PAY]: { label: "Maosh to'lash", group: "finance" },
+  [PERMISSIONS.SALARY_MANAGE]: { label: "Maoshlarni boshqarish", group: "finance" },
 };
