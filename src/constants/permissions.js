@@ -51,6 +51,11 @@ export const PERMISSIONS = Object.freeze({
   // Admin dashboard + audit (Bo'lak 9)
   ADMIN_DASHBOARD_READ: "admin_dashboard.read",
   ACTIVITY_LOGS_READ: "activity_logs.read",
+
+  // Finance (Moliya)
+  FINANCE_READ: "finance.read",
+  FINANCE_PAY: "finance.pay",
+  FINANCE_MANAGE: "finance.manage",
 });
 
 // Human-readable labels (used by the seed)
@@ -134,4 +139,8 @@ export const PERMISSION_LABELS = {
     label: "Faoliyat loglarini ko'rish",
     group: "audit",
   },
+
+  [PERMISSIONS.FINANCE_READ]: { label: "Moliyani ko'rish", group: "finance" },
+  [PERMISSIONS.FINANCE_PAY]: { label: "To'lov qabul qilish", group: "finance" },
+  [PERMISSIONS.FINANCE_MANAGE]: { label: "Moliyani boshqarish", group: "finance" },
 };

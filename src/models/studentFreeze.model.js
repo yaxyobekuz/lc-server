@@ -2,9 +2,9 @@ import mongoose from "mongoose";
 import softDeletePlugin from "./plugins/softDelete.plugin.js";
 
 // O'quvchini vaqtincha "muzlatish" (pauza): startDate..endDate oralig'idagi BARCHA
-// dars kunlari davomat hisobidan chiqariladi (foizga ta'sir qilmaydi). To'lovga
-// tegmaydi (qaror: faqat davomat to'xtaydi). Butun o'quvchi bo'yicha (barcha guruhlar).
-// endDate=null → ochiq muzlatish (qo'lda tugatilguncha).
+// dars kunlari davomat hisobidan chiqariladi (foizga ta'sir qilmaydi). Moliyada
+// muzlatilgan kalendar kunlari oylik to'lov proratsiyasidan chiqariladi (to'lov kamayadi).
+// Butun o'quvchi bo'yicha (barcha guruhlar). endDate=null → ochiq muzlatish.
 const studentFreezeSchema = new mongoose.Schema(
   {
     student: {

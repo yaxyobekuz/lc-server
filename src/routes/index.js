@@ -21,6 +21,7 @@ import botAuthRouter from "../modules/botAuth/botAuth.routes.js";
 import activityLogsRouter from "../modules/activityLogs/activityLogs.routes.js";
 import adminDashboardRouter from "../modules/adminDashboard/adminDashboard.routes.js";
 import searchRouter from "../modules/search/search.routes.js";
+import financeRouter from "../modules/finance/finance.routes.js";
 
 const router = Router();
 
@@ -60,5 +61,8 @@ router.use("/bot-auth", botAuthRouter);
 // Admin / boshqaruv paneli
 router.use("/activity-logs", activityLogsRouter);
 router.use("/admin-dashboard", adminDashboardRouter);
+
+// Finance subsystem (Moliya)
+router.use("/finance", financeRouter);
 
 export default router;

@@ -10,6 +10,9 @@ import {
   deleteGroup as cascadeDeleteGroup,
   restoreGroup as cascadeRestoreGroup,
 } from "../../../helpers/cascadeDelete.helper.js";
+import logger from "../../../config/logger.js";
+import * as financeGroupFeeService from "../../finance/services/groupFee.service.js";
+import * as financePaymentService from "../../finance/services/studentPayment.service.js";
 
 export const safeUserProjection = {
   firstName: 1,
@@ -292,6 +295,17 @@ export const addStudent = async (groupId, studentId, { joinedAt } = {}) => {
     student: studentId,
     joinedAt: joinedAt ? toUtcMidnight(joinedAt) : localTodayMidnight(),
   });
+
+  // O'quvchi qo'shilishi bilanoq joriy oy to'lovini yaratamiz (best-effort)
+  try {
+    const today = localTodayMidnight();
+    const year = today.getUTCFullYear();
+    const month = today.getUTCMonth() + 1;
+    await financeGroupFeeService.ensureGroupFee(groupId, year, month);
+    await financePaymentService.ensurePaymentForMembership(membership, year, month);
+  } catch (err) {
+    logger.warn({ err }, "Yangi o'quvchi uchun oylik to'lov yaratilmadi");
+  }
 
   return membership;
 };
