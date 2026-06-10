@@ -9,6 +9,10 @@ import BotUser from "../../../models/botUser.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import logger from "../../../config/logger.js";
 import { ROLES } from "../../../constants/roles.js";
+import {
+  personalizeManyForUser,
+  personalizeBulk,
+} from "./personalizeBody.helper.js";
 
 // Bir vaqtning o'zida nechta bot xabari yuborilsin (Telegram ~30/sek global limit)
 const DELIVERY_CONCURRENCY = 20;
@@ -233,11 +237,10 @@ export const deliverNotification = async (notificationId) => {
   const { deliverToChat } = await import(
     "../../../bot/services/notificationDeliver.service.js"
   );
-  const payload = {
-    title: notif.title,
-    body: notif.body,
-    category: notif.category,
-  };
+
+  // {ism}, {familiya}, {guruh}, {markaz}'ni har bir oluvchi uchun almashtiramiz.
+  // Token bo'lmasa - barcha uchun bir xil matn (qo'shimcha so'rovsiz).
+  const bodyByUser = await personalizeBulk(notif.body, userIds);
 
   let delivered = 0;
   const ops = [];
@@ -254,7 +257,11 @@ export const deliverNotification = async (notificationId) => {
     }
     const res = await deliverToChat(
       { chatId: bu.chatId, telegramId: bu.telegramId },
-      payload,
+      {
+        title: notif.title,
+        body: bodyByUser.get(String(r.user)) ?? notif.body,
+        category: notif.category,
+      },
     );
     if (res.ok) {
       delivered += 1;
@@ -538,6 +545,18 @@ export const getMyInbox = async (
       }),
     NotificationRecipient.countDocuments(filter),
   ]);
+
+  // O'zgaruvchilarni ({ism}, {familiya}, {guruh}, {markaz}) shu o'quvchi uchun
+  // almashtiramiz. Ism/guruh BIR MARTA yechiladi (barcha xabarlar bitta userники).
+  const withBody = items.filter((it) => it.notification?.body);
+  if (withBody.length) {
+    const bodies = withBody.map((it) => it.notification.body);
+    const personalized = await personalizeManyForUser(bodies, userId);
+    withBody.forEach((it, i) => {
+      it.notification.body = personalized[i];
+    });
+  }
+
   return { items, total, page, limit };
 };
 
