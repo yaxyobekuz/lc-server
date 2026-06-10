@@ -84,6 +84,39 @@ const iterateDays = function* (fromDate, toDate) {
   }
 };
 
+// ─── Jadval versiyalash ───
+// Har bir slotda effectiveFrom (Date|null) bor. Berilgan sanada AMAL QILGAN
+// versiyani qaytaradi: har bir KUN uchun, effectiveFrom <= sana bo'lgan slotlar
+// orasidan eng KEYINGI effectiveFrom ga ega bo'lganlarini tanlaymiz (null =
+// "boshidan" = eng eski). Shunday qilib jadval keyin o'zgartirilsa, eski
+// sanalarda eski versiya, yangi sanalarda yangi versiya ishlatiladi.
+//   • onDate berilmasa - bugungi (mahalliy) sana bo'yicha "joriy" versiya.
+export const scheduleActiveOn = (schedule, onDate = null) => {
+  const items = schedule || [];
+  if (items.length === 0) return [];
+  const target = onDate ? toUtcMidnight(onDate).getTime() : localTodayMidnight().getTime();
+
+  // effectiveFrom timestampi (null → -Infinity = boshidan)
+  const effTs = (it) =>
+    it.effectiveFrom ? toUtcMidnight(it.effectiveFrom).getTime() : -Infinity;
+
+  // Har kun uchun amal qilgan (<= target) eng so'nggi effectiveFrom ni topamiz
+  const latestEffByDay = new Map();
+  for (const it of items) {
+    const ts = effTs(it);
+    if (ts > target) continue; // bu versiya hali amal qilmaydi
+    const cur = latestEffByDay.get(it.day);
+    if (cur === undefined || ts > cur) latestEffByDay.set(it.day, ts);
+  }
+
+  // Faqat o'sha kunning eng so'nggi amal qilayotgan versiyasidagi slotlar
+  return items.filter((it) => {
+    const ts = effTs(it);
+    if (ts > target) return false;
+    return latestEffByDay.get(it.day) === ts;
+  });
+};
+
 // Guruh schedule asosida diapazondagi class SESSIYALARI (har biri alohida).
 // Kunda bir nechta dars (slot) bo'lsa - har sessiya alohida qaytadi.
 //   • bir slotli kun  → slot = "" (eski xatti-harakat, bitta yozuv/kun)

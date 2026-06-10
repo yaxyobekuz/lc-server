@@ -17,6 +17,7 @@ import {
   defaultStatusFor,
   withinCourseBounds,
   localTodayMidnight,
+  localTodayKey,
   parseLocalDay,
   isHolidayOn,
   isFrozenOn,
@@ -255,27 +256,16 @@ export const bulkRecord = async (
   }
   // Jadval 1→ko'p slotga o'zgargan bo'lsa, eski yozuvlar slot="" bilan qolgan.
   // Ko'p slotli kunning BIRINCHI sloti uchun shu eski yozuvlarni yangi slotga
-  // ko'chiramiz - aks holda slot="" yozuv "yetim" qolib, alohida (phantom)
-  // yozuv paydo bo'lardi (BUG-03 double-count).
+  // ko'chirish kerak - aks holda slot="" yozuv "yetim" qolib, alohida (phantom)
+  // yozuv paydo bo'lardi (BUG-03 double-count). MUHIM: ko'chirish endi barcha
+  // validatsiyalardan KEYIN va TRANZAKSIYA ICHIDA bajariladi (quyida) - aks holda
+  // request rad etilsa ham yozuv ko'chib qolardi (atomiklik defekti).
   const isFirstSlotOfDay =
     daySlots.length > 1 &&
     normalizedSlot ===
       daySlots
         .map((s) => s.startTime)
         .sort((a, b) => a.localeCompare(b))[0];
-  if (isFirstSlotOfDay) {
-    const studentIdsForMigrate = items.map((it) => it.studentId);
-    await Attendance.updateMany(
-      {
-        group: groupId,
-        student: { $in: studentIdsForMigrate },
-        dateKey: dKey,
-        slot: "",
-        isDeleted: { $ne: true },
-      },
-      { $set: { slot: normalizedSlot } },
-    );
-  }
 
   // Bayram/dam olish kuni - davomat belgilanmaydi (foizga ham ta'sir qilmaydi)
   const holidaySet = await holidayKeySetForRange(date, date);
@@ -290,6 +280,12 @@ export const bulkRecord = async (
 
   // Har bir o'quvchi shu sanada guruhning aktiv a'zosi ekanini tekshiramiz
   const studentIds = items.map((it) => it.studentId);
+  // Bir requestda bir o'quvchi takror yuborilmasin: existingMap loop'dan oldin bir
+  // marta olinadi va loop ichida yangilanmaydi, shuning uchun takroriy studentId
+  // audit history.from'ini buzib, bitta o'zgarish uchun ikkita yozuv qo'shardi.
+  if (new Set(studentIds.map(String)).size !== studentIds.length) {
+    throw new ApiError(400, "Bir o'quvchi bir necha marta yuborildi");
+  }
   const dayEnd = new Date(date.getTime() + 24 * 60 * 60 * 1000);
   const activeMembers = await GroupMembership.find({
     group: groupId,
@@ -326,19 +322,46 @@ export const bulkRecord = async (
     }
   }
 
-  // Audit: mavjud yozuvlarni oldindan olamiz - holat o'zgarsa tarixga yozish uchun
-  const existing = await Attendance.find({
-    group: groupId,
-    student: { $in: studentIds },
-    dateKey: dKey,
-    slot: normalizedSlot,
-    isDeleted: { $ne: true },
-  });
+  // existingMap tranzaksiya ichida to'ldiriladi (legacy slot ko'chirishdan KEYIN),
+  // lekin tranzaksiyadan keyin notifyConsecutiveAbsences ham ishlatadi - shuning
+  // uchun tashqi scope'da e'lon qilamiz.
   const existingMap = new Map();
-  for (const a of existing) existingMap.set(String(a.student), a);
 
   const results = await runWithSession(async (session) => {
     const opts = session ? { session } : {};
+
+    // Legacy slot="" → birinchi slotga ko'chirish (BUG-03) - validatsiyadan keyin,
+    // upsert'lardan oldin, tranzaksiya ichida (atomik, rad etilsa rollback bo'ladi).
+    if (isFirstSlotOfDay) {
+      await Attendance.updateMany(
+        {
+          group: groupId,
+          student: { $in: studentIds },
+          dateKey: dKey,
+          slot: "",
+          isDeleted: { $ne: true },
+        },
+        { $set: { slot: normalizedSlot } },
+        opts,
+      );
+    }
+
+    // Audit: mavjud yozuvlarni ko'chirishdan KEYIN olamiz - holat o'zgarsa tarixga
+    // yozish va birinchi slot ko'chirilgan yozuvni ko'rishi uchun.
+    existingMap.clear();
+    const existing = await Attendance.find(
+      {
+        group: groupId,
+        student: { $in: studentIds },
+        dateKey: dKey,
+        slot: normalizedSlot,
+        isDeleted: { $ne: true },
+      },
+      null,
+      opts,
+    );
+    for (const a of existing) existingMap.set(String(a.student), a);
+
     const docs = [];
     for (const item of items) {
       const prev = existingMap.get(String(item.studentId));
@@ -471,6 +494,15 @@ const notifyConsecutiveAbsences = async ({ group, items, existingMap, dateKey })
 };
 
 // ─── monthly + summary ───
+// leftAt EXCLUSIVE semantikasi: leftAt = chiqilgan kun yarim tuni, ya'ni shu kun
+// ARTIQ a'zolik emas (belgilash yo'li `leftAt > date` bilan bir xil). Oxirgi faol
+// kun = leftAt'dan oldingi kun. Class-day oralig'ining yuqori chegarasi sifatida
+// shuni qaytaramiz, shunda chiqilgan kun maxrajga kirmaydi va grid'da
+// "to'ldirib bo'lmaydigan" ghost katak paydo bo'lmaydi.
+const DAY_MS = 24 * 60 * 60 * 1000;
+const lastActiveDayBefore = (leftAt) =>
+  new Date(toUtcMidnight(leftAt).getTime() - DAY_MS);
+
 const startOfMonth = (year, month) =>
   new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
 const endOfMonth = (year, month) =>
@@ -515,8 +547,9 @@ const buildStudentClassDays = async (
     // Shu membershipning effective range'i oraliq ichida
     const effFrom =
       m.joinedAt > rangeStart ? toUtcMidnight(m.joinedAt) : rangeStart;
-    let effTo =
-      m.leftAt && m.leftAt < rangeEnd ? toUtcMidnight(m.leftAt) : rangeEnd;
+    // leftAt EXCLUSIVE - oxirgi faol kun leftAt'dan oldingi kun
+    const leftBound = m.leftAt ? lastActiveDayBefore(m.leftAt) : null;
+    let effTo = leftBound && leftBound < rangeEnd ? leftBound : rangeEnd;
     // Guruh yakunlangan bo'lsa - finishedAt'dan keyin dars kuni yo'q
     if (m.group.finishedAt) {
       const fin = toUtcMidnight(m.group.finishedAt);
@@ -737,9 +770,11 @@ export const getGroupMonthly = async (groupId, { year, month }) => {
     const stuExemptions = exempMap.get(sid) || [];
     const stuFreezes = freezeMap.get(sid) || [];
     // Katak (sana) o'quvchining a'zolik oraliqlaridan biriga tushadimi?
+    // leftTs EXCLUSIVE (ts < leftTs): chiqilgan kun yarim tuni endi a'zolik emas -
+    // belgilash yo'li (`leftAt > date`) va computeClassDays bilan bir xil chegara.
     const isMemberOn = (ts) =>
       intervals.some(
-        (iv) => ts >= iv.joinedTs && (iv.leftTs === null || ts <= iv.leftTs),
+        (iv) => ts >= iv.joinedTs && (iv.leftTs === null || ts < iv.leftTs),
       );
 
     const dayMap = attByStudentDay; // student|dateKey -> Map(slot->att)
@@ -762,12 +797,19 @@ export const getGroupMonthly = async (groupId, { year, month }) => {
         continue;
       }
       const slots = dayMap.get(`${sid}|${d.dateKey}`);
-      let att = slots ? slots.get(d.slot || "") : undefined;
-      // Jadval keyinroq 1→ko'p slotga o'zgargan bo'lsa, eski slot="" yozuvini
-      // shu kunning birinchi slotiga bog'laymiz (yo'qolmasin, ikki marta sanalmasin).
-      if (!att && (d.slot || "") !== "" && d.isFirstSlot && slots) {
-        const legacy = slots.get("");
-        if (legacy && !usedAtt.has(legacy)) att = legacy;
+      const want = d.slot || "";
+      let att = slots ? slots.get(want) : undefined;
+      // Jadval keyinroq o'zgargan bo'lsa eski yozuvni shu kunning katagiga
+      // bog'laymiz (ikki yo'nalishli - yo'qolmasin, ikki marta sanalmasin):
+      //   • 1→ko'p : birinchi slot eski slot="" yozuvini oladi
+      //   • ko'p→1 : bir slotli kun eski slot="HH:mm" yozuvini oladi
+      if (!att && d.isFirstSlot && slots) {
+        if (want !== "") {
+          const legacy = slots.get("");
+          if (legacy && !usedAtt.has(legacy)) att = legacy;
+        } else {
+          att = earliestUnusedSlotDoc(slots, usedAtt) || undefined;
+        }
       }
       if (att) {
         if (usedAtt.has(att)) att = undefined;
@@ -817,7 +859,9 @@ export const getGroupMonthly = async (groupId, { year, month }) => {
 //   • unmarked (belgilanmagan) - counts'ga umuman tushmaydi → maxrajga kirmaydi
 //     (o'qituvchi belgilamagani o'quvchining foizini pasaytirmaydi)
 // Eslatma: tizimda "late" alohida status emas (kechikish lateMinutes maydonida
-// saqlanadi), shuning uchun foiz hisobida "late" qatnashmaydi.
+// saqlanadi). late = present yozuvlarning lateMinutes>0 bo'lgan KICHIK TO'PLAMI -
+// faqat informatsion son, foizga ham, total'ga ham ta'sir qilmaydi (kechikkan
+// o'quvchi baribir "kelgan" deb hisoblanadi).
 // Shu yagona funksiya barcha joyda (o'quvchi/guruh/dashboard) ishlatiladi.
 export const computeRate = (counts) => {
   const numer = counts.present;
@@ -827,14 +871,16 @@ export const computeRate = (counts) => {
 
 // ─── summary (o'quvchi bo'yicha) ───
 const buildSummaryFromBuckets = (counts) => {
+  // late - present'ning KICHIK TO'PLAMI (kechikib kelganlar soni), shuning uchun
+  // total'ga QO'SHILMAYDI (aks holda kechikkan o'quvchi ikki marta sanaladi).
   const total =
-    counts.present + counts.absent + counts.excused + counts.late + counts.exempt;
+    counts.present + counts.absent + counts.excused + counts.exempt;
   return {
     totalClasses: total,
     present: counts.present,
     absent: counts.absent,
     excused: counts.excused,
-    late: counts.late,
+    late: counts.late, // present ichidan nechtasi kechikkan (informatsion)
     exempt: counts.exempt,
     attendanceRate: computeRate(counts),
   };
@@ -861,7 +907,9 @@ const computeClassDays = ({
   for (const m of memberships) {
     if (!m.group) continue;
     const effFrom = m.joinedAt > from ? m.joinedAt : from;
-    let effTo = m.leftAt && m.leftAt < to ? m.leftAt : to;
+    // leftAt EXCLUSIVE - oxirgi faol kun leftAt'dan oldingi kun (lastActiveDayBefore)
+    const leftBound = m.leftAt ? lastActiveDayBefore(m.leftAt) : null;
+    let effTo = leftBound && leftBound < to ? leftBound : to;
     if (m.group.finishedAt) {
       const fin = toUtcMidnight(m.group.finishedAt);
       if (fin < effTo) effTo = fin;
@@ -901,21 +949,43 @@ const buildAttBySlot = (attendances) => {
   return byDay;
 };
 
+// Bir kun ichidagi yozuvlardan (slot -> doc) eng erta (vaqt bo'yicha) bo'sh
+// bo'lmagan slotli, hali ishlatilmagan yozuvni qaytaradi. Jadval ko'p→1 slotga
+// qaytarilganda eski slot="HH:mm" yozuvini bir slotli kunning katagiga
+// bog'lash uchun ishlatiladi (BUG: reverse slot-fallback yo'q edi).
+const earliestUnusedSlotDoc = (slots, used) => {
+  const keys = Array.from(slots.keys())
+    .filter((k) => k !== "")
+    .sort((a, b) => a.localeCompare(b));
+  for (const k of keys) {
+    const d = slots.get(k);
+    if (d && !used.has(d)) return d;
+  }
+  return null;
+};
+
 // Berilgan cell uchun attendance yozuvini topadi.
 // Avval aniq slot bo'yicha; topilmasa - guruh jadvali keyinroq o'zgargan
-// (1 slot → ko'p slot) holatda eski slot="" yozuvini SHU KUNNING birinchi
-// slotiga bog'laydi. Shunday qilib jadval o'zgarganda eski yozuv yo'qolmaydi
-// va bir kun ikki marta sanalmaydi. Ishlatilgan yozuv used setiga qo'shiladi.
+// holatda eski yozuvni shu kunning katagiga bog'laymiz (ikki yo'nalishli):
+//   • 1 → ko'p slot : ko'p slotli kunning BIRINCHI sloti eski slot="" yozuvini oladi
+//   • ko'p → 1 slot : bir slotli kun (want="") eski slot="HH:mm" yozuvini oladi
+// Shunday qilib jadval o'zgarganda eski yozuv yo'qolmaydi va bir kun ikki marta
+// sanalmaydi. Ishlatilgan yozuv used setiga qo'shiladi.
 const matchAttendanceForCell = (byDay, cell, used) => {
   const dayKey = `${String(cell.groupId)}|${cell.dateKey}`;
   const slots = byDay.get(dayKey);
   if (!slots) return null;
   const want = cell.slot || "";
   let doc = slots.get(want);
-  // Ko'p slotli kunning BIRINCHI sloti uchun eski slot="" yozuviga fallback
-  if (!doc && want !== "" && cell.isFirstSlot) {
-    const legacy = slots.get("");
-    if (legacy && !used.has(legacy)) doc = legacy;
+  if (!doc && cell.isFirstSlot) {
+    if (want !== "") {
+      // 1→ko'p: birinchi slot eski slot="" yozuviga fallback
+      const legacy = slots.get("");
+      if (legacy && !used.has(legacy)) doc = legacy;
+    } else {
+      // ko'p→1: bir slotli kun eski bo'sh bo'lmagan slotli yozuvga fallback
+      doc = earliestUnusedSlotDoc(slots, used);
+    }
   }
   if (doc) {
     if (used.has(doc)) return null; // bir yozuv faqat bir cell uchun
@@ -946,6 +1016,10 @@ const summarizeCells = ({ total, cells, attendances }) => {
     const a = matchAttendanceForCell(byDay, c, used);
     if (a) {
       counts[a.status] = (counts[a.status] || 0) + 1;
+      // late - alohida status emas; kelgan (present) yozuvning lateMinutes>0
+      // bo'lishi. present'ning KICHIK TO'PLAMI sifatida sanaymiz (total'ga
+      // qo'shilmaydi).
+      if (a.status === "present" && (a.lateMinutes || 0) > 0) counts.late += 1;
     } else if (c.exemptDefault) {
       // FAQAT belgilanmagan exempt-default kunlar avto-exempt hisoblanadi
       // (belgilangan exempt-default kun yuqorida o'z statusi bilan sanaladi)
@@ -954,8 +1028,9 @@ const summarizeCells = ({ total, cells, attendances }) => {
     // boshqa belgilanmagan kunlar hech qaysi bucket'ga qo'shilmaydi
   }
   counts.exempt += exemptUnmarked;
+  // late present ichida sanalgani uchun markedTotal'ga QO'SHILMAYDI
   const markedTotal =
-    counts.present + counts.absent + counts.excused + counts.late + counts.exempt;
+    counts.present + counts.absent + counts.excused + counts.exempt;
   const summary = buildSummaryFromBuckets(counts);
   summary.totalClasses = total; // total class days (belgilanganmi yoki yo'q)
   summary.unmarked = total - markedTotal;
@@ -1181,20 +1256,28 @@ export const getDashboardStats = async ({ fromDate, toDate, page = 1, limit = 20
     (id) => new mongoose.Types.ObjectId(id),
   );
 
-  // Shu o'quvchilarning BARCHA membershiplari + exemptions + attendances - 3 so'rov, N+1 yo'q.
-  // (per-student summary cross-group hisoblanadi - getStudentSummary bilan bir xil)
+  // Shu o'quvchilarning AKTIV guruhlardagi membershiplari + exemptions + attendances.
+  // `group: { $in: groupIds }` bilan cheklaymiz (groupIds = faqat aktiv, o'chirilmagan
+  // guruhlar) - aks holda aggregate nofaol/o'chirilgan guruhlardan dars kunlarini
+  // qo'shib, groupBreakdown (faqat aktiv guruhlarni ko'rsatadi) bilan ziddiyatga
+  // kelardi: aggregate.totalClasses ≠ Σ groupBreakdown.totalClasses.
   const [allMemberships, exemptions, attendances, holidaySet, allFreezes] =
     await Promise.all([
       GroupMembership.find({
         student: { $in: studentIds },
+        group: { $in: groupIds },
         joinedAt: { $lte: to },
         $or: [{ leftAt: null }, { leftAt: { $gte: from } }],
         isDeleted: { $ne: true },
       }).populate("group"),
       AttendanceExemption.find({ student: { $in: studentIds }, isActive: true }),
+      // dateKey bo'yicha filtrlaymiz (date emas) - summary yo'llari bilan bir xil
+      // kun semantikasi. Aks holda `date` maydonida vaqt komponenti bo'lgan
+      // (seed/legacy) yozuvlar oraliq oxirgi kunida tushib qolib, dashboard
+      // ko'rsatkichlari summary bilan ziddiyatga kelardi.
       Attendance.find({
         student: { $in: studentIds },
-        date: { $gte: from, $lte: to },
+        dateKey: { $gte: dateKeyOf(from), $lte: dateKeyOf(to) },
         isDeleted: { $ne: true },
       }).lean(),
       holidayKeySetForRange(from, to),
@@ -1374,14 +1457,17 @@ export const getDashboardStats = async ({ fromDate, toDate, page = 1, limit = 20
 // groupId berilsa - faqat shu guruh bo'yicha (aks holda barcha guruhlar bo'yicha).
 // Soft-deleted va kelajak sanali yozuvlar hisobga olinmaydi.
 export const consecutiveAbsences = async (studentId, groupId = null) => {
+  // dateKey bo'yicha (date emas): dateKey har doim normalizatsiyalangan
+  // YYYY-MM-DD, vaqt komponentidan xoli. `date` bilan solishtirilsa, seed/legacy
+  // yozuvlardagi vaqt tufayli bugungi qoldirish "kelajak" deb tushib qolardi.
   const filter = {
     student: studentId,
     isDeleted: { $ne: true },
-    date: { $lte: localTodayMidnight() },
+    dateKey: { $lte: localTodayKey() },
   };
   if (groupId) filter.group = groupId;
   const recent = await Attendance.find(filter)
-    .sort({ date: -1 })
+    .sort({ dateKey: -1 })
     .limit(50)
     .lean();
   let count = 0;

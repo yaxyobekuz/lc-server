@@ -130,11 +130,16 @@ export const resolveAudience = async (audience, currentUser) => {
         }
       }
       const memberships = await GroupMembership.find(
-        { group: { $in: groupIds }, leftAt: null },
+        { group: { $in: groupIds }, leftAt: null, isDeleted: { $ne: true } },
         { student: 1 },
       );
-      const set = new Set(memberships.map((m) => String(m.student)));
-      recipientIds = [...set];
+      const studentIds = [...new Set(memberships.map((m) => String(m.student)))];
+      // Boshqa branchlar kabi - faqat aktiv, o'chirilmagan o'quvchilar.
+      const activeStudents = await User.find(
+        { _id: { $in: studentIds }, isActive: true, isDeleted: { $ne: true } },
+        { _id: 1 },
+      );
+      recipientIds = activeStudents.map((u) => u._id);
       break;
     }
     case "users":
@@ -583,8 +588,11 @@ export const markRead = async (recipientId, userId) => {
 };
 
 export const markAllRead = async (userId) => {
+  // Faqat in-app kanalidagi xabarlarni "o'qildi" qilamiz - getMyInbox va
+  // getUnreadCount bilan bir xil qamrov (telegram-only recipientlar inbox'da
+  // ko'rinmaydi, shuning uchun ularning readCount'iga ham tegmaymiz).
   const docs = await NotificationRecipient.find(
-    { user: userId, readAt: null },
+    { user: userId, readAt: null, inapp: { $ne: false } },
     { _id: 1, notification: 1 },
   ).lean();
   if (!docs.length) return { updated: 0 };
@@ -619,7 +627,10 @@ export const markAllRead = async (userId) => {
 };
 
 export const getStats = async ({ fromDate, toDate } = {}) => {
-  const range = {};
+  // Faqat haqiqatan yuborilgan xabarlar statistikaga kiradi.
+  // scheduled (hali yuborilmagan, recipientsCount faqat preview) va canceled
+  // (umuman yetkazilmagan) yozuvlar totalRecipients va readRate'ni buzadi.
+  const range = { status: "sent" };
   if (fromDate || toDate) {
     range.sentAt = {};
     if (fromDate) range.sentAt.$gte = new Date(fromDate);

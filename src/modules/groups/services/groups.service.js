@@ -350,7 +350,9 @@ const transferSequential = async (groupId, studentId, targetGroupId) => {
     { group: groupId, student: studentId, leftAt: null, isDeleted: { $ne: true } },
     {
       $set: {
-        leftAt: new Date(),
+        // leftAt = chiqilgan kun yarim tuni (exclusive: shu kun endi a'zolik emas).
+        // removeStudent bilan bir xil encoding - davomat hisobi izchil bo'lsin.
+        leftAt: localTodayMidnight(),
         leftReason: "transferred",
         transferredTo: targetGroupId,
       },
@@ -394,7 +396,8 @@ export const transferStudent = async (groupId, studentId, targetGroupId) => {
       { group: groupId, student: studentId, leftAt: null, isDeleted: { $ne: true } },
       {
         $set: {
-          leftAt: new Date(),
+          // leftAt = chiqilgan kun yarim tuni (exclusive) - removeStudent bilan bir xil
+          leftAt: localTodayMidnight(),
           leftReason: "transferred",
           transferredTo: targetGroupId,
         },

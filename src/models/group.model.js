@@ -17,6 +17,11 @@ const scheduleItemSchema = new mongoose.Schema(
       required: true,
       match: [TIME_REGEX, "Vaqt formati noto'g'ri (HH:mm)"],
     },
+    // Jadval versiyalash: shu slot qaysi SANADAN boshlab amal qiladi.
+    // null → boshidan (eski/legacy slotlar). Davomat hisobida har sana uchun
+    // o'sha sanada AMAL QILGAN versiya ishlatiladi (tarixiy aniqlik), shunda
+    // jadval keyin o'zgartirilsa eski kunlardagi dars soni shishmaydi.
+    effectiveFrom: { type: Date, default: null },
   },
   { _id: false },
 );
@@ -53,11 +58,16 @@ const DAY_LABELS_UZ = {
 };
 
 groupSchema.pre("validate", function (next) {
-  // Bir kunda bir nechta dars (sessiya) bo'lishi mumkin, lekin bir xil
-  // (kun + boshlanish vaqti) takrorlanmasligi kerak.
+  // Bir kunda bir nechta dars (sessiya) bo'lishi mumkin. Versiyalash tufayli bir
+  // xil (kun + boshlanish vaqti) turli effectiveFrom bilan takrorlanishi MUMKIN
+  // (eski versiya + yangi versiya). Faqat bir xil (kun + vaqt + effectiveFrom)
+  // takrorlanmasligi kerak.
   const seen = new Set();
   for (const item of this.schedule || []) {
-    const key = `${item.day}-${item.startTime}`;
+    const effKey = item.effectiveFrom
+      ? new Date(item.effectiveFrom).getTime()
+      : "null";
+    const key = `${item.day}-${item.startTime}-${effKey}`;
     if (seen.has(key)) {
       const label = DAY_LABELS_UZ[item.day] || item.day;
       return next(

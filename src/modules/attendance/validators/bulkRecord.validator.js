@@ -14,6 +14,16 @@ export const bulkRecordSchema = z.object({
   body: z.object({
     date: recordDateSchema,
     slot: slotSchema.optional(), // sessiya: "" yoki "HH:mm"
-    items: z.array(itemSchema).min(1, "Hech bo'lmaganda bitta yozuv kerak"),
+    items: z
+      .array(itemSchema)
+      .min(1, "Hech bo'lmaganda bitta yozuv kerak")
+      // Bitta guruhda yuzlab o'quvchi bo'lmaydi; cheksiz items - ortiqcha DB yuki.
+      .max(500, "Bir martada 500 tadan ortiq yozuv yuborib bo'lmaydi")
+      // Takroriy studentId - audit history'ni buzadi (service'da ham tekshiriladi)
+      .refine(
+        (items) =>
+          new Set(items.map((it) => String(it.studentId))).size === items.length,
+        { message: "Bir o'quvchi bir necha marta yuborildi" },
+      ),
   }),
 });
