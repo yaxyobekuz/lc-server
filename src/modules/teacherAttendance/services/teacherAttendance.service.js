@@ -3,12 +3,12 @@
 //
 // Ikkita kolleksiya ataylab ishlatiladi va ROLLARI HAR XIL:
 //   1) TeacherAttendance  → MANBA-HAQIQAT. Har (teacher, dateKey) uchun bitta
-//      kunlik yozuv. Holatlar: present | absent | excused ("exempt" YO'Q —
+//      kunlik yozuv. Holatlar: present | absent | excused ("exempt" YO'Q -
 //      o'qituvchida imtiyoz tushunchasi bo'lmaydi). Owner shu yerda belgilaydi.
 //   2) TeacherAbsence     → PROYEKSIYA. Bu yozuvdan kelib chiqib, dars kuni bo'lgan
 //      har bir GURUH uchun "o'qituvchi kelmadi" belgisi (maosh/chegirma hisobiga).
 //      syncTeacherGroupAbsences() orqali TeacherAttendance'dan AVTOMATIK hosil
-//      qilinadi — uni mustaqil "haqiqat" sifatida YOZMANG.
+//      qilinadi - uni mustaqil "haqiqat" sifatida YOZMANG.
 //
 // Ya'ni: yoz → TeacherAttendance; o'qi (guruh darajasi) → TeacherAbsence (derived).
 // Kelajak-kun qo'riqlovi student davomati bilan bir xil: localTodayKey (Asia/Tashkent).
@@ -87,7 +87,7 @@ export const bulkRecord = async (dateInput, items, currentUser) => {
   if (Number.isNaN(date.getTime())) throw new ApiError(400, "Sana noto'g'ri");
   const dateKey = dateKeyOf(date);
   // Kelajak kun uchun davomat belgilanmaydi (o'tmishni tuzatish mumkin).
-  // "Bugun" — mahalliy (Asia/Tashkent) kun, student davomati bilan bir xil.
+  // "Bugun" - mahalliy (Asia/Tashkent) kun, student davomati bilan bir xil.
   if (dateKey > localTodayKey()) {
     throw new ApiError(400, "Kelajak kun uchun davomat belgilab bo'lmaydi");
   }

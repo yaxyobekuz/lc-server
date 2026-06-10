@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 
 // "Arxiv" (soft-delete) bayrog'i: o'chirish o'rniga isDeleted=true.
-// Auto query-filter QO'YILMAYDI (aggregate/stats buzilmasligi uchun) —
+// Auto query-filter QO'YILMAYDI (aggregate/stats buzilmasligi uchun) -
 // har bir servis ro'yxatda isDeleted ni ochiq filtrlaydi.
 export default function softDeletePlugin(schema) {
   schema.add({

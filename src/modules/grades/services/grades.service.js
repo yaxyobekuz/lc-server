@@ -121,7 +121,7 @@ const runWithSession = async (fn) => {
       }
       session.endSession();
     }
-    // Standalone Mongo (transaction yo'q) — sessiyasiz qayta urinamiz
+    // Standalone Mongo (transaction yo'q) - sessiyasiz qayta urinamiz
     if (err?.code === 20 || err?.codeName === "IllegalOperation") {
       return fn(null);
     }

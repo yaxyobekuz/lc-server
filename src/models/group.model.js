@@ -28,9 +28,9 @@ const groupSchema = new mongoose.Schema(
     teachers: [
       { type: mongoose.Schema.Types.ObjectId, ref: "User", index: true },
     ],
-    // Dars boshlanish sanasi — undan oldin davomat hisoblanmaydi.
+    // Dars boshlanish sanasi - undan oldin davomat hisoblanmaydi.
     startDate: { type: Date, default: null },
-    // Kurs davomiyligi (oy) — ma'lumot uchun (mas. 10 oylik / 12 oylik).
+    // Kurs davomiyligi (oy) - ma'lumot uchun (mas. 10 oylik / 12 oylik).
     durationMonths: { type: Number, default: null, min: 0 },
     // Kurs holati. "finished" → davomat to'xtaydi (finishedAt'dan keyin).
     status: { type: String, enum: ["active", "finished"], default: "active", index: true },

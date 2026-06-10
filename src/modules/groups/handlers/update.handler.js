@@ -6,7 +6,7 @@ const update = asyncHandler(async (req, res) => {
   let message = "Saqlandi";
   const pc = data?.priceChange;
   if (pc && pc.repriced > 0) {
-    message = `Saqlandi — joriy oy uchun ${pc.repriced} ta hisob yangi narxga moslandi`;
+    message = `Saqlandi - joriy oy uchun ${pc.repriced} ta hisob yangi narxga moslandi`;
   }
   res.json({ success: true, data, message });
 });

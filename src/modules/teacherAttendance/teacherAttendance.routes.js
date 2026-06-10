@@ -13,7 +13,7 @@ import bulkRecord from "./handlers/bulkRecord.handler.js";
 
 const router = Router();
 
-// O'qituvchilarning kelgan/kelmaganini boshqarish — maoshga ta'sir qiladi,
+// O'qituvchilarning kelgan/kelmaganini boshqarish - maoshga ta'sir qiladi,
 // shuning uchun FAQAT boshqaruv ruxsati (owner). Oddiy o'qituvchi boshqa
 // o'qituvchini belgilay olmaydi.
 router.get(

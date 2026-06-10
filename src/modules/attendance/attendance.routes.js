@@ -40,10 +40,10 @@ import dashboard from "./handlers/dashboard.handler.js";
 
 const router = Router();
 
-// Teacher uchun maxsus (o'z guruhlari summary'si — handler ichida scope qilinadi)
+// Teacher uchun maxsus (o'z guruhlari summary'si - handler ichida scope qilinadi)
 router.get("/teacher/me/summary", requireAuth, validate(rangeQuerySchema), teacherSummary);
 
-// Markaz miqyosidagi hisobotlar — FAQAT boshqaruv ruxsati (owner). Oddiy
+// Markaz miqyosidagi hisobotlar - FAQAT boshqaruv ruxsati (owner). Oddiy
 // ATTENDANCE_READ (o'qituvchilarda bor) markaz-bo'ylab ma'lumotga yo'l ochmasin.
 router.get(
   "/dashboard",
@@ -116,7 +116,7 @@ router.post(
   bulkRecord,
 );
 
-// O'qituvchi davomati (keldi/kelmadi) — kelmagan kun uchun o'quvchilarga dars haqi qaytariladi
+// O'qituvchi davomati (keldi/kelmadi) - kelmagan kun uchun o'quvchilarga dars haqi qaytariladi
 router.get(
   "/groups/:groupId/teacher",
   requireAuth,

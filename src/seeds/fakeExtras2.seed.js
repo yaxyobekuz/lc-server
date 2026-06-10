@@ -101,7 +101,7 @@ const seed = async () => {
     recurring("Yangi yil", 1, 1, "Yangi yil bilan! Sizga sog'lik va omad."),
     recurring("Xalqaro xotin-qizlar kuni", 3, 8, "8-mart bilan tabriklaymiz!"),
     recurring("Navro'z bayrami", 3, 21, "Navro'z muborak bo'lsin!"),
-    recurring("Xotira va qadrlash kuni", 5, 9, "9-may — Xotira va qadrlash kuni."),
+    recurring("Xotira va qadrlash kuni", 5, 9, "9-may - Xotira va qadrlash kuni."),
     recurring("Mustaqillik kuni", 9, 1, "Mustaqillik bayrami muborak!"),
     recurring("O'qituvchi va murabbiylar kuni", 10, 1, "Bayramingiz bilan, hurmatli ustozlar!", "teachers"),
     recurring("Konstitutsiya kuni", 12, 8, "Konstitutsiya kuni muborak!"),
@@ -154,7 +154,7 @@ const seed = async () => {
   const taCount = await bulkInsert(TeacherAttendance, taDocs);
   logger.info(`${taCount} ta o'qituvchi davomati (absent/excused) yaratildi`);
 
-  // ───────── ATTENDANCE HISTORY (tahrirlangan yozuvlar — ✎ indikatori uchun) ─────────
+  // ───────── ATTENDANCE HISTORY (tahrirlangan yozuvlar - ✎ indikatori uchun) ─────────
   const attSample = await Attendance.find({ isDeleted: { $ne: true } })
     .select("status recordedBy recordedAt source")
     .limit(600)

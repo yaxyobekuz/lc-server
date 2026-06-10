@@ -15,7 +15,7 @@ const notificationRecipientSchema = new mongoose.Schema(
       index: true,
     },
     // Platforma ichidagi inbox'da ko'rinsinmi (notification.channels.inapp dan
-    // denormalizatsiya). false bo'lsa — faqat Telegram orqali yetkaziladi.
+    // denormalizatsiya). false bo'lsa - faqat Telegram orqali yetkaziladi.
     inapp: { type: Boolean, default: true },
     readAt: { type: Date, default: null },
     botDeliveredAt: { type: Date, default: null },

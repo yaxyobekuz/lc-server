@@ -46,7 +46,7 @@ const reasonOf = (err) =>
   err?.response?.body?.description || err?.message || "send-failed";
 
 // Bitta chatId ga yetkazish. telegramId berilsa, blok holatida foydalanuvchini belgilaydi.
-// Qaytadi: { ok, reason?, transient? } — transient=true bo'lsa terminal sifatida saqlanmaydi.
+// Qaytadi: { ok, reason?, transient? } - transient=true bo'lsa terminal sifatida saqlanmaydi.
 export const deliverToChat = async ({ chatId, telegramId }, payload) => {
   const bot = getBot();
   if (!bot) return { ok: false, reason: "bot-not-running", transient: true };
@@ -56,7 +56,7 @@ export const deliverToChat = async ({ chatId, telegramId }, payload) => {
     await bot.sendMessage(chatId, text);
     return { ok: true };
   } catch (err) {
-    // 429 — rate limit: retry_after kutib bir marta qayta urinamiz
+    // 429 - rate limit: retry_after kutib bir marta qayta urinamiz
     if (err?.response?.statusCode === 429) {
       const wait = Math.min((retryAfterOf(err) || 1) * 1000, 5000);
       await sleep(wait);
@@ -81,7 +81,7 @@ export const deliverToChat = async ({ chatId, telegramId }, payload) => {
   }
 };
 
-// Bitta foydalanuvchiga (userId) yetkazish — bog'langan BotUser orqali
+// Bitta foydalanuvchiga (userId) yetkazish - bog'langan BotUser orqali
 export const deliverToUser = async (userId, payload) => {
   if (!userId) return { ok: false, reason: "no-bot-link" };
   const bu = await BotUser.findOne({ user: userId }).lean();

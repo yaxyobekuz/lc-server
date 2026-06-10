@@ -45,7 +45,7 @@ const attendanceSchema = new mongoose.Schema(
       enum: ATTENDANCE_SOURCES,
       default: "teacher",
     },
-    // Holat o'zgarishlari tarixi (audit) — kim, qachon, nimadan nimaga o'zgartirdi.
+    // Holat o'zgarishlari tarixi (audit) - kim, qachon, nimadan nimaga o'zgartirdi.
     // O'tmishni keyinroq tahrirlash imkoni borligi uchun manipulyatsiyani kuzatish.
     history: {
       type: [
@@ -67,7 +67,7 @@ const attendanceSchema = new mongoose.Schema(
 );
 
 // Bir (group, student, dateKey, slot) uchun faqat bitta AKTIV yozuv.
-// slot — kunda bir nechta sessiya bo'lsa ajratadi (bir slotli kun uchun "").
+// slot - kunda bir nechta sessiya bo'lsa ajratadi (bir slotli kun uchun "").
 // Partial: soft-deleted yozuvlar unique cheklovga kirmaydi.
 attendanceSchema.index(
   { group: 1, student: 1, dateKey: 1, slot: 1 },

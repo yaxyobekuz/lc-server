@@ -3,7 +3,7 @@ import ApiError from "../utils/ApiError.js";
 
 // O'quvchining faol (leftAt=null) guruh a'zoligi bormi.
 // isDeleted filtri shart (P-9): soft-delete qilingan a'zolik "faol" deb
-// sanalmasligi kerak — aks holda o'chirilgan o'quvchi tekshiruvdan o'tib ketardi.
+// sanalmasligi kerak - aks holda o'chirilgan o'quvchi tekshiruvdan o'tib ketardi.
 export const hasActiveGroup = async (studentId, session) => {
   const query = GroupMembership.exists({
     student: studentId,

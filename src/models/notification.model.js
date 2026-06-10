@@ -26,12 +26,12 @@ export const AUDIENCE_TYPES = [
 
 export const SENDER_ROLES = ["owner", "teacher", "system"];
 
-// Yetkazish kanallari: "inapp" — platforma ichidagi inbox, "telegram" — bot DM.
+// Yetkazish kanallari: "inapp" - platforma ichidagi inbox, "telegram" - bot DM.
 export const NOTIFICATION_CHANNELS = ["inapp", "telegram"];
 
-// Yuborish holati: "sent" — yuborilgan (yoki yetkazilmoqda),
-// "scheduled" — kelajakdagi vaqtga rejalashtirilgan,
-// "canceled" — rejadan bekor qilingan.
+// Yuborish holati: "sent" - yuborilgan (yoki yetkazilmoqda),
+// "scheduled" - kelajakdagi vaqtga rejalashtirilgan,
+// "canceled" - rejadan bekor qilingan.
 export const NOTIFICATION_STATUSES = ["sent", "scheduled", "canceled"];
 
 const audienceSchema = new mongoose.Schema(
@@ -74,7 +74,7 @@ const notificationSchema = new mongoose.Schema(
       type: [{ type: String, enum: NOTIFICATION_CHANNELS }],
       default: () => ["inapp", "telegram"],
     },
-    // Yuborish holati va rejalashtirilgan vaqt (darhol yuborilsa — null).
+    // Yuborish holati va rejalashtirilgan vaqt (darhol yuborilsa - null).
     status: {
       type: String,
       enum: NOTIFICATION_STATUSES,
@@ -101,7 +101,7 @@ const notificationSchema = new mongoose.Schema(
 notificationSchema.index({ sender: 1, sentAt: -1 });
 notificationSchema.index({ category: 1, sentAt: -1 });
 notificationSchema.index({ sentAt: -1 });
-// dedupeKey unique — faqat qiymat bor bo'lganda (partial)
+// dedupeKey unique - faqat qiymat bor bo'lganda (partial)
 notificationSchema.index(
   { dedupeKey: 1 },
   { unique: true, partialFilterExpression: { dedupeKey: { $type: "string" } } },

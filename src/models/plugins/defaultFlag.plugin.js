@@ -1,5 +1,5 @@
 // Lookup (select) modellariga "asosiy/default" bayrog'ini qo'shadi.
-// Bitta hujjat default bo'lishi mumkin — yangisini belgilaganda eskisi tozalanadi.
+// Bitta hujjat default bo'lishi mumkin - yangisini belgilaganda eskisi tozalanadi.
 export default function defaultFlagPlugin(schema) {
   schema.add({
     isDefault: { type: Boolean, default: false },

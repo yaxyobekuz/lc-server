@@ -33,12 +33,12 @@ export const sendSchema = z.object({
     body: z.string().max(2000).optional(),
     category: z.enum(CATEGORIES).optional(),
     templateId: z.string().optional(),
-    // Yetkazish kanallari — kamida bittasi. Berilmasa eski xulq: ikkalasi.
+    // Yetkazish kanallari - kamida bittasi. Berilmasa eski xulq: ikkalasi.
     channels: z
       .array(z.enum(["inapp", "telegram"]))
       .min(1, "Kamida bitta kanal tanlang")
       .optional(),
-    // Kelajakdagi vaqtga rejalashtirish (ISO sana). Berilmasa — darhol.
+    // Kelajakdagi vaqtga rejalashtirish (ISO sana). Berilmasa - darhol.
     scheduleAt: z.coerce.date().optional(),
     audience: audienceShape,
   }),

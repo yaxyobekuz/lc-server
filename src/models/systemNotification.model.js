@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 
-// Tizim bildirishnomalari — global oqim (foydalanuvchiga bog'lanmagan).
+// Tizim bildirishnomalari - global oqim (foydalanuvchiga bog'lanmagan).
 // Jami document soni MAX_SYSTEM_NOTIFICATIONS bilan cheklanadi (serviceda).
 const systemNotificationSchema = new mongoose.Schema(
   {

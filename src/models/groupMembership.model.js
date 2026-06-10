@@ -30,7 +30,7 @@ const groupMembershipSchema = new mongoose.Schema(
 );
 
 // Bir vaqtda bir (group, student) juftligi uchun faqat bitta FAOL (active) membership.
-// MUHIM: soft-delete qilingan (isDeleted=true) yozuvlar slotni band qilmasligi kerak —
+// MUHIM: soft-delete qilingan (isDeleted=true) yozuvlar slotni band qilmasligi kerak -
 // aks holda eski "o'chirilgan" a'zolik tufayli o'quvchini qayta qo'shib/ko'chirib bo'lmaydi
 // (E11000 yoki "allaqachon shu guruhda" xatosi chiqib, o'quvchi guruhda ko'rinmay qoladi).
 groupMembershipSchema.index(

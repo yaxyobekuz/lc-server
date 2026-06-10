@@ -79,7 +79,7 @@ export const listForGroupOnDate = async (groupId, dateInput, slotInput = null) =
   const isClassDay =
     daySlots.length > 0 && withinCourseBounds(group, date) && !isHoliday;
 
-  // Active memberships shu sanada — joinedAt kun ichida bo'lsa ham qamrab olish uchun kun oxiri bilan solishtiramiz
+  // Active memberships shu sanada - joinedAt kun ichida bo'lsa ham qamrab olish uchun kun oxiri bilan solishtiramiz
   const dayEnd = new Date(date.getTime() + 24 * 60 * 60 * 1000);
   const memberships = await GroupMembership.find({
     group: groupId,
@@ -153,7 +153,7 @@ export const listForGroupOnDate = async (groupId, dateInput, slotInput = null) =
     isClassDay,
     isHoliday,
     slots: daySlots, // orqaga-moslik
-    sessions, // [{ slot, startTime, endTime }] — kunning sessiyalari
+    sessions, // [{ slot, startTime, endTime }] - kunning sessiyalari
     slot: selectedSlot, // tanlangan sessiya
     rows,
   };
@@ -223,7 +223,7 @@ export const bulkRecord = async (
   const dKey = dateKeyOf(date);
 
   // Kelajak sana uchun davomat belgilanmaydi (o'tmishni tuzatish mumkin).
-  // "Bugun" mahalliy (Asia/Tashkent) kalendar kuni bo'yicha — yarim tundan keyin
+  // "Bugun" mahalliy (Asia/Tashkent) kalendar kuni bo'yicha - yarim tundan keyin
   // ham bugungi davomat belgilanishi uchun.
   if (date.getTime() > localTodayMidnight().getTime()) {
     throw new ApiError(400, "Kelajak kun uchun davomat belgilab bo'lmaydi");
@@ -239,7 +239,7 @@ export const bulkRecord = async (
     );
   }
 
-  // Faqat guruhning dars kunlari belgilanadi (dars vaqti o'tgan/oldin — farqi yo'q)
+  // Faqat guruhning dars kunlari belgilanadi (dars vaqti o'tgan/oldin - farqi yo'q)
   const dow = dayOfWeekOf(date);
   const daySlots = (group.schedule || []).filter((s) => s.day === dow);
   if (daySlots.length === 0) {
@@ -255,7 +255,7 @@ export const bulkRecord = async (
   }
   // Jadval 1→ko'p slotga o'zgargan bo'lsa, eski yozuvlar slot="" bilan qolgan.
   // Ko'p slotli kunning BIRINCHI sloti uchun shu eski yozuvlarni yangi slotga
-  // ko'chiramiz — aks holda slot="" yozuv "yetim" qolib, alohida (phantom)
+  // ko'chiramiz - aks holda slot="" yozuv "yetim" qolib, alohida (phantom)
   // yozuv paydo bo'lardi (BUG-03 double-count).
   const isFirstSlotOfDay =
     daySlots.length > 1 &&
@@ -277,10 +277,10 @@ export const bulkRecord = async (
     );
   }
 
-  // Bayram/dam olish kuni — davomat belgilanmaydi (foizga ham ta'sir qilmaydi)
+  // Bayram/dam olish kuni - davomat belgilanmaydi (foizga ham ta'sir qilmaydi)
   const holidaySet = await holidayKeySetForRange(date, date);
   if (isHolidayOn(holidaySet, date)) {
-    throw new ApiError(400, "Bu kun bayram/dam olish kuni — davomat belgilanmaydi");
+    throw new ApiError(400, "Bu kun bayram/dam olish kuni - davomat belgilanmaydi");
   }
 
   if (!Array.isArray(items) || items.length === 0) {
@@ -326,7 +326,7 @@ export const bulkRecord = async (
     }
   }
 
-  // Audit: mavjud yozuvlarni oldindan olamiz — holat o'zgarsa tarixga yozish uchun
+  // Audit: mavjud yozuvlarni oldindan olamiz - holat o'zgarsa tarixga yozish uchun
   const existing = await Attendance.find({
     group: groupId,
     student: { $in: studentIds },
@@ -351,7 +351,7 @@ export const bulkRecord = async (
           recordedBy: currentUser._id,
           recordedAt: new Date(),
           source,
-          isDeleted: false, // qayta belgilansa — soft-delete bekor qilinadi
+          isDeleted: false, // qayta belgilansa - soft-delete bekor qilinadi
         },
         $setOnInsert: {
           group: groupId,
@@ -388,7 +388,7 @@ export const bulkRecord = async (
         });
       } catch (err) {
         // Bir vaqtning o'zida birinchi marta saqlanganda unique-index poygasi:
-        // yozuv endi mavjud — upsert'siz qayta urinib ko'ramiz.
+        // yozuv endi mavjud - upsert'siz qayta urinib ko'ramiz.
         if (err?.code === 11000) {
           delete update.$setOnInsert;
           doc = await Attendance.findOneAndUpdate(filter, update, {
@@ -407,7 +407,7 @@ export const bulkRecord = async (
   // Davomat o'zgardi → correlation cache'ni shu oy uchun bekor qilamiz
   correlationCacheInvalidate(date.getUTCFullYear(), date.getUTCMonth() + 1);
 
-  // Ketma-ket qoldirish ogohlantirishi (yangi "absent" bo'lganlar uchun) — bloklamaydi
+  // Ketma-ket qoldirish ogohlantirishi (yangi "absent" bo'lganlar uchun) - bloklamaydi
   notifyConsecutiveAbsences({ group, items, existingMap, dateKey: dKey }).catch(
     (err) =>
       logger.warn({ err }, "Ketma-ket qoldirish ogohlantirishi yuborilmadi"),
@@ -484,7 +484,7 @@ const buildStudentClassDays = async (
   scopeGroupIds = null,
 ) => {
   // Shu oraliqda active bo'lgan memberships.
-  // scopeGroupIds berilsa (o'qituvchi so'rovi) — faqat shu guruhlar bilan
+  // scopeGroupIds berilsa (o'qituvchi so'rovi) - faqat shu guruhlar bilan
   // cheklaymiz, aks holda o'qituvchi o'zi o'qitmaydigan guruhlardagi
   // davomatni ham ko'rib qolardi (A-1 cross-group disclosure).
   const membershipFilter = {
@@ -517,7 +517,7 @@ const buildStudentClassDays = async (
       m.joinedAt > rangeStart ? toUtcMidnight(m.joinedAt) : rangeStart;
     let effTo =
       m.leftAt && m.leftAt < rangeEnd ? toUtcMidnight(m.leftAt) : rangeEnd;
-    // Guruh yakunlangan bo'lsa — finishedAt'dan keyin dars kuni yo'q
+    // Guruh yakunlangan bo'lsa - finishedAt'dan keyin dars kuni yo'q
     if (m.group.finishedAt) {
       const fin = toUtcMidnight(m.group.finishedAt);
       if (fin < effTo) effTo = fin;
@@ -555,7 +555,7 @@ const buildStudentClassDays = async (
     dateKey: { $in: Array.from(dKeys) },
     isDeleted: { $ne: true },
   });
-  // group|dateKey -> Map(slot -> att) — slot-fallback (jadval o'zgarishi) uchun
+  // group|dateKey -> Map(slot -> att) - slot-fallback (jadval o'zgarishi) uchun
   const byDay = buildAttBySlot(attendances);
 
   for (const g of groups) {
@@ -625,8 +625,8 @@ export const getGroupMonthly = async (groupId, { year, month }) => {
 
   const holidaySet = await holidayKeySetForRange(monthStart, monthEnd);
 
-  // Har ustun bitta SESSIYA: kunda bir nechta dars bo'lsa — bir nechta ustun.
-  // colKey — kataklar kaliti (bir slotli/no-class kunda = dateKey; ko'p slotli kunda = dateKey__HH:mm)
+  // Har ustun bitta SESSIYA: kunda bir nechta dars bo'lsa - bir nechta ustun.
+  // colKey - kataklar kaliti (bir slotli/no-class kunda = dateKey; ko'p slotli kunda = dateKey__HH:mm)
   const dates = [];
   const dateKeys = new Set();
   const cur = new Date(monthStart);
@@ -695,7 +695,7 @@ export const getGroupMonthly = async (groupId, { year, month }) => {
     }),
   ]);
 
-  // student|dateKey -> Map(slot -> att) — slot-fallback (jadval o'zgarishi) uchun
+  // student|dateKey -> Map(slot -> att) - slot-fallback (jadval o'zgarishi) uchun
   const attByStudentDay = new Map();
   for (const a of attendances) {
     const k = `${String(a.student)}|${a.dateKey}`;
@@ -717,9 +717,9 @@ export const getGroupMonthly = async (groupId, { year, month }) => {
 
   // Bir o'quvchining bir oy ichida bir nechta a'zoligi bo'lishi mumkin
   // (guruhdan chiqarilib, keyin qayta qabul qilingan holatda). Ularni BITTA
-  // qatorga birlashtiramiz — aks holda o'quvchi davomat jadvalida ikki marta
+  // qatorga birlashtiramiz - aks holda o'quvchi davomat jadvalida ikki marta
   // (dublikat) ko'rinardi. Har bir o'quvchi uchun barcha [joined, left]
-  // oraliqlarini saqlaymiz va katak shu oraliqlarning birortasiga tushsa — faol.
+  // oraliqlarini saqlaymiz va katak shu oraliqlarning birortasiga tushsa - faol.
   const byStudent = new Map();
   for (const m of activeMemberships) {
     const sid = String(m.student._id);
@@ -756,7 +756,7 @@ export const getGroupMonthly = async (groupId, { year, month }) => {
         cells[key] = null;
         continue;
       }
-      // Muzlatilgan kun — dars kuni hisoblanmaydi
+      // Muzlatilgan kun - dars kuni hisoblanmaydi
       if (isFrozenOn(stuFreezes, d.date)) {
         cells[key] = null;
         continue;
@@ -812,9 +812,9 @@ export const getGroupMonthly = async (groupId, { year, month }) => {
 // ─── davomat foizi (yagona ta'rif) ───
 // Surat  = kelgan (present)
 // Maxraj = present + absent   → BELGILANGAN, hisobga olinadigan kunlar
-//   • exempt (imtiyoz) — maxrajdan tashqarida (foizga ta'sir qilmaydi)
-//   • excused (sababli) — maxrajdan tashqarida (o'quvchini jazolamaydi)
-//   • unmarked (belgilanmagan) — counts'ga umuman tushmaydi → maxrajga kirmaydi
+//   • exempt (imtiyoz) - maxrajdan tashqarida (foizga ta'sir qilmaydi)
+//   • excused (sababli) - maxrajdan tashqarida (o'quvchini jazolamaydi)
+//   • unmarked (belgilanmagan) - counts'ga umuman tushmaydi → maxrajga kirmaydi
 //     (o'qituvchi belgilamagani o'quvchining foizini pasaytirmaydi)
 // Eslatma: tizimda "late" alohida status emas (kechikish lateMinutes maydonida
 // saqlanadi), shuning uchun foiz hisobida "late" qatnashmaydi.
@@ -841,7 +841,7 @@ const buildSummaryFromBuckets = (counts) => {
 };
 
 // Pure: membership + exemption ro'yxatidan [from,to] oralig'idagi class-day cell'lar.
-// holidaySet — bayram kunlari (dateKey) class-day deb hisoblanmaydi.
+// holidaySet - bayram kunlari (dateKey) class-day deb hisoblanmaydi.
 const computeClassDays = ({
   memberships,
   exemptions,
@@ -854,7 +854,7 @@ const computeClassDays = ({
   let exemptDefault = 0;
   const cells = [];
   // Bitta o'quvchining bir nechta a'zoligi (chiqarib-qayta qabul qilingan)
-  // bir xil kunni qamrab olishi mumkin — har bir (group, dateKey, slot) katagini
+  // bir xil kunni qamrab olishi mumkin - har bir (group, dateKey, slot) katagini
   // faqat bir marta sanaymiz (dublikat / ikki marta hisoblanmasin).
   const seenCells = new Set();
 
@@ -889,7 +889,7 @@ const computeClassDays = ({
   return { total, exemptDefault, cells };
 };
 
-// Attendance yozuvlarini (group, dateKey) bo'yicha guruhlaydi — slot-fallback uchun.
+// Attendance yozuvlarini (group, dateKey) bo'yicha guruhlaydi - slot-fallback uchun.
 // Map: "group|dateKey" -> Map(slot -> doc)
 const buildAttBySlot = (attendances) => {
   const byDay = new Map();
@@ -902,7 +902,7 @@ const buildAttBySlot = (attendances) => {
 };
 
 // Berilgan cell uchun attendance yozuvini topadi.
-// Avval aniq slot bo'yicha; topilmasa — guruh jadvali keyinroq o'zgargan
+// Avval aniq slot bo'yicha; topilmasa - guruh jadvali keyinroq o'zgargan
 // (1 slot → ko'p slot) holatda eski slot="" yozuvini SHU KUNNING birinchi
 // slotiga bog'laydi. Shunday qilib jadval o'zgarganda eski yozuv yo'qolmaydi
 // va bir kun ikki marta sanalmaydi. Ishlatilgan yozuv used setiga qo'shiladi.
@@ -925,7 +925,7 @@ const matchAttendanceForCell = (byDay, cell, used) => {
 };
 
 // Pure: class-day cell'lar + attendance yozuvlaridan summary. attendances cell'lardan
-// keng bo'lishi mumkin — faqat mos group|dateKey lar hisobga olinadi.
+// keng bo'lishi mumkin - faqat mos group|dateKey lar hisobga olinadi.
 const summarizeCells = ({ total, cells, attendances }) => {
   if (total === 0) {
     return buildSummaryFromBuckets({
@@ -972,7 +972,7 @@ export const getStudentSummary = async (
   const from = parseLocalDay(fromDate);
   const to = parseLocalDay(toDate);
 
-  // scopeGroupIds berilsa (o'qituvchi) — faqat shu guruhlar (A-1 fix)
+  // scopeGroupIds berilsa (o'qituvchi) - faqat shu guruhlar (A-1 fix)
   const membershipFilter = {
     student: studentId,
     joinedAt: { $lte: to },
@@ -1052,7 +1052,7 @@ export const getGroupSummary = async (groupId, { fromDate, toDate }) => {
   }
 
   // Bir o'quvchining bir nechta a'zoligini (chiqarilib, qayta qabul qilingan)
-  // BITTA o'quvchi sifatida birlashtiramiz — aks holda hisobotda dublikat
+  // BITTA o'quvchi sifatida birlashtiramiz - aks holda hisobotda dublikat
   // qator chiqib, davomat ikki marta sanalardi.
   const membershipsByStudent = new Map(); // sid -> { student, intervals: [{joinedAt,leftAt}] }
   for (const m of memberships) {
@@ -1181,8 +1181,8 @@ export const getDashboardStats = async ({ fromDate, toDate, page = 1, limit = 20
     (id) => new mongoose.Types.ObjectId(id),
   );
 
-  // Shu o'quvchilarning BARCHA membershiplari + exemptions + attendances — 3 so'rov, N+1 yo'q.
-  // (per-student summary cross-group hisoblanadi — getStudentSummary bilan bir xil)
+  // Shu o'quvchilarning BARCHA membershiplari + exemptions + attendances - 3 so'rov, N+1 yo'q.
+  // (per-student summary cross-group hisoblanadi - getStudentSummary bilan bir xil)
   const [allMemberships, exemptions, attendances, holidaySet, allFreezes] =
     await Promise.all([
       GroupMembership.find({
@@ -1224,7 +1224,7 @@ export const getDashboardStats = async ({ fromDate, toDate, page = 1, limit = 20
     if (m.student) studentDocById.set(String(m.student._id), m.student);
   }
 
-  // ── Per-o'quvchi (cross-group) summary — overall + studentList uchun, HAR BIRI BIR MARTA ──
+  // ── Per-o'quvchi (cross-group) summary - overall + studentList uchun, HAR BIRI BIR MARTA ──
   // (att-correctness-2: oldin har guruh a'zoligi uchun takror qo'shilib, ko'p guruhdagi
   //  o'quvchi sonlarini N marta shishirardi)
   let aggregate = {
@@ -1271,7 +1271,7 @@ export const getDashboardStats = async ({ fromDate, toDate, page = 1, limit = 20
     });
   }
 
-  // ── Guruh breakdown — HAR BIR (o'quvchi,guruh) SHU GURUH bo'yicha alohida hisoblanadi ──
+  // ── Guruh breakdown - HAR BIR (o'quvchi,guruh) SHU GURUH bo'yicha alohida hisoblanadi ──
   // (att-correctness-1: oldin cross-group summary guruhga qo'shilib, guruh foizига
   //  begona guruhlar davomatini aralashtirardi)
   const membershipsByGroup = groupBy(
@@ -1371,7 +1371,7 @@ export const getDashboardStats = async ({ fromDate, toDate, page = 1, limit = 20
 };
 
 // ─── consecutive absences ───
-// groupId berilsa — faqat shu guruh bo'yicha (aks holda barcha guruhlar bo'yicha).
+// groupId berilsa - faqat shu guruh bo'yicha (aks holda barcha guruhlar bo'yicha).
 // Soft-deleted va kelajak sanali yozuvlar hisobga olinmaydi.
 export const consecutiveAbsences = async (studentId, groupId = null) => {
   const filter = {

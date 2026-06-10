@@ -14,7 +14,7 @@ export const scheduleItem = z
     path: ["endTime"],
   });
 
-// Jadvalda bir kun faqat bir marta — duplikat day'larni rad qiladi
+// Jadvalda bir kun faqat bir marta - duplikat day'larni rad qiladi
 export const scheduleArray = z
   .array(scheduleItem)
   .superRefine((arr, ctx) => {

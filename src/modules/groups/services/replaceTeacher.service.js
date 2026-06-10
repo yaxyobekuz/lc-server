@@ -13,7 +13,7 @@ const toObjectId = (id) => {
   return new mongoose.Types.ObjectId(String(id));
 };
 
-// O'qituvchini boshqasiga almashtirish — group.teachers yangilanadi.
+// O'qituvchini boshqasiga almashtirish - group.teachers yangilanadi.
 export const replaceTeacher = async (groupId, body) => {
   const group = await Group.findById(groupId);
   if (!group || !group.isActive) throw new ApiError(404, "Guruh topilmadi");
@@ -39,7 +39,7 @@ export const replaceTeacher = async (groupId, body) => {
     throw new ApiError(400, "Yangi o'qituvchi noto'g'ri");
   }
 
-  // group.teachers — eskini yangisiga almashtiramiz
+  // group.teachers - eskini yangisiga almashtiramiz
   group.teachers = (group.teachers || []).map((t) =>
     String(t) === String(oldId) ? newId : t,
   );

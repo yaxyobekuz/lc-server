@@ -159,7 +159,7 @@ export const resolveAudience = async (audience, currentUser) => {
       break;
     }
     case "auto_system": {
-      // Auto job userIds beradi — boshqa branchlar kabi aktiv foydalanuvchilarga filtrlaymiz
+      // Auto job userIds beradi - boshqa branchlar kabi aktiv foydalanuvchilarga filtrlaymiz
       const ids = (audience.userIds || []).map(String);
       if (ids.length === 0) {
         recipientIds = [];
@@ -204,13 +204,13 @@ const runPool = async (items, concurrency, worker) => {
   await Promise.all(runners);
 };
 
-// Bot push — yetkazilmagan oluvchilarga partiyalab, cheklangan parallellik bilan.
+// Bot push - yetkazilmagan oluvchilarga partiyalab, cheklangan parallellik bilan.
 // Idempotent: faqat botDeliveredAt=null bo'lganlarni qayta uradi (job retry xavfsiz).
 export const deliverNotification = async (notificationId) => {
   const notif = await Notification.findById(notificationId).lean();
   if (!notif) return;
 
-  // Telegram kanali tanlanmagan bo'lsa — bot push qilinmaydi (faqat in-app).
+  // Telegram kanali tanlanmagan bo'lsa - bot push qilinmaydi (faqat in-app).
   const channels = notif.channels?.length ? notif.channels : ["inapp", "telegram"];
   if (!channels.includes("telegram")) return;
 
@@ -265,7 +265,7 @@ export const deliverNotification = async (notificationId) => {
         },
       });
     } else if (!res.transient) {
-      // transient (bot-not-running / 429) — terminal sifatida saqlamaymiz, keyin retry bo'ladi
+      // transient (bot-not-running / 429) - terminal sifatida saqlamaymiz, keyin retry bo'ladi
       ops.push({
         updateOne: {
           filter: { _id: r._id },
@@ -285,7 +285,7 @@ export const deliverNotification = async (notificationId) => {
 };
 
 // Yetkazishni so'rov oqimidan ajratamiz: Agenda job'iga qo'yamiz.
-// Agenda mavjud bo'lmasa (mas. test) — fonда (detached) bajaramiz.
+// Agenda mavjud bo'lmasa (mas. test) - fonда (detached) bajaramiz.
 const scheduleDelivery = async (notificationId) => {
   try {
     const agenda = (await import("../../../config/agenda.js")).default;
@@ -321,7 +321,7 @@ export const send = async (body, currentUser) => {
     throw new ApiError(400, "Xabar matni bo'sh bo'lmasligi kerak");
   }
 
-  // Idempotentlik: dedupeKey berilsa va shunday xabar mavjud bo'lsa — qayta yaratmaymiz
+  // Idempotentlik: dedupeKey berilsa va shunday xabar mavjud bo'lsa - qayta yaratmaymiz
   // (avto job'lar/qayta-urinishlar dublikat bildirishnoma yaratmasligi uchun)
   if (body.dedupeKey) {
     const existing = await Notification.findOne({ dedupeKey: body.dedupeKey });
@@ -334,11 +334,11 @@ export const send = async (body, currentUser) => {
       : "teacher"
     : "system";
 
-  // Kanallar — kamida bittasi (validator min(1)). Berilmasa eski xulq: ikkalasi.
+  // Kanallar - kamida bittasi (validator min(1)). Berilmasa eski xulq: ikkalasi.
   const channels =
     body.channels?.length ? [...new Set(body.channels)] : ["inapp", "telegram"];
 
-  // Rejalashtirish: scheduleAt kelajakda bo'lsa — hoziroq yubormaymiz.
+  // Rejalashtirish: scheduleAt kelajakda bo'lsa - hoziroq yubormaymiz.
   const scheduleAt = body.scheduleAt ? new Date(body.scheduleAt) : null;
   const isScheduled = scheduleAt && scheduleAt.getTime() > Date.now() + 30 * 1000;
 
@@ -365,18 +365,18 @@ export const send = async (body, currentUser) => {
 
   if (isScheduled) {
     // Recipient'lar va bot push job ishga tushganda materializatsiya qilinadi
-    // (shu vaqtga qadar auditoriya o'zgargan bo'lsa — eng so'nggi holat olinadi).
+    // (shu vaqtga qadar auditoriya o'zgargan bo'lsa - eng so'nggi holat olinadi).
     await scheduleSend(notification._id, scheduleAt);
     return notification;
   }
 
-  // Darhol yuborish — recipient'larni yaratamiz va bot push'ni navbatga qo'yamiz.
+  // Darhol yuborish - recipient'larni yaratamiz va bot push'ni navbatga qo'yamiz.
   await materializeRecipients(notification._id, recipientIds, channels);
   return Notification.findById(notification._id);
 };
 
 // Notification uchun recipient hujjatlarini yaratadi va (telegram tanlangan bo'lsa)
-// bot yetkazishni navbatga qo'yadi. Darhol va rejalashtirilgan yuborish — ikkovi ham
+// bot yetkazishni navbatga qo'yadi. Darhol va rejalashtirilgan yuborish - ikkovi ham
 // shu funksiyani chaqiradi. Idempotent emas: bir marta chaqirilishi ko'zda tutilgan.
 const materializeRecipients = async (notificationId, recipientIds, channels) => {
   const wantsInapp = channels.includes("inapp");
@@ -413,7 +413,7 @@ const scheduleSend = async (notificationId, when) => {
 
 // Rejalashtirilgan yuborish vaqti kelganda Agenda job tomonidan chaqiriladi:
 // auditoriyani QAYTA hisoblaydi (eng so'nggi holat), recipient'larni yaratadi,
-// holatni "sent" ga o'tkazadi va bot push'ni navbatga qo'yadi. Idempotent —
+// holatni "sent" ga o'tkazadi va bot push'ni navbatga qo'yadi. Idempotent -
 // status allaqachon "sent" bo'lsa hech nima qilmaydi.
 export const dispatchScheduled = async (notificationId) => {
   const notif = await Notification.findById(notificationId);
@@ -522,7 +522,7 @@ export const getMyInbox = async (
   { page = 1, limit = 20, unreadOnly = false } = {},
 ) => {
   // Faqat in-app kanali tanlangan xabarlar inbox'da ko'rinadi
-  // (eski yozuvlarda inapp maydoni yo'q — ularni ham ko'rsatamiz).
+  // (eski yozuvlarda inapp maydoni yo'q - ularni ham ko'rsatamiz).
   const filter = { user: userId, inapp: { $ne: false } };
   if (unreadOnly) filter.readAt = null;
 
@@ -572,7 +572,7 @@ export const markAllRead = async (userId) => {
 
   // Har bir notification bo'yicha recipient id'larini guruhlaymiz, so'ng
   // ATOMIK updateMany qilib FAQAT shu chaqiruvda haqiqatan o'zgargan sonni
-  // (modifiedCount) readCount'ga qo'shamiz — bir vaqtda kelgan markRead bilan
+  // (modifiedCount) readCount'ga qo'shamiz - bir vaqtda kelgan markRead bilan
   // ikki marta sanash poygasini oldini oladi.
   const byNotif = new Map();
   for (const d of docs) {

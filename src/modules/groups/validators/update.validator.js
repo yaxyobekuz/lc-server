@@ -11,7 +11,7 @@ export const updateSchema = z.object({
         .max(120, "120 belgidan oshmasligi kerak")
         .optional(),
       schedule: scheduleArray.optional(),
-      // Ko'pi bilan bitta o'qituvchi. Tahrirlashda o'qituvchi odatda yuborilmaydi —
+      // Ko'pi bilan bitta o'qituvchi. Tahrirlashda o'qituvchi odatda yuborilmaydi -
       // u "Almashtirish" orqali boshqariladi.
       teachers: z
         .array(z.string().min(1))

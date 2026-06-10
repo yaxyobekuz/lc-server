@@ -16,7 +16,7 @@ import create from "./handlers/create.handler.js";
 
 const router = Router();
 
-// Tizim bildirishnomalari — faqat owner uchun
+// Tizim bildirishnomalari - faqat owner uchun
 router.use(requireAuth, requireRole(ROLES.OWNER));
 
 router.get("/", validate(listSchema), list);

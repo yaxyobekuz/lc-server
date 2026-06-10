@@ -8,7 +8,7 @@ import search from "./handlers/search.handler.js";
 
 const router = Router();
 
-// Global qidiruv — o'quvchi/o'qituvchini ko'rish ruxsati bo'lganlar uchun
+// Global qidiruv - o'quvchi/o'qituvchini ko'rish ruxsati bo'lganlar uchun
 router.get(
   "/",
   requireAuth,

@@ -11,7 +11,7 @@ export const correlationCacheGet = async (key) => {
     const doc = await Cache.findOne({ key: PREFIX + key }).lean();
     if (doc && doc.expiresAt > new Date()) return doc.value;
   } catch {
-    /* kesh xatosi — shunchaki cache-miss deb hisoblaymiz */
+    /* kesh xatosi - shunchaki cache-miss deb hisoblaymiz */
   }
   return null;
 };
@@ -24,7 +24,7 @@ export const correlationCacheSet = async (key, data) => {
       { upsert: true },
     );
   } catch {
-    /* kesh yozib bo'lmadi — muhim emas */
+    /* kesh yozib bo'lmadi - muhim emas */
   }
 };
 

@@ -55,7 +55,7 @@ const computePoint = (avgGrade, attendanceRate, settings) => {
 
 // ─── Leaderboard ───
 // scope: "all" (barcha aktiv o'quvchilar) yoki groupId (shu guruh a'zolari).
-// fromDate/toDate ixtiyoriy — berilmasa "umrbod" (hamma vaqt).
+// fromDate/toDate ixtiyoriy - berilmasa "umrbod" (hamma vaqt).
 export const getLeaderboard = async ({
   scope = "all",
   fromDate,
@@ -95,8 +95,8 @@ export const getLeaderboard = async ({
     groupId,
   });
 
-  // Davomat foizi — har o'quvchi uchun (mavjud attendance summary).
-  // Sana berilmasa "umrbod" oraliq (2 yil orqaga … bugun) — attendance summary
+  // Davomat foizi - har o'quvchi uchun (mavjud attendance summary).
+  // Sana berilmasa "umrbod" oraliq (2 yil orqaga … bugun) - attendance summary
   // fromDate/toDate talab qiladi.
   const effFrom = fromDate || isoDaysAgo(730);
   const effTo = toDate || isoToday();

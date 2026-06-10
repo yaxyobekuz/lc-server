@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 
-// Instanslararo bo'linadigan kesh (MongoDB orqali). In-process Map o'rniga —
+// Instanslararo bo'linadigan kesh (MongoDB orqali). In-process Map o'rniga -
 // ko'p-instansli deploy'da ham invalidate hamma instansga ta'sir qiladi.
 // expiresAt TTL indeksi orqali avtomatik tozalanadi.
 const cacheSchema = new mongoose.Schema(

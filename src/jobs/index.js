@@ -15,11 +15,11 @@ import defineLowAttendanceDigest, {
 import defineNotificationDeliver from "./notificationDeliver.job.js";
 import defineNotificationSchedule from "./notificationSchedule.job.js";
 
-// Barcha cron jadvallari mahalliy (Asia/Tashkent) vaqt bo'yicha ishlaydi —
+// Barcha cron jadvallari mahalliy (Asia/Tashkent) vaqt bo'yicha ishlaydi -
 // server qaysi TZ da bo'lishidan qat'i nazar. Aks holda UTC serverда "20:00"
 // Toshkentда 01:00 da ishlab, NOTO'G'RI kunni qamrab olardi.
 const TZ = process.env.TZ_NAME || "Asia/Tashkent";
-// agenda.every(interval, name, data, options) — vaqt zonasini options'da beramiz
+// agenda.every(interval, name, data, options) - vaqt zonasini options'da beramiz
 const every = (cron, name) => agenda.every(cron, name, undefined, { timezone: TZ });
 
 export const startJobs = async () => {

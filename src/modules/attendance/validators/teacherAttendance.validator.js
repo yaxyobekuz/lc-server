@@ -9,7 +9,7 @@ export const teacherStatusSchema = z.object({
 export const teacherSetSchema = z.object({
   params: z.object({ groupId: z.string().min(1) }),
   body: z.object({
-    // Yozuv — qat'iy kalendar kuni (A-2 timezone fix)
+    // Yozuv - qat'iy kalendar kuni (A-2 timezone fix)
     date: recordDateSchema,
     present: z.coerce.boolean(),
   }),

@@ -1,7 +1,7 @@
 import SystemNotification from "../../../models/systemNotification.model.js";
 import ApiError from "../../../utils/ApiError.js";
 
-// Saqlanadigan maksimal bildirishnoma soni — oshganda eng eskilari o'chiriladi.
+// Saqlanadigan maksimal bildirishnoma soni - oshganda eng eskilari o'chiriladi.
 export const MAX_SYSTEM_NOTIFICATIONS = 100;
 
 // status: "all" | "read" | "unread"
@@ -43,7 +43,7 @@ export const markAllRead = async () => {
   return { modified: res.modifiedCount || 0 };
 };
 
-// Yangi tizim bildirishnomasi yaratish — boshqa modullar shu funksiyani chaqiradi.
+// Yangi tizim bildirishnomasi yaratish - boshqa modullar shu funksiyani chaqiradi.
 export const create = async ({ message, link = null } = {}) => {
   const text = String(message || "").trim();
   if (!text) throw new ApiError(400, "Bildirishnoma matni kerak");

@@ -10,7 +10,7 @@ const HOLDER = `${process.pid}-${Date.now()}`;
 let heartbeat = null;
 
 // Polling lock'ini olishga harakat qiladi. Xatolik bo'lsa fail-open: true qaytaradi
-// (bitta instans har doim ishlashi uchun — yo'q-polling regressiyasidan ko'ra
+// (bitta instans har doim ishlashi uchun - yo'q-polling regressiyasidan ko'ra
 //  ehtimoliy ikki-polling afzal).
 const acquirePollLock = async () => {
   try {
@@ -22,12 +22,12 @@ const acquirePollLock = async () => {
       { new: true },
     );
     if (updated) return true;
-    // Hujjat yo'q bo'lsa — yaratamiz; band bo'lsa E11000 -> false
+    // Hujjat yo'q bo'lsa - yaratamiz; band bo'lsa E11000 -> false
     await BotLock.create({ _id: LOCK_ID, holder: HOLDER, expiresAt });
     return true;
   } catch (err) {
     if (err?.code === 11000) return false; // boshqa instans ushlab turibdi
-    logger.warn({ err }, "Bot lock olishda xato — fail-open (polling yoqiladi)");
+    logger.warn({ err }, "Bot lock olishda xato - fail-open (polling yoqiladi)");
     return true;
   }
 };
@@ -57,7 +57,7 @@ export const startBot = async () => {
   const canPoll = await acquirePollLock();
   if (!canPoll) {
     logger.info(
-      "Boshqa instans Telegram polling qilyapti — bu instans faqat yuborish rejimida",
+      "Boshqa instans Telegram polling qilyapti - bu instans faqat yuborish rejimida",
     );
     return bot;
   }

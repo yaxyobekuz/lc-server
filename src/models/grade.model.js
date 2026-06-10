@@ -47,7 +47,7 @@ const gradeSchema = new mongoose.Schema(
       enum: GRADE_SOURCES,
       default: "teacher",
     },
-    // Ball o'zgarishlari tarixi (audit) — kim, qachon, nimadan nimaga.
+    // Ball o'zgarishlari tarixi (audit) - kim, qachon, nimadan nimaga.
     history: {
       type: [
         new mongoose.Schema(

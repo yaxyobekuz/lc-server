@@ -17,7 +17,7 @@ import TeacherAbsence from "../models/teacherAbsence.model.js";
 import BotUser from "../models/botUser.model.js";
 
 // Mavjud fake datani (fakeData.seed) to'ldiruvchi: bo'sh qolgan kolleksiyalar uchun
-// realistik data — notifications, notificationrecipients, teacherabsences, botusers.
+// realistik data - notifications, notificationrecipients, teacherabsences, botusers.
 // Mavjud user/guruh/invoice'larga bog'lanadi, ularni o'zgartirmaydi.
 
 const NOW = new Date();
@@ -146,7 +146,7 @@ const seed = async () => {
   const activeStudentIds = activeStudents.map((s) => s._id);
 
   // ---------- BOT USERS ----------
-  // telegramId — qat'iy o'suvchi (unique kafolati), 100M..2.1B oralig'ida
+  // telegramId - qat'iy o'suvchi (unique kafolati), 100M..2.1B oralig'ida
   let tg = 100_000_000 + randInt(0, 50_000_000);
   const nextTg = () => {
     tg += randInt(50, 4000);
@@ -179,7 +179,7 @@ const seed = async () => {
   };
 
   // user maydoni unique+sparse: bog'lanmaganlar uchun maydon UMUMAN tushiriladi
-  // (null bersak sparse ishlamaydi). Shuning uchun native driver bilan kiritamiz —
+  // (null bersak sparse ishlamaydi). Shuning uchun native driver bilan kiritamiz -
   // Mongoose default:null ni qo'shmasligi va createdAt ni orqaga sanash uchun.
   const linkedUserIdSet = new Set();
   const botDocs = [];
@@ -207,7 +207,7 @@ const seed = async () => {
   for (const s of sample(students, Math.round(students.length * 0.7))) makeLinkedBot(s);
   for (const t of sample(teachers, Math.round(teachers.length * 0.75))) makeLinkedBot(t);
 
-  // Bog'lanmagan (bot topgan, lekin akkaunt yo'q) ~15 ta — user maydoni yo'q
+  // Bog'lanmagan (bot topgan, lekin akkaunt yo'q) ~15 ta - user maydoni yo'q
   for (let i = 0; i < 15; i++) {
     const id = nextTg();
     const lastSeen = randDate(YEAR_AGO, addMinutes(NOW, -14 * 24 * 60));
@@ -230,7 +230,7 @@ const seed = async () => {
   logger.info(`${botDocs.length} ta bot user yaratildi (${linkedUserIdSet.size} bog'langan)`);
 
   // ---------- NOTIFICATIONS ----------
-  // Faol guruh a'zolari (leftAt=null) — guruh -> studentId[]
+  // Faol guruh a'zolari (leftAt=null) - guruh -> studentId[]
   const activeMemberships = await GroupMembership.find({ leftAt: null })
     .select("group student")
     .lean();

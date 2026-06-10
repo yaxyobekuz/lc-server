@@ -36,7 +36,7 @@ export const TZ_OFFSET_MIN = Number(process.env.TZ_OFFSET_MIN || 300);
 const shiftToLocal = (instant) =>
   new Date(new Date(instant).getTime() + TZ_OFFSET_MIN * 60 * 1000);
 
-// Mahalliy kalendar kuni (UTC-midnight ko'rinishida — saqlangan dateKey bilan mos)
+// Mahalliy kalendar kuni (UTC-midnight ko'rinishida - saqlangan dateKey bilan mos)
 export const localTodayMidnight = (now = new Date()) => {
   const s = shiftToLocal(now);
   return new Date(
@@ -58,7 +58,7 @@ export const parseLocalDay = (input) => {
   if (typeof input === "string" && DATE_KEY_RE.test(input)) {
     const [y, m, d] = input.split("-").map(Number);
     const dt = new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0));
-    // Date overflow qo'riqlovi (mas. 2026-02-31 → mart) — noto'g'ri sana rad etiladi
+    // Date overflow qo'riqlovi (mas. 2026-02-31 → mart) - noto'g'ri sana rad etiladi
     if (dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null;
     return dt;
   }
@@ -85,18 +85,18 @@ const iterateDays = function* (fromDate, toDate) {
 };
 
 // Guruh schedule asosida diapazondagi class SESSIYALARI (har biri alohida).
-// Kunda bir nechta dars (slot) bo'lsa — har sessiya alohida qaytadi.
+// Kunda bir nechta dars (slot) bo'lsa - har sessiya alohida qaytadi.
 //   • bir slotli kun  → slot = "" (eski xatti-harakat, bitta yozuv/kun)
 //   • ko'p slotli kun → har slot uchun slot = startTime (mas. "14:00")
-// group.startDate bo'lsa — undan oldingi kunlar hisoblanmaydi.
-// holidaySet berilsa — bayram kunlari hisoblanmaydi.
+// group.startDate bo'lsa - undan oldingi kunlar hisoblanmaydi.
+// holidaySet berilsa - bayram kunlari hisoblanmaydi.
 export const getClassDaysInRange = (group, fromDate, toDate, holidaySet = null) => {
   const dayMap = new Map();
   for (const item of group?.schedule || []) {
     if (!dayMap.has(item.day)) dayMap.set(item.day, []);
     dayMap.get(item.day).push({ startTime: item.startTime, endTime: item.endTime });
   }
-  // Slotlarni vaqt bo'yicha tartiblaymiz — "birinchi slot" deterministik bo'lsin
+  // Slotlarni vaqt bo'yicha tartiblaymiz - "birinchi slot" deterministik bo'lsin
   // (slot-fallback eski slot="" yozuvini aynan birinchi slotga bog'laydi).
   for (const arr of dayMap.values())
     arr.sort((a, b) => a.startTime.localeCompare(b.startTime));

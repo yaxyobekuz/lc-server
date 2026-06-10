@@ -6,7 +6,7 @@ import { ROLES } from "../../../constants/roles.js";
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // Global qidiruv: bitta so'rov bilan o'quvchi, o'qituvchi va guruhlarni topadi.
-// ⌘K oynasi shu natijalarni ko'rsatadi — foydalanuvchi profil/guruhga to'g'ridan o'tadi.
+// ⌘K oynasi shu natijalarni ko'rsatadi - foydalanuvchi profil/guruhga to'g'ridan o'tadi.
 export const globalSearch = async (term, { limit = 5 } = {}) => {
   const q = (term || "").trim();
   if (q.length < 2) return { students: [], teachers: [], groups: [] };

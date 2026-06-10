@@ -38,7 +38,7 @@ export default function defineLowAttendanceDigest(agenda) {
       .slice(0, 15)
       .map(
         (s) =>
-          `• ${(s.student.lastName || "").trim()} ${(s.student.firstName || "").trim()} — ${s.rate}%`,
+          `• ${(s.student.lastName || "").trim()} ${(s.student.firstName || "").trim()} - ${s.rate}%`,
       );
 
     try {

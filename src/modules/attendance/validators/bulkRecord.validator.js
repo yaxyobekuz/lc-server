@@ -5,7 +5,7 @@ const itemSchema = z.object({
   studentId: z.string().min(1),
   status: z.enum(["present", "absent", "excused", "exempt"]),
   reason: z.string().max(300).optional(),
-  // Kechikish daqiqasi — bir kunlik dars uzunligidan oshmasligi kerak (10 soat chek)
+  // Kechikish daqiqasi - bir kunlik dars uzunligidan oshmasligi kerak (10 soat chek)
   lateMinutes: z.coerce.number().int().min(0).max(600).optional(),
 });
 

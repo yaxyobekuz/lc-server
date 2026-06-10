@@ -2,10 +2,10 @@ import logger from "../config/logger.js";
 import startHandler from "./handlers/start.handler.js";
 import helpHandler from "./handlers/help.handler.js";
 
-// DIQQAT: bu bot ataylab "WebApp-only" — barcha funksiyalar (davomat, to'lov,
+// DIQQAT: bu bot ataylab "WebApp-only" - barcha funksiyalar (davomat, to'lov,
 // guruhlar va h.k.) Telegram mini-ilova ichida. Shu sababli handlers/ ichidagi
 // myAttendance/teacherAttendance/myPayments/... fayllari ataylab ulanMAGAN.
-// Ularni "tuzatish" runtime'ga ta'sir qilmaydi — yoki mini-ilovada ishlang,
+// Ularni "tuzatish" runtime'ga ta'sir qilmaydi - yoki mini-ilovada ishlang,
 // yoki bu yerda command sifatida ro'yxatga oling.
 
 const safe = (bot, fn) => async (msg, match) => {
@@ -49,7 +49,7 @@ export const registerHandlers = (bot) => {
   });
 
   // Eslatma: bloklangan (403) foydalanuvchilarni belgilash yetkazish nuqtasida
-  // (deliverToChat) amalga oshiriladi — u yerda userId/telegramId ma'lum. Bu yerdagi
+  // (deliverToChat) amalga oshiriladi - u yerda userId/telegramId ma'lum. Bu yerdagi
   // generic error event'da foydalanuvchi identifikatori ishonchli bo'lmaydi.
   bot.on("error", (err) => {
     logger.error({ err }, "Bot umumiy xato");

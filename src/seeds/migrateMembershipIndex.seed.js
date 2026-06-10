@@ -5,13 +5,13 @@ import GroupMembership from "../models/groupMembership.model.js";
 
 // Bir martalik migratsiya: (group, student) unique partial indeksi endi isDeleted ni
 // ham hisobga oladi. Avval soft-delete qilingan, lekin leftAt=null bo'lib qolgan
-// "osilib qolgan" a'zoliklar active slotni band qilib turardi — shu sabab o'quvchini
+// "osilib qolgan" a'zoliklar active slotni band qilib turardi - shu sabab o'quvchini
 // guruhga qayta qo'shib/ko'chirib bo'lmasdi va guruh ichida ko'rinmay qolardi.
 //
 // 1) Soft-delete qilingan, lekin leftAt=null yozuvlarga leftAt=deletedAt o'rnatamiz
 //    (slotni bo'shatish uchun).
 // 2) Eski indeksni o'chiramiz (Mongoose partial filter o'zgarishini avto-yangilamaydi).
-// 3) syncIndexes — yangi (leftAt:null, isDeleted:false) partial unique indeks yaratiladi.
+// 3) syncIndexes - yangi (leftAt:null, isDeleted:false) partial unique indeks yaratiladi.
 const migrate = async () => {
   await connectDB();
   const startedAt = Date.now();
@@ -32,7 +32,7 @@ const migrate = async () => {
   }
   logger.info({ fixed }, "Osilib qolgan soft-deleted a'zoliklar yopildi");
 
-  // 2) Eski indeksni o'chirish (mavjud bo'lmasa — e'tiborsiz)
+  // 2) Eski indeksni o'chirish (mavjud bo'lmasa - e'tiborsiz)
   try {
     await GroupMembership.collection.dropIndex("group_1_student_1");
     logger.info("Eski (group,student) partial unique indeks o'chirildi");

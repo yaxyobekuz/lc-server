@@ -1,6 +1,6 @@
 // PROYEKSIYA xizmati: TeacherAbsence (per-guruh "o'qituvchi kelmadi") yozuvlari
 // TeacherAttendance (manba-haqiqat) dan teacherAttendance.service orqali hosil
-// qilinadi — maosh/chegirma hisobiga ishlatiladi. Mustaqil haqiqat sifatida
+// qilinadi - maosh/chegirma hisobiga ishlatiladi. Mustaqil haqiqat sifatida
 // qaramang. To'liq tafsilot: modules/teacherAttendance/services/teacherAttendance.service.js
 import TeacherAbsence from "../../../models/teacherAbsence.model.js";
 import Group from "../../../models/group.model.js";
@@ -20,7 +20,7 @@ const parseDay = (dateInput) => {
 const isClassDayFor = (group, dow) =>
   (group.schedule || []).some((s) => s.day === dow);
 
-// O'qituvchi shu kuni keldimi (faqat fakt — o'quvchilar hisobiga ta'sir qilmaydi)
+// O'qituvchi shu kuni keldimi (faqat fakt - o'quvchilar hisobiga ta'sir qilmaydi)
 export const getStatus = async (groupId, dateInput) => {
   const group = await Group.findById(groupId);
   if (!group) throw new ApiError(404, "Guruh topilmadi");
@@ -34,7 +34,7 @@ export const getStatus = async (groupId, dateInput) => {
   };
 };
 
-// O'qituvchi kelmadi — faqat belgilab qo'yiladi. O'quvchilar to'loviga TEGMAYDI.
+// O'qituvchi kelmadi - faqat belgilab qo'yiladi. O'quvchilar to'loviga TEGMAYDI.
 // Jarima kerak bo'lsa, admin o'qituvchi maoshiga qo'lda yozadi (individual).
 export const setAbsent = async (groupId, dateInput, currentUser) => {
   const group = await Group.findById(groupId);
@@ -57,7 +57,7 @@ export const setAbsent = async (groupId, dateInput, currentUser) => {
   });
 };
 
-// O'qituvchi keldi — belgini olib tashlaymiz.
+// O'qituvchi keldi - belgini olib tashlaymiz.
 export const setPresent = async (groupId, dateInput) => {
   const date = parseDay(dateInput);
   const dKey = dateKeyOf(date);

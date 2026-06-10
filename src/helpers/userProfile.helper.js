@@ -51,7 +51,7 @@ export const buildUserProfile = async (userInput) => {
   if (user.role === ROLES.STUDENT) {
     const activeGroups = await findAllActiveForStudent(user._id);
 
-    // Davomat summary (joriy oy) — lazy import (circular dependency oldini olish)
+    // Davomat summary (joriy oy) - lazy import (circular dependency oldini olish)
     const { getStudentSummary: getAttSummary } = await import(
       "../modules/attendance/services/attendance.service.js"
     );

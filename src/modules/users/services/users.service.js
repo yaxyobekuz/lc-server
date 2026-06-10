@@ -19,7 +19,7 @@ const USER_SORT_FIELDS = {
   lastName: "lastName",
 };
 
-// O'quvchilar ro'yxatiga faol guruhlarni qo'shadi —
+// O'quvchilar ro'yxatiga faol guruhlarni qo'shadi -
 // ro'yxatdan profil ochmasdan ko'rinishi uchun (at-a-glance).
 const enrichStudents = async (items) => {
   const studentIds = items
@@ -204,7 +204,7 @@ export const softRemove = async (id) => {
   user.isActive = false;
   await user.save();
 
-  // O'quvchi arxivlansa — faol a'zoliklarni yopamiz.
+  // O'quvchi arxivlansa - faol a'zoliklarni yopamiz.
   if (user.role === ROLES.STUDENT) {
     const today = toUtcMidnight(new Date());
     const memberships = await GroupMembership.find({
@@ -228,7 +228,7 @@ export const restore = async (id) => {
   return user;
 };
 
-// Butunlay o'chirish (soft) — foydalanuvchi + bog'liq hamma narsa isDeleted=true (UI'dan yo'qoladi, hisobdan chiqadi)
+// Butunlay o'chirish (soft) - foydalanuvchi + bog'liq hamma narsa isDeleted=true (UI'dan yo'qoladi, hisobdan chiqadi)
 export const permanentRemove = async (id, currentUser) => {
   const user = await getById(id);
   await deleteUser(user, currentUser?._id);

@@ -58,7 +58,7 @@ router.patch(
   updateRatingSettings,
 );
 
-// O'quvchining reytingdagi o'rni (umumiy + guruh) — o'zi yoki ruxsatli
+// O'quvchining reytingdagi o'rni (umumiy + guruh) - o'zi yoki ruxsatli
 router.get(
   "/rating/students/:id",
   requireAuth,

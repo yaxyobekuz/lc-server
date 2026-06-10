@@ -48,7 +48,7 @@ const ensureStudent = async (studentId) => {
 
 const ensureTeachers = async (teacherIds) => {
   if (!teacherIds || teacherIds.length === 0) return;
-  // Guruhda ko'pi bilan bitta o'qituvchi bo'lishi mumkin — o'qituvchi faqat
+  // Guruhda ko'pi bilan bitta o'qituvchi bo'lishi mumkin - o'qituvchi faqat
   // "Almashtirish" orqali o'zgartiriladi, qo'shilmaydi.
   if (teacherIds.length > 1) {
     throw new ApiError(400, "Guruhda faqat bitta o'qituvchi bo'lishi mumkin");
@@ -240,7 +240,7 @@ export const restore = async (id) => {
   return group;
 };
 
-// Butunlay o'chirish (soft) — guruh + a'zolik/davomat isDeleted=true
+// Butunlay o'chirish (soft) - guruh + a'zolik/davomat isDeleted=true
 export const permanentRemove = async (id, currentUser) => {
   const group = await Group.findById(id);
   if (!group) throw new ApiError(404, "Guruh topilmadi");
@@ -256,7 +256,7 @@ export const restoreDeleted = async (id) => {
   return Group.findById(id);
 };
 
-// Kursni yakunlash — status=finished + finishedAt (undan keyin davomat to'xtaydi).
+// Kursni yakunlash - status=finished + finishedAt (undan keyin davomat to'xtaydi).
 export const finish = async (id, { finishedAt } = {}) => {
   const group = await ensureGroup(id);
   const end = toUtcMidnight(finishedAt || new Date());
@@ -283,8 +283,8 @@ export const addStudent = async (groupId, studentId, { joinedAt } = {}) => {
     throw new ApiError(409, "O'quvchi allaqachon shu guruhda");
   }
 
-  // Boshlash sanasi — berilsa o'sha kun, aks holda mahalliy (Asia/Tashkent) "bugun".
-  // MUHIM: davomat ham mahalliy "bugun" bilan ishlaydi — UTC ishlatilsa, yarim
+  // Boshlash sanasi - berilsa o'sha kun, aks holda mahalliy (Asia/Tashkent) "bugun".
+  // MUHIM: davomat ham mahalliy "bugun" bilan ishlaydi - UTC ishlatilsa, yarim
   // tundan keyin (mahalliy 00:00–05:00) joinedAt ertangi/kechagi kunga tushib,
   // bugungi davomatda o'quvchi ko'rinmay qolardi.
   const membership = await GroupMembership.create({

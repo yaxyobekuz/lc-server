@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import softDeletePlugin from "./plugins/softDelete.plugin.js";
 
 // O'qituvchi kelmagan kunda har bir o'quvchiga qo'llangan chegirma tafsiloti
-// (teskari qilish — qaytadan "keldi" — uchun saqlanadi).
+// (teskari qilish - qaytadan "keldi" - uchun saqlanadi).
 const applicationSchema = new mongoose.Schema(
   {
     student: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },

@@ -3,8 +3,8 @@ import { ROLES } from "../constants/roles.js";
 import Group from "../models/group.model.js";
 import GroupMembership from "../models/groupMembership.model.js";
 
-// Guruhga kirish: owner — barchasi; teacher — faqat o'ziga biriktirilgan guruh;
-// student — taqiqlangan. (requirePermission dan KEYIN qo'yiladi.)
+// Guruhga kirish: owner - barchasi; teacher - faqat o'ziga biriktirilgan guruh;
+// student - taqiqlangan. (requirePermission dan KEYIN qo'yiladi.)
 export const requireGroupAccess =
   (extractGroupId = (req) => req.params.groupId) =>
   async (req, _res, next) => {
@@ -25,7 +25,7 @@ export const requireGroupAccess =
     }
   };
 
-// O'quvchiga kirish: owner — barchasi; student — faqat o'zi; teacher — faqat
+// O'quvchiga kirish: owner - barchasi; student - faqat o'zi; teacher - faqat
 // o'z guruhlaridagi o'quvchi.
 export const requireStudentAccess =
   (extractStudentId = (req) => req.params.id) =>
@@ -34,7 +34,7 @@ export const requireStudentAccess =
       if (!req.user) return next(new ApiError(401, "Avtorizatsiyadan o'tilmagan"));
       const sid = String(extractStudentId(req) || "");
       // scopeGroupIds: handler ma'lumotni qaysi guruhlar bilan cheklashini
-      // belgilaydi. Owner/student uchun null (barcha guruhlar ko'rinadi —
+      // belgilaydi. Owner/student uchun null (barcha guruhlar ko'rinadi -
       // student baribir faqat o'zini so'raydi). Teacher uchun esa faqat o'zi
       // o'qitadigan guruhlar (A-1 cross-group disclosure fix).
       req.scopeGroupIds = null;

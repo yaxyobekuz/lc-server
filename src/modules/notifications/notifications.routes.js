@@ -42,7 +42,7 @@ router.get(
   stats,
 );
 
-// List (owner uchun barcha, teacher uchun own) — o'quvchilar /inbox dan foydalanadi
+// List (owner uchun barcha, teacher uchun own) - o'quvchilar /inbox dan foydalanadi
 router.get(
   "/",
   requireAuth,
@@ -51,7 +51,7 @@ router.get(
   list,
 );
 
-// Recipient count preview (jonli hisob — xabar yaratmaydi)
+// Recipient count preview (jonli hisob - xabar yaratmaydi)
 router.post(
   "/preview",
   requireAuth,
@@ -78,7 +78,7 @@ router.post(
   cancel,
 );
 
-// Detail va recipients — boshqaruv yuzasi (oluvchilar PII). O'quvchilar bloklanadi
+// Detail va recipients - boshqaruv yuzasi (oluvchilar PII). O'quvchilar bloklanadi
 // (handler ichida teacher faqat o'zi yuborganini ko'radi).
 router.get(
   "/:id",

@@ -63,7 +63,7 @@ const validateBody = (body) => {
     if (!Number.isInteger(d) || d < 1 || d > 31) {
       throw new ApiError(400, "Kun 1 dan 31 gacha bo'lishi kerak");
     }
-    // Oyga mos kun chegarasi (recurring uchun Fev 29 ruxsat — kabisa yillarda ishlaydi)
+    // Oyga mos kun chegarasi (recurring uchun Fev 29 ruxsat - kabisa yillarda ishlaydi)
     const m = body.month !== undefined ? Number(body.month) : null;
     if (m) {
       const maxDay = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1];
@@ -174,7 +174,7 @@ export const isAlreadySentToday = (holiday, now = new Date()) =>
 
 // Aktiv bayramlar ro'yxatining qisqa muddatli keshi (har so'rovda DB urilmasin).
 // Bayram CRUD juda kam, davomat hot path'i tez-tez chaqiriladi.
-// Per-process kesh — TTL qisqa (60s) tutiladi: bayram CRUD kam, lekin ko'p-instansli
+// Per-process kesh - TTL qisqa (60s) tutiladi: bayram CRUD kam, lekin ko'p-instansli
 // deploy'da boshqa instans keshini invalidate qila olmaydi, shuning uchun eskirish
 // oynasi 60s bilan cheklanadi (bir instansda CRUD bo'lsa o'sha instans darrov tozalaydi).
 let _holidayCache = null; // { audiencesKey, expires, holidays }

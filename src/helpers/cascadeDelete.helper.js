@@ -1,4 +1,4 @@
-// Cascade "haqiqiy o'chirish" (soft) — o'chirilganda ota + bog'liq yozuvlar isDeleted=true bo'ladi.
+// Cascade "haqiqiy o'chirish" (soft) - o'chirilganda ota + bog'liq yozuvlar isDeleted=true bo'ladi.
 // Arxiv (isActive) dan FARQLI: bular UI'dan butunlay yashiriladi va barcha hisob-kitobdan chiqariladi.
 import User from "../models/user.model.js";
 import Group from "../models/group.model.js";

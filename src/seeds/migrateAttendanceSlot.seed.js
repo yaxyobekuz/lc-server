@@ -17,7 +17,7 @@ const migrate = async () => {
   );
   logger.info({ modified: res.modifiedCount || 0 }, "slot='' backfill bajarildi");
 
-  // Eski indeksni o'chirish (mavjud bo'lmasa — e'tiborsiz)
+  // Eski indeksni o'chirish (mavjud bo'lmasa - e'tiborsiz)
   try {
     await Attendance.collection.dropIndex("group_1_student_1_dateKey_1");
     logger.info("Eski unique indeks (group,student,dateKey) o'chirildi");
