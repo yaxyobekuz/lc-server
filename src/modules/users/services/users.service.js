@@ -170,16 +170,15 @@ export const update = async (id, body) => {
   return user;
 };
 
-// Owner uchun: login ma'lumotini qaytaradi. Parol endi ochiq matnda
-// SAQLANMAYDI (xavfsizlik) - password doim bo'sh; owner kerak bo'lsa
-// setPassword orqali yangi parol o'rnatib, bir martalik ko'radi.
+// Owner uchun: login va parolni qaytaradi. Parol OCHIQ MATNDA saqlanadi,
+// shu sababli to'g'ridan-to'g'ri o'qib ko'rsatiladi.
 export const getPassword = async (id) => {
-  const user = await User.findById(id, { username: 1, role: 1 });
+  const user = await User.findById(id).select("username role +passwordHash");
   if (!user) throw new ApiError(404, "Foydalanuvchi topilmadi");
   if (user.role === ROLES.OWNER) {
     throw new ApiError(403, "Owner parolini ko'rib bo'lmaydi");
   }
-  return { username: user.username, password: "" };
+  return { username: user.username, password: user.passwordHash || "" };
 };
 
 // Owner uchun: foydalanuvchiga yangi parol o'rnatish (javobda bir martalik qaytadi)

@@ -26,7 +26,7 @@ const paymentTransactionSchema = new mongoose.Schema(
     year: { type: Number, required: true },
     month: { type: Number, required: true, min: 1, max: 12 },
 
-    amount: { type: Number, required: true, min: 1 },
+    amount: { type: Number, required: true, min: 1, max: 10_000_000 },
     method: { type: String, enum: ["cash", "card"], required: true },
     paidAt: { type: Date, required: true, index: true },
     note: { type: String, trim: true, default: "" },

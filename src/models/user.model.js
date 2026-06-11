@@ -8,9 +8,11 @@ const userSchema = new mongoose.Schema(
     lastName: { type: String, trim: true, required: true },
     username: { type: String, trim: true, unique: true, required: true, lowercase: true },
     phone: { type: String, trim: true, unique: true, sparse: true },
+    // DIQQAT: loyiha talabiga ko'ra parol OCHIQ MATNDA saqlanadi (hash YO'Q).
+    // Maydon nomi tarixiy sabablarga ko'ra passwordHash bo'lib qoldi, lekin
+    // ichida ochiq parol turadi. select:false - oddiy so'rovlarda chiqmaydi,
+    // owner uni faqat /:id/password endpoint orqali ataylab oladi.
     passwordHash: { type: String, required: true, select: false },
-    // DIQQAT: parol OCHIQ MATNDA SAQLANMAYDI (avvalgi plainPassword maydoni
-    // xavfsizlik tuzatishida olib tashlangan - bcrypt hash yagona manba).
     role: { type: String, enum: ALL_ROLES, default: ROLES.STUDENT, required: true },
     isActive: { type: Boolean, default: true },
 
@@ -26,6 +28,15 @@ const userSchema = new mongoose.Schema(
   },
   { timestamps: true },
 );
+
+// Rol HECH QACHON bo'sh bo'lmasligi kerak. Eski/buzilgan hujjat saqlanganda
+// ham qiymatni kafolatlaymiz: noma'lum yoki bo'sh rol -> student.
+userSchema.pre("validate", function ensureRole(next) {
+  if (!this.role || !ALL_ROLES.includes(this.role)) {
+    this.role = ROLES.STUDENT;
+  }
+  next();
+});
 
 userSchema.set("toJSON", {
   transform: (_doc, ret) => {

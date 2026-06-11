@@ -3,7 +3,11 @@ import { z } from "zod";
 export const createSchema = z.object({
   body: z.object({
     paymentId: z.string({ required_error: "To'lov kerak" }).min(1),
-    amount: z.coerce.number().int().positive("Summa musbat bo'lishi kerak"),
+    amount: z.coerce
+      .number()
+      .int()
+      .positive("Summa musbat bo'lishi kerak")
+      .max(10_000_000, "Summa 10 000 000 dan oshmasligi kerak"),
     method: z.enum(["cash", "card"], { required_error: "To'lov turini tanlang" }),
     paidAt: z.string().optional(),
     note: z.string().trim().max(300).optional(),

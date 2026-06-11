@@ -430,6 +430,39 @@ export const historyByTeacher = async (teacherId) => {
   };
 };
 
+// O'qituvchining O'ZI uchun moliya ko'rinishi (teacher panel "Moliya" bo'limi).
+// historyByTeacher ustiga bonus/jarima yig'indilari va faol bonus/jarima
+// qoidalari ro'yxatini qo'shadi. Faqat req.user._id bilan chaqiriladi - ruxsat
+// tekshiruvi shart emas (o'z ma'lumotini ko'radi).
+export const myFinance = async (teacherId) => {
+  const base = await historyByTeacher(teacherId);
+  const tid = toObjectId(teacherId);
+
+  // Har oy snapshot'idagi bonus/jarima yig'indilari (haqiqatda qo'llangan).
+  const totalBonus = base.items.reduce((s, p) => s + (p.bonusTotal || 0), 0);
+  const totalFine = base.items.reduce((s, p) => s + (p.fineTotal || 0), 0);
+
+  // Faol bonus/jarima qoidalari (doimiy + oylik) - sababi bilan ko'rsatish uchun.
+  const adjustments = await SalaryAdjustment.find({
+    teacher: tid,
+    isActive: true,
+    isDeleted: { $ne: true },
+  })
+    .populate("group", { name: 1 })
+    .sort({ createdAt: -1 })
+    .lean();
+
+  return {
+    ...base,
+    adjustments,
+    summary: {
+      ...base.summary,
+      totalBonus,
+      totalFine,
+    },
+  };
+};
+
 // Majburiyatlar: qoldig'i (expected - paid) > 0 bo'lgan maoshlar.
 export const obligations = async ({ groupId, year, month }) => {
   const filter = { year: Number(year), month: Number(month), isDeleted: { $ne: true } };

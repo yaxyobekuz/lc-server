@@ -2,7 +2,10 @@ import AttendanceExemption from "../../../models/attendanceExemption.model.js";
 import User from "../../../models/user.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import { ROLES } from "../../../constants/roles.js";
-import { ensureActiveGroup } from "../../../helpers/membership.helper.js";
+import {
+  ensureActiveGroup,
+  ensureTeacherOwnsStudent,
+} from "../../../helpers/membership.helper.js";
 import { correlationCacheInvalidate } from "../../../helpers/correlationCache.js";
 
 const ensureStudent = async (studentId) => {
@@ -13,12 +16,19 @@ const ensureStudent = async (studentId) => {
   return u;
 };
 
-export const list = async ({
-  studentId,
-  isActive,
-  page = 1,
-  limit = 50,
-}) => {
+export const list = async (
+  { studentId, isActive, page = 1, limit = 50 },
+  currentUser,
+) => {
+  // O'qituvchi faqat o'z guruhidagi o'quvchining ozod davrlarini ko'ra oladi.
+  // Shuning uchun studentId majburiy va shu o'quvchi unga tegishli bo'lishi shart.
+  if (currentUser?.role === ROLES.TEACHER) {
+    if (!studentId) {
+      throw new ApiError(400, "O'quvchi tanlanmagan");
+    }
+    await ensureTeacherOwnsStudent(currentUser._id, studentId);
+  }
+
   const filter = { isDeleted: { $ne: true } };
   if (studentId) filter.student = studentId;
   if (isActive !== undefined) filter.isActive = !!isActive;
@@ -37,6 +47,10 @@ export const list = async ({
 
 export const create = async (body, currentUser) => {
   await ensureStudent(body.student);
+  // O'qituvchi faqat o'z guruhidagi o'quvchini ozod qila oladi.
+  if (currentUser?.role === ROLES.TEACHER) {
+    await ensureTeacherOwnsStudent(currentUser._id, body.student);
+  }
   await ensureActiveGroup(body.student);
 
   const doc = {
@@ -65,8 +79,12 @@ export const getById = async (id) => {
   return doc;
 };
 
-export const update = async (id, body) => {
+export const update = async (id, body, currentUser) => {
   const doc = await getById(id);
+  // O'qituvchi faqat o'z guruhidagi o'quvchining ozod davrini tahrirlay oladi.
+  if (currentUser?.role === ROLES.TEACHER) {
+    await ensureTeacherOwnsStudent(currentUser._id, doc.student);
+  }
 
   if (body.startDate !== undefined) doc.startDate = new Date(body.startDate);
   if (body.endDate !== undefined) {
@@ -87,8 +105,12 @@ export const update = async (id, body) => {
   return doc;
 };
 
-export const remove = async (id) => {
+export const remove = async (id, currentUser) => {
   const doc = await getById(id);
+  // O'qituvchi faqat o'z guruhidagi o'quvchining ozod davrini o'chira oladi.
+  if (currentUser?.role === ROLES.TEACHER) {
+    await ensureTeacherOwnsStudent(currentUser._id, doc.student);
+  }
   await doc.softDelete();
   correlationCacheInvalidate();
   return doc;

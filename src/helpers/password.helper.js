@@ -1,7 +1,9 @@
-import bcrypt from "bcrypt";
+// DIQQAT: loyiha talabiga ko'ra parollar OCHIQ MATNDA saqlanadi (hash YO'Q).
+// hashPassword parolni o'zgartirmasdan qaytaradi, comparePassword esa oddiy
+// matn solishtiruvini bajaradi. (Maydon nomi tarixiy sabablarga ko'ra
+// passwordHash bo'lib qoldi - ichida ochiq parol turadi.)
 
-const ROUNDS = 10;
+export const hashPassword = async (plain) => String(plain);
 
-export const hashPassword = (plain) => bcrypt.hash(plain, ROUNDS);
-
-export const comparePassword = (plain, hash) => bcrypt.compare(plain, hash);
+export const comparePassword = async (plain, stored) =>
+  String(plain) === String(stored);

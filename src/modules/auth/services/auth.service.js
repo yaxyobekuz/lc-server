@@ -165,11 +165,18 @@ export const registerUser = async (body) => {
 
   const username = String(body.username).toLowerCase().trim();
 
-  const conflictFilters = [{ username }];
-  if (phone) conflictFilters.push({ phone });
-  const conflict = await User.findOne({ $or: conflictFilters });
-  if (conflict) {
-    throw new ApiError(409, "Bunday foydalanuvchi allaqachon mavjud");
+  // Telefon takrorlanmasligi kerak: shu raqam allaqachon biror
+  // foydalanuvchida bo'lsa (arxivlangan/o'chirilgan bo'lsa ham), rad etamiz.
+  if (phone) {
+    const phoneTaken = await User.findOne({ phone });
+    if (phoneTaken) {
+      throw new ApiError(409, "Bu telefon raqam allaqachon ro'yxatdan o'tgan");
+    }
+  }
+
+  const usernameTaken = await User.findOne({ username });
+  if (usernameTaken) {
+    throw new ApiError(409, "Bunday login (username) allaqachon mavjud");
   }
 
   if (![ROLES.TEACHER, ROLES.STUDENT].includes(body.role)) {

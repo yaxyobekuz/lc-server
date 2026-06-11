@@ -247,7 +247,7 @@ const seed = async () => {
 
   const secs = ((Date.now() - startedAt) / 1000).toFixed(1);
   logger.info(
-    `Fake extras-2 tayyor (${secs}s): ${holidayDocs.length} holiday, ${taCount} teacher-attendance, ${refundDocs.length} refund, ${histOps.length} attendance-history, ${toArchive.length} archived-student, ${logDocs.length} activity-log`,
+    `Fake extras-2 tayyor (${secs}s): ${holidayDocs.length} holiday, ${taCount} teacher-attendance, ${histOps.length} attendance-history, ${toArchive.length} archived-student, ${logDocs.length} activity-log`,
   );
   await disconnectDB();
 };

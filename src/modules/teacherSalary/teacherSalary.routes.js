@@ -27,6 +27,7 @@ import { monthlySchema } from "./validators/report.validator.js";
 import salaryList from "./handlers/salary.list.handler.js";
 import salaryGetById from "./handlers/salary.getById.handler.js";
 import salaryHistoryByTeacher from "./handlers/salary.historyByTeacher.handler.js";
+import salaryMyFinance from "./handlers/salary.myFinance.handler.js";
 import salaryUpsert from "./handlers/salary.upsert.handler.js";
 import regenerate from "./handlers/regenerate.handler.js";
 import obligations from "./handlers/obligations.handler.js";
@@ -39,6 +40,12 @@ import adjustmentRemove from "./handlers/adjustment.remove.handler.js";
 import reportMonthly from "./handlers/report.monthly.handler.js";
 
 const router = Router();
+
+// ── O'qituvchining o'z moliyasi (teacher panel) ──
+// Faqat requireAuth: o'qituvchi faqat O'Z ma'lumotini ko'radi (handler ichida
+// teacher rolligi tekshiriladi, ID doimo req.user._id). "/salaries/:id" dan
+// OLDIN turishi shart - aks holda "me" param sifatida ushlanib qolardi.
+router.get("/me/finance", requireAuth, salaryMyFinance);
 
 // ── O'qituvchi maoshlari ──
 router.get(

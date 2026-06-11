@@ -25,27 +25,31 @@ router.get(
   validate(listSchema),
   list,
 );
+// CREATE/PATCH/DELETE: owner - barchasi; teacher - faqat O'Z guruhidagi
+// o'quvchi uchun (egalik service qatlamida tekshiriladi). Teacher'da
+// ATTENDANCE_MANAGE yo'q, shuning uchun ATTENDANCE_RECORD bilan gate qilamiz
+// (teacher davomatni belgilay olgani kabi ozod davrini ham qo'ya oladi).
 router.post(
   "/",
   requireAuth,
-  requireRole(ROLES.OWNER),
-  requirePermission(PERMISSIONS.ATTENDANCE_MANAGE),
+  requireRole(ROLES.OWNER, ROLES.TEACHER),
+  requirePermission(PERMISSIONS.ATTENDANCE_RECORD),
   validate(createSchema),
   create,
 );
 router.patch(
   "/:id",
   requireAuth,
-  requireRole(ROLES.OWNER),
-  requirePermission(PERMISSIONS.ATTENDANCE_MANAGE),
+  requireRole(ROLES.OWNER, ROLES.TEACHER),
+  requirePermission(PERMISSIONS.ATTENDANCE_RECORD),
   validate(updateSchema),
   update,
 );
 router.delete(
   "/:id",
   requireAuth,
-  requireRole(ROLES.OWNER),
-  requirePermission(PERMISSIONS.ATTENDANCE_MANAGE),
+  requireRole(ROLES.OWNER, ROLES.TEACHER),
+  requirePermission(PERMISSIONS.ATTENDANCE_RECORD),
   validate(idSchema),
   remove,
 );
