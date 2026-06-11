@@ -20,13 +20,14 @@ const effectiveDayFor = (effectiveFrom, year, month) => {
 };
 
 // Proratsiya (kalendar kun + muzlatish ayrimasi):
-// (startDay..oy_oxiri) ichidagi muzlatilmagan kunlar / oydagi jami kunlar.
-// startDay = max(qo'shilgan_kun, kuchga_kirgan_kun).
-// joinedAt oy boshidan oldin → 1. effectiveFrom berilmasa → 1 (butun oy).
+// (startDay..endDay) ichidagi muzlatilmagan kunlar / oydagi jami kunlar.
+// startDay = max(qo'shilgan_kun, kuchga_kirgan_kun); endDay = ketgan_kun yoki oy oxiri.
+// joinedAt/effectiveFrom oy boshidan oldin → 1. leftAt yo'q → oy oxirigacha (inclusive).
 export const computeProration = ({
   year,
   month,
   joinedAt,
+  leftAt = null,
   freezes = [],
   effectiveFrom = null,
 }) => {
@@ -34,8 +35,13 @@ export const computeProration = ({
   const monthStart = new Date(Date.UTC(year, month - 1, 1));
   const monthEnd = new Date(Date.UTC(year, month, 0));
   const join = joinedAt ? toUtcMidnight(joinedAt) : monthStart;
+  const left = leftAt ? toUtcMidnight(leftAt) : null;
 
+  // Bu oyga umuman tegishli emas: keyin boshlagan yoki avval tugatgan.
   if (join.getTime() > monthEnd.getTime()) {
+    return { factor: 0, payableDays: 0, totalDays };
+  }
+  if (left && left.getTime() < monthStart.getTime()) {
     return { factor: 0, payableDays: 0, totalDays };
   }
 
@@ -48,9 +54,11 @@ export const computeProration = ({
   const joinStartDay =
     join.getTime() <= monthStart.getTime() ? 1 : join.getUTCDate();
   const startDay = Math.max(joinStartDay, effectiveDay);
+  const endDay =
+    !left || left.getTime() >= monthEnd.getTime() ? totalDays : left.getUTCDate();
 
   let payable = 0;
-  for (let d = startDay; d <= totalDays; d += 1) {
+  for (let d = startDay; d <= endDay; d += 1) {
     const day = new Date(Date.UTC(year, month - 1, d));
     if (!isFrozenOn(freezes, day)) payable += 1;
   }

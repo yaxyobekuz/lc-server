@@ -4,7 +4,7 @@ import User from "../../../models/user.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import logger from "../../../config/logger.js";
 import { ROLES } from "../../../constants/roles.js";
-import { localTodayMidnight } from "../../../helpers/attendance.helper.js";
+import { localTodayMidnight, toUtcMidnight } from "../../../helpers/attendance.helper.js";
 import { getById } from "./groups.service.js";
 import * as teacherSalaryService from "../../teacherSalary/services/teacherSalary.service.js";
 
@@ -48,17 +48,24 @@ export const replaceTeacher = async (groupId, body) => {
   );
   await group.save();
 
-  // Yangi o'qituvchi uchun joriy oy maoshini yaratamiz (best-effort).
-  // Oy o'rtasida almashtirilsa, body.date proratsiya uchun workStartDate bo'ladi.
+  // Almashtirish sanasi (oy o'rtasi proratsiyasi uchun): body.date yoki bugun.
+  const changeDate = body.date ? toUtcMidnight(body.date) : localTodayMidnight();
+  const year = changeDate.getUTCFullYear();
+  const month = changeDate.getUTCMonth() + 1;
+
+  // Eski o'qituvchi shu kunda ishni tugatdi - maoshi shu kungacha proratsiya bo'ladi.
   try {
-    const today = localTodayMidnight();
-    await teacherSalaryService.ensureSalaryForTeacherGroup(
-      newId,
-      group._id,
-      today.getUTCFullYear(),
-      today.getUTCMonth() + 1,
-      { workStartDate: body.date || null },
-    );
+    await teacherSalaryService.markTeacherLeft(oldId, group._id, year, month, changeDate);
+  } catch (err) {
+    logger.warn({ err }, "Eski o'qituvchi maoshi proratsiya qilinmadi");
+  }
+
+  // Yangi o'qituvchi uchun joriy oy maoshini yaratamiz (best-effort).
+  // Oy o'rtasida almashtirilsa, changeDate proratsiya uchun workStartDate bo'ladi.
+  try {
+    await teacherSalaryService.ensureSalaryForTeacherGroup(newId, group._id, year, month, {
+      workStartDate: changeDate,
+    });
   } catch (err) {
     logger.warn({ err }, "Almashtirilgan o'qituvchi uchun maosh yaratilmadi");
   }

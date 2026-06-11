@@ -317,12 +317,26 @@ export const update = async (id, body) => {
   return group;
 };
 
+// Guruh o'qituvchilarining shu oydagi maoshini tugash sanasiga proratsiya qiladi.
+const prorateTeachersOnEnd = async (group, end) => {
+  const year = end.getUTCFullYear();
+  const month = end.getUTCMonth() + 1;
+  for (const teacherId of group.teachers || []) {
+    try {
+      await teacherSalaryService.markTeacherLeft(teacherId, group._id, year, month, end);
+    } catch (err) {
+      logger.warn({ err }, "Guruh tugashida o'qituvchi maoshi proratsiya qilinmadi");
+    }
+  }
+};
+
 export const remove = async (id) => {
   const group = await ensureGroup(id);
   group.isActive = false;
   // Arxivlangach davomat to'xtashi uchun tugash sanasini belgilaymiz
   if (!group.finishedAt) group.finishedAt = toUtcMidnight(new Date());
   await group.save();
+  await prorateTeachersOnEnd(group, group.finishedAt);
   return group;
 };
 
@@ -359,6 +373,7 @@ export const finish = async (id, { finishedAt } = {}) => {
   group.status = "finished";
   group.finishedAt = end;
   await group.save();
+  await prorateTeachersOnEnd(group, end);
   return group;
 };
 

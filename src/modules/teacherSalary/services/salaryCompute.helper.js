@@ -24,7 +24,8 @@ export const resolveAdjustments = (adjustments, baseEarnings) => {
 };
 
 // To'liq maosh snapshot hisobi.
-// Fiksa qism proratsiya qilinadi; foiz qism guruh tushumiga bog'liq (prorate yo'q).
+// Fiksa va foiz qismlari ishlangan kunlar ulushiga (factor) proratsiya qilinadi -
+// o'qituvchi oy o'rtasida boshlasa (workStartDate) yoki tugatsa (workEndDate).
 export const computeSalarySnapshot = ({
   salaryType = "fixed",
   fixedAmount = 0,
@@ -33,12 +34,14 @@ export const computeSalarySnapshot = ({
   year,
   month,
   workStartDate,
+  workEndDate,
   adjustments = [],
 }) => {
-  const { factor } = computeProration({
+  const { factor, payableDays, totalDays } = computeProration({
     year,
     month,
     joinedAt: workStartDate || null,
+    leftAt: workEndDate || null,
     freezes: [],
   });
 
@@ -49,7 +52,9 @@ export const computeSalarySnapshot = ({
     ? Math.round((Number(fixedAmount) || 0) * factor)
     : 0;
   const percentAmount = usePercent
-    ? Math.round(((Number(groupRevenue) || 0) * (Number(percentRate) || 0)) / 100)
+    ? Math.round(
+        ((Number(groupRevenue) || 0) * (Number(percentRate) || 0) * factor) / 100,
+      )
     : 0;
   const baseEarnings = proratedFixed + percentAmount;
 
@@ -58,6 +63,8 @@ export const computeSalarySnapshot = ({
 
   return {
     prorationFactor: factor,
+    payableDays,
+    totalDays,
     proratedFixed,
     percentAmount,
     baseEarnings,

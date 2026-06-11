@@ -57,6 +57,7 @@ const buildSnapshot = async (salary) => {
     year: salary.year,
     month: salary.month,
     workStartDate: salary.workStartDate,
+    workEndDate: salary.workEndDate,
     adjustments,
   });
 };
@@ -86,6 +87,8 @@ export const recalc = async (salaryId) => {
 
   salary.groupRevenue = groupRevenue;
   salary.prorationFactor = snap.prorationFactor;
+  salary.payableDays = snap.payableDays;
+  salary.totalDays = snap.totalDays;
   salary.proratedFixed = snap.proratedFixed;
   salary.percentAmount = snap.percentAmount;
   salary.baseEarnings = snap.baseEarnings;
@@ -130,7 +133,7 @@ export const ensureSalaryForTeacherGroup = async (
   group,
   year,
   month,
-  { workStartDate } = {},
+  { workStartDate, workEndDate } = {},
 ) => {
   if (!teacher || !group) return null;
   const exists = await TeacherSalary.findOne({ teacher, group, year, month });
@@ -150,6 +153,7 @@ export const ensureSalaryForTeacherGroup = async (
     fixedAmount: prev ? prev.fixedAmount : 0,
     percentRate: prev ? prev.percentRate : 0,
     workStartDate: workStartDate ? toUtcMidnight(workStartDate) : null,
+    workEndDate: workEndDate ? toUtcMidnight(workEndDate) : null,
     source: "auto",
   });
   const snap = await buildSnapshot(draft);
@@ -193,7 +197,7 @@ export const generateMonth = async (year, month) => {
 
 // Maosh konfiguratsiyasini o'rnatadi (upsert), so'ng qayta hisoblaydi.
 export const upsertSalary = async (
-  { teacher, group, year, month, salaryType, fixedAmount, percentRate, workStartDate },
+  { teacher, group, year, month, salaryType, fixedAmount, percentRate, workStartDate, workEndDate },
   currentUser,
 ) => {
   const grp = await Group.findById(group);
@@ -207,6 +211,7 @@ export const upsertSalary = async (
         fixedAmount: salaryType === "percent" ? 0 : fixedAmount || 0,
         percentRate: salaryType === "fixed" ? 0 : percentRate || 0,
         workStartDate: workStartDate ? toUtcMidnight(workStartDate) : null,
+        workEndDate: workEndDate ? toUtcMidnight(workEndDate) : null,
         source: "manual",
       },
       $setOnInsert: { teacher, group, year, month, createdBy: currentUser?._id || null },
@@ -214,6 +219,17 @@ export const upsertSalary = async (
     { upsert: true, new: true },
   );
 
+  return recalc(salary._id);
+};
+
+// O'qituvchi guruhda ishni to'xtatganda (almashtirildi/guruh yakunlandi) - shu oy
+// maoshiga ish tugatgan sanani belgilab, kunlarga proratsiya qiladi (best-effort).
+export const markTeacherLeft = async (teacher, group, year, month, date) => {
+  if (!teacher || !group || !date) return null;
+  const salary = await TeacherSalary.findOne({ teacher, group, year, month });
+  if (!salary) return null;
+  salary.workEndDate = toUtcMidnight(date);
+  await salary.save();
   return recalc(salary._id);
 };
 

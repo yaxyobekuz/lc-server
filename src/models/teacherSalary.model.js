@@ -29,10 +29,13 @@ const teacherSalarySchema = new mongoose.Schema(
     fixedAmount: { type: Number, min: 0, default: 0 },
     percentRate: { type: Number, min: 0, max: 100, default: 0 },
     workStartDate: { type: Date, default: null },
+    workEndDate: { type: Date, default: null },
 
     // Snapshot (recalc paytida yangilanadi)
     groupRevenue: { type: Number, default: 0 },
     prorationFactor: { type: Number, default: 1 },
+    payableDays: { type: Number, default: 0 },
+    totalDays: { type: Number, default: 0 },
     proratedFixed: { type: Number, default: 0 },
     percentAmount: { type: Number, default: 0 },
     baseEarnings: { type: Number, default: 0 },

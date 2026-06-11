@@ -31,6 +31,7 @@ export const upsertSchema = z.object({
     fixedAmount: z.coerce.number().int().min(0).default(0),
     percentRate: z.coerce.number().min(0).max(100).default(0),
     workStartDate: z.string().nullable().optional(),
+    workEndDate: z.string().nullable().optional(),
   }),
 });
 
