@@ -15,5 +15,8 @@ export const createSchema = z.object({
       .default([]),
     startDate: z.coerce.date().nullable().optional(),
     durationMonths: z.coerce.number().min(0).nullable().optional(),
+    // Joriy oy uchun guruh oylik to'lovi (ixtiyoriy). Berilsa - GroupFee shu
+    // summa bilan yaratiladi; berilmasa 0 (keyin Moliyadan belgilanadi).
+    monthlyPrice: z.coerce.number().int().min(0).nullable().optional(),
   }),
 });

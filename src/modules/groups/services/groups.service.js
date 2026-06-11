@@ -89,11 +89,43 @@ export const list = async ({
 
   const skip = (page - 1) * limit;
 
+  // Joriy oy (kartochkada oylik to'lovni ko'rsatish uchun)
+  const today = localTodayMidnight();
+  const curYear = today.getUTCFullYear();
+  const curMonth = today.getUTCMonth() + 1;
+
   const pipeline = [
     { $match: match },
     { $sort: { createdAt: -1 } },
     { $skip: skip },
     { $limit: limit },
+    {
+      $lookup: {
+        from: "groupfees",
+        let: { gid: "$_id" },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ["$group", "$$gid"] },
+                  { $eq: ["$year", curYear] },
+                  { $eq: ["$month", curMonth] },
+                ],
+              },
+            },
+          },
+          { $project: { amount: 1 } },
+        ],
+        as: "_fee",
+      },
+    },
+    {
+      $addFields: {
+        monthlyFee: { $ifNull: [{ $arrayElemAt: ["$_fee.amount", 0] }, null] },
+      },
+    },
+    { $project: { _fee: 0 } },
     {
       $lookup: {
         from: "groupmemberships",
@@ -267,15 +299,37 @@ export const create = async (body) => {
     durationMonths: body.durationMonths ?? null,
   });
 
+  const today = localTodayMidnight();
+  const year = today.getUTCFullYear();
+  const month = today.getUTCMonth() + 1;
+
+  // Guruh yaratilishi bilanoq joriy oy uchun to'lov (GroupFee) yozuvini
+  // ta'minlaymiz (best-effort) - aks holda Moliya sahifasida to'lov hali
+  // o'quvchi qo'shilmaguncha "Belgilanmagan" bo'lib qolardi. Narx berilgan
+  // bo'lsa - o'sha summa bilan (manual), aks holda 0 (auto).
+  try {
+    if (body.monthlyPrice != null) {
+      await financeGroupFeeService.upsert({
+        groupId: group._id,
+        year,
+        month,
+        amount: body.monthlyPrice,
+      });
+    } else {
+      await financeGroupFeeService.ensureGroupFee(group._id, year, month);
+    }
+  } catch (err) {
+    logger.warn({ err }, "Yangi guruh uchun oylik to'lov yaratilmadi");
+  }
+
   // Biriktirilgan har bir o'qituvchi uchun joriy oy maoshini yaratamiz (best-effort)
   for (const teacherId of group.teachers || []) {
     try {
-      const today = localTodayMidnight();
       await teacherSalaryService.ensureSalaryForTeacherGroup(
         teacherId,
         group._id,
-        today.getUTCFullYear(),
-        today.getUTCMonth() + 1,
+        year,
+        month,
       );
     } catch (err) {
       logger.warn({ err }, "Guruh o'qituvchisi uchun maosh yaratilmadi");
