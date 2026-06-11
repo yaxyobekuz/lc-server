@@ -61,6 +61,9 @@ export const PERMISSIONS = Object.freeze({
   SALARY_READ: "salary.read",
   SALARY_PAY: "salary.pay",
   SALARY_MANAGE: "salary.manage",
+
+  // Onboarding (mavjud tarixiy ma'lumotni import qilish)
+  ONBOARDING_IMPORT: "onboarding.import",
 });
 
 // Human-readable labels (used by the seed)
@@ -152,4 +155,9 @@ export const PERMISSION_LABELS = {
   [PERMISSIONS.SALARY_READ]: { label: "Maoshlarni ko'rish", group: "finance" },
   [PERMISSIONS.SALARY_PAY]: { label: "Maosh to'lash", group: "finance" },
   [PERMISSIONS.SALARY_MANAGE]: { label: "Maoshlarni boshqarish", group: "finance" },
+
+  [PERMISSIONS.ONBOARDING_IMPORT]: {
+    label: "Mavjud ma'lumotni import qilish",
+    group: "groups",
+  },
 };

@@ -36,6 +36,9 @@ const groupMembershipSchema = new mongoose.Schema(
       ref: "Group",
       default: null,
     },
+    // Tarixiy import orqali yaratilgan a'zolik (kursga o'tmishda qo'shilganlar).
+    imported: { type: Boolean, default: false },
+    importedAt: { type: Date, default: null },
   },
   { timestamps: true },
 );

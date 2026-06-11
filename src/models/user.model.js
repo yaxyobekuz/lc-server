@@ -23,6 +23,11 @@ const userSchema = new mongoose.Schema(
 
     // Faqat teacher rolidagi maydon
     hiredAt: { type: Date, default: null },
+
+    // Tarixiy import (onboarding) orqali yaratilgan o'quvchi - tizimga
+    // kirishdan oldin ro'yxatga olinganlarni ajratish uchun (audit).
+    imported: { type: Boolean, default: false },
+    importedAt: { type: Date, default: null },
   },
   { timestamps: true },
 );

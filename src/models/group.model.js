@@ -41,6 +41,10 @@ const groupSchema = new mongoose.Schema(
     status: { type: String, enum: ["active", "finished"], default: "active", index: true },
     finishedAt: { type: Date, default: null },
     isActive: { type: Boolean, default: true, index: true },
+    // Tarixiy import (onboarding sehrgari) orqali yaratilgan guruh - tizimga
+    // kirishdan oldin boshlangan kurslarni ajratish uchun (audit/hisobot).
+    imported: { type: Boolean, default: false },
+    importedAt: { type: Date, default: null },
   },
   { timestamps: true },
 );
