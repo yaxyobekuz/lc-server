@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import PaymentTransaction from "../../../models/paymentTransaction.model.js";
 import StudentPayment from "../../../models/studentPayment.model.js";
 import GroupMembership from "../../../models/groupMembership.model.js";
@@ -30,6 +31,10 @@ export const create = async (
 
   const day = paidAt ? parseLocalDay(paidAt) : localTodayMidnight();
   if (!day) throw new ApiError(400, "Noto'g'ri to'lov sanasi");
+  // Kelajak sanaga kirim yozib bo'lmaydi (kassa kunlik hisobi buzilmasin)
+  if (day.getTime() > localTodayMidnight().getTime()) {
+    throw new ApiError(400, "To'lov sanasi kelajakda bo'lishi mumkin emas");
+  }
 
   if (idempotencyKey) {
     const existing = await PaymentTransaction.findOne({ idempotencyKey });
@@ -45,6 +50,8 @@ export const create = async (
   const baseNote = note || "";
 
   const created = [];
+  // Bitta so'rovda yaratilgan barcha bo'laklar (avans oylari) shu ID bilan bog'lanadi
+  const batchId = new mongoose.Types.ObjectId();
   let leftover = amount;
   let cursor = { year: payment.year, month: payment.month };
   let current = payment;
@@ -91,6 +98,7 @@ export const create = async (
           note: trxNote,
           // Kalit faqat batch'ning birinchi yozuviga - unique index dublikatni to'sadi
           idempotencyKey: created.length === 0 ? idempotencyKey || null : null,
+          batchId,
           createdBy: currentUser?._id || null,
         });
       } catch (err) {
@@ -129,6 +137,7 @@ export const create = async (
         paidAt: day,
         note: baseNote,
         idempotencyKey: created.length === 0 ? idempotencyKey || null : null,
+        batchId,
         createdBy: currentUser?._id || null,
       });
     } catch (err) {
@@ -146,10 +155,24 @@ export const create = async (
 };
 
 // Tranzaksiyani bekor qiladi (soft-delete), balansni atomik kamaytiradi.
+// Avansli to'lov (batch) bo'lsa - BUTUN batch birga void bo'ladi: bitta bo'lakni
+// o'chirib kelgusi oylarda "fantom avans" qoldirib bo'lmaydi.
 export const remove = async (id, currentUser) => {
   const trx = await PaymentTransaction.findOne({ _id: id, isDeleted: { $ne: true } });
   if (!trx) throw new ApiError(404, "Tranzaksiya topilmadi");
-  await trx.softDelete(currentUser?._id);
-  await studentPaymentService.applyPaidDelta(trx.payment, -trx.amount);
-  return { _id: id };
+
+  const batch = trx.batchId
+    ? await PaymentTransaction.find({
+        batchId: trx.batchId,
+        isDeleted: { $ne: true },
+      })
+    : [trx];
+
+  const removed = [];
+  for (const t of batch) {
+    await t.softDelete(currentUser?._id);
+    await studentPaymentService.applyPaidDelta(t.payment, -t.amount);
+    removed.push(t._id);
+  }
+  return { _id: id, removed };
 };

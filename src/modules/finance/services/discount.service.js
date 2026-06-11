@@ -67,6 +67,23 @@ const ensureStudentAndGroup = async (studentId, groupId) => {
 export const create = async (body, currentUser) => {
   await ensureStudentAndGroup(body.student, body.group);
 
+  // Double-submit himoyasi: aynan bir xil faol chegirma ikki marta yozilmasin
+  // (ikkalasi ham qo'llanib, expected ikki baravar kamayib ketardi).
+  const duplicate = await Discount.findOne({
+    student: body.student,
+    group: body.group,
+    type: body.type,
+    value: body.value,
+    scope: body.scope,
+    year: body.scope === "monthly" ? body.year : null,
+    month: body.scope === "monthly" ? body.month : null,
+    isActive: true,
+    isDeleted: { $ne: true },
+  });
+  if (duplicate) {
+    throw new ApiError(409, "Xuddi shunday faol chegirma allaqachon mavjud");
+  }
+
   const doc = await Discount.create({
     student: body.student,
     group: body.group,

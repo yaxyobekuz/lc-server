@@ -6,6 +6,7 @@ import StudentPayment from "../../../models/studentPayment.model.js";
 import Group from "../../../models/group.model.js";
 import User from "../../../models/user.model.js";
 import ApiError from "../../../utils/ApiError.js";
+import { ROLES } from "../../../constants/roles.js";
 import { toUtcMidnight } from "../../../helpers/attendance.helper.js";
 import { computeSalarySnapshot, deriveStatus } from "./salaryCompute.helper.js";
 
@@ -111,6 +112,10 @@ export const recalcStatus = async (salaryId) => {
 };
 
 // Snapshot (maosh/foiz/proratsiya/adjustment) ni qayta hisoblab, statusni ham yangilaydi.
+// Yozish atomik pipeline orqali: status/overpaid DB'dagi JORIY paidAmount'dan
+// keltirib chiqariladi - hisob davomida kelib tushgan parallel to'lov buzmaydi.
+// Retro o'zgarish expected'ni to'langandan pastga tushirsa, farq overpaidAmount
+// sifatida KO'RINADIGAN bo'lib saqlanadi (C6) - clamp bilan yashirilmaydi.
 export const recalc = async (salaryId) => {
   const salary = await TeacherSalary.findById(salaryId);
   if (!salary) return null;
@@ -118,23 +123,40 @@ export const recalc = async (salaryId) => {
   const snap = await buildSnapshot(salary);
   const groupRevenue = await computeGroupRevenue(salary.group, salary.year, salary.month);
 
-  salary.groupRevenue = groupRevenue;
-  salary.prorationFactor = snap.prorationFactor;
-  salary.payableDays = snap.payableDays;
-  salary.totalDays = snap.totalDays;
-  salary.proratedFixed = snap.proratedFixed;
-  salary.percentAmount = snap.percentAmount;
-  salary.baseEarnings = snap.baseEarnings;
-  salary.bonusTotal = snap.bonusTotal;
-  salary.fineTotal = snap.fineTotal;
-  salary.expectedAmount = snap.expectedAmount;
-  salary.status = deriveStatus(salary.paidAmount, snap.expectedAmount);
-  // Retro o'zgarish expected'ni to'langan summadan pastga tushirsa - farq
-  // yashirilmasin: hisobotda ko'rinadigan ortiqcha to'lov sifatida saqlanadi (C6).
-  salary.overpaidAmount = Math.max(0, (salary.paidAmount || 0) - snap.expectedAmount);
-  salary.recalculatedAt = new Date();
-  await salary.save();
-  return salary;
+  const paidExpr = { $ifNull: ["$paidAmount", 0] };
+  return TeacherSalary.findByIdAndUpdate(
+    salaryId,
+    [
+      {
+        $set: {
+          groupRevenue,
+          prorationFactor: snap.prorationFactor,
+          payableDays: snap.payableDays,
+          totalDays: snap.totalDays,
+          proratedFixed: snap.proratedFixed,
+          percentAmount: snap.percentAmount,
+          baseEarnings: snap.baseEarnings,
+          bonusTotal: snap.bonusTotal,
+          fineTotal: snap.fineTotal,
+          expectedAmount: snap.expectedAmount,
+          status: {
+            $switch: {
+              branches: [
+                { case: { $lte: [paidExpr, 0] }, then: "unpaid" },
+                { case: { $lt: [paidExpr, snap.expectedAmount] }, then: "partial" },
+              ],
+              default: "paid",
+            },
+          },
+          overpaidAmount: {
+            $max: [0, { $subtract: [paidExpr, snap.expectedAmount] }],
+          },
+          recalculatedAt: new Date(),
+        },
+      },
+    ],
+    { new: true },
+  );
 };
 
 // Guruh+oy bo'yicha barcha maoshlarni qayta hisoblaydi (guruh tushumi o'zgarganda).
@@ -241,6 +263,23 @@ export const upsertSalary = async (
   const grp = await Group.findById(group);
   if (!grp) throw new ApiError(404, "Guruh topilmadi");
 
+  // teacher haqiqatan o'qituvchi roli ekanini tekshiramiz - ixtiyoriy ObjectId
+  // (o'quvchi, o'chirilgan user) ga soxta maosh yozuvi yaratib bo'lmasin (M2).
+  const teacherDoc = await User.findOne({
+    _id: teacher,
+    role: ROLES.TEACHER,
+    isDeleted: { $ne: true },
+  });
+  if (!teacherDoc) throw new ApiError(400, "O'qituvchi topilmadi");
+
+  if (workStartDate && workEndDate) {
+    const ws = toUtcMidnight(workStartDate);
+    const we = toUtcMidnight(workEndDate);
+    if (ws && we && we.getTime() < ws.getTime()) {
+      throw new ApiError(400, "Ish tugash sanasi boshlanishidan oldin bo'lishi mumkin emas");
+    }
+  }
+
   const salary = await TeacherSalary.findOneAndUpdate(
     { teacher, group, year, month },
     {
@@ -288,24 +327,31 @@ export const list = async ({
   if (month) filter.month = Number(month);
   if (status) filter.status = status;
 
-  const skip = (page - 1) * limit;
-  let items = await TeacherSalary.find(filter)
-    .populate("teacher", safeTeacherProjection)
-    .populate("group", { name: 1 })
-    .sort({ createdAt: -1 })
-    .skip(skip)
-    .limit(limit);
-
+  // Qidiruv DB darajasida (filtrga kiradi) - aks holda sahifalab bo'lingandan
+  // KEYIN filtrlash noto'g'ri sahifa/total berardi (studentPayment.list bilan bir xil).
   if (search && search.trim()) {
-    const s = search.trim().toLowerCase();
-    items = items.filter((p) => {
-      const t = p.teacher;
-      if (!t) return false;
-      return `${t.firstName} ${t.lastName} ${t.username}`.toLowerCase().includes(s);
-    });
+    const s = search.trim();
+    const rx = new RegExp(s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    const matchedTeachers = await User.find(
+      {
+        role: ROLES.TEACHER,
+        $or: [{ firstName: rx }, { lastName: rx }, { username: rx }],
+      },
+      { _id: 1 },
+    );
+    filter.teacher = { $in: matchedTeachers.map((u) => u._id) };
   }
 
-  const total = await TeacherSalary.countDocuments(filter);
+  const skip = (page - 1) * limit;
+  const [items, total] = await Promise.all([
+    TeacherSalary.find(filter)
+      .populate("teacher", safeTeacherProjection)
+      .populate("group", { name: 1 })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit),
+    TeacherSalary.countDocuments(filter),
+  ]);
   return { items, total, page, limit };
 };
 

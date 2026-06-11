@@ -13,6 +13,10 @@ export const create = async ({ salaryId, amount, method, paidAt, note }, current
 
   const day = paidAt ? parseLocalDay(paidAt) : localTodayMidnight();
   if (!day) throw new ApiError(400, "Noto'g'ri to'lov sanasi");
+  // Kelajak sanaga chiqim yozib bo'lmaydi (kassa kunlik hisobi buzilmasin)
+  if (day.getTime() > localTodayMidnight().getTime()) {
+    throw new ApiError(400, "To'lov sanasi kelajakda bo'lishi mumkin emas");
+  }
 
   // Avval balans atomik oshiriladi (cap sharti bilan), keyin tranzaksiya yoziladi.
   const updated = await teacherSalaryService.applyPaidDelta(salary._id, amount, {

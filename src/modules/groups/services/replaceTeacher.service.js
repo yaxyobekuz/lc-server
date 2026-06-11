@@ -53,9 +53,14 @@ export const replaceTeacher = async (groupId, body) => {
   const year = changeDate.getUTCFullYear();
   const month = changeDate.getUTCMonth() + 1;
 
-  // Eski o'qituvchi shu kunda ishni tugatdi - maoshi shu kungacha proratsiya bo'ladi.
+  // Eski o'qituvchining OXIRGI ish kuni - almashtirish kunidan bir kun oldin.
+  // workEndDate proratsiyada inclusive, yangi o'qituvchi esa changeDate'dan
+  // boshlaydi - ikkalasiga ham changeDate'ni berish o'sha kunni IKKI MARTA
+  // to'lardi (M4). changeDate oy 1-kuni bo'lsa, oxirgi kun o'tgan oyga tushadi
+  // va joriy oy maoshi 0 ga proratsiya bo'ladi - bu to'g'ri.
+  const lastWorkDay = new Date(changeDate.getTime() - 24 * 60 * 60 * 1000);
   try {
-    await teacherSalaryService.markTeacherLeft(oldId, group._id, year, month, changeDate);
+    await teacherSalaryService.markTeacherLeft(oldId, group._id, year, month, lastWorkDay);
   } catch (err) {
     logger.warn({ err }, "Eski o'qituvchi maoshi proratsiya qilinmadi");
   }

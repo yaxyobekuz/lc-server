@@ -33,6 +33,9 @@ const paymentTransactionSchema = new mongoose.Schema(
     // Kliyent yuborgan takrorlanmas kalit - double-click/retry bir xil to'lovni
     // ikki marta yozmasligi uchun (faqat batch'ning birinchi tranzaksiyasida).
     idempotencyKey: { type: String, default: null },
+    // Bitta naqd to'lov bir nechta oyga (avans) taqsimlanganda barcha bo'laklarni
+    // bog'laydi - bekor qilishda BUTUN batch birga void bo'ladi (fantom avans qolmaydi).
+    batchId: { type: mongoose.Schema.Types.ObjectId, default: null, index: true },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
   },
   { timestamps: true },

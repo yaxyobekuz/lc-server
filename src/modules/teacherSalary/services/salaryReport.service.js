@@ -16,7 +16,9 @@ export const monthly = async ({ year, month }) => {
         { $match: { year: y, month: m, isDeleted: { $ne: true } } },
         { $group: { _id: null, total: { $sum: "$amount" } } },
       ]),
-      // Kutilgan/to'langan/bonus/jarima yig'indilari
+      // Kutilgan/to'langan/bonus/jarima yig'indilari.
+      // obligation har bir maosh bo'yicha 0 ga clamp - bitta o'qituvchining
+      // ortiqcha to'lovi boshqasining haqini "yutib yubormasligi" uchun.
       TeacherSalary.aggregate([
         { $match: { year: y, month: m } },
         {
@@ -24,6 +26,12 @@ export const monthly = async ({ year, month }) => {
             _id: null,
             expected: { $sum: "$expectedAmount" },
             paid: { $sum: "$paidAmount" },
+            obligation: {
+              $sum: {
+                $max: [0, { $subtract: ["$expectedAmount", "$paidAmount"] }],
+              },
+            },
+            overpaid: { $sum: { $ifNull: ["$overpaidAmount", 0] } },
             bonus: { $sum: "$bonusTotal" },
             fine: { $sum: "$fineTotal" },
             count: { $sum: 1 },
@@ -48,13 +56,17 @@ export const monthly = async ({ year, month }) => {
         },
         { $sort: { payout: -1 } },
       ]),
-      // O'qituvchilar bo'yicha qoldiq (majburiyat)
+      // O'qituvchilar bo'yicha qoldiq (har maosh bo'yicha clamp - netting yo'q)
       TeacherSalary.aggregate([
         { $match: { year: y, month: m } },
         {
           $group: {
             _id: "$teacher",
-            obligation: { $sum: { $subtract: ["$expectedAmount", "$paidAmount"] } },
+            obligation: {
+              $sum: {
+                $max: [0, { $subtract: ["$expectedAmount", "$paidAmount"] }],
+              },
+            },
           },
         },
         {
@@ -92,7 +104,8 @@ export const monthly = async ({ year, month }) => {
   const s = salaryAgg.length ? salaryAgg[0] : {};
   const expected = s.expected || 0;
   const paid = s.paid || 0;
-  const obligations = Math.max(0, expected - paid);
+  // Per-hujjat clamp'langan yig'indi (netto emas - real to'lanishi kerak summa)
+  const obligations = s.obligation || 0;
 
   const byMethod = { cash: 0, card: 0 };
   for (const row of methodAgg) byMethod[row._id] = row.total;
@@ -105,6 +118,7 @@ export const monthly = async ({ year, month }) => {
       obligations,
       expected,
       paid,
+      overpaid: s.overpaid || 0,
       bonusValue: s.bonus || 0,
       fineValue: s.fine || 0,
       salariesCount: s.count || 0,

@@ -329,9 +329,12 @@ export const update = async (id, body) => {
     const today = localTodayMidnight();
     const year = today.getUTCFullYear();
     const month = today.getUTCMonth() + 1;
+    // Chiqarilganning oxirgi ish kuni - kecha (yangi o'qituvchi bugundan boshlaydi;
+    // workEndDate inclusive bo'lgani uchun bugunni berish kunni 2x to'lardi)
+    const lastWorkDay = new Date(today.getTime() - 24 * 60 * 60 * 1000);
     for (const teacherId of teacherDiff.removed) {
       try {
-        await teacherSalaryService.markTeacherLeft(teacherId, group._id, year, month, today);
+        await teacherSalaryService.markTeacherLeft(teacherId, group._id, year, month, lastWorkDay);
       } catch (err) {
         logger.warn({ err }, "Chiqarilgan o'qituvchi maoshi proratsiya qilinmadi");
       }

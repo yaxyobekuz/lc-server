@@ -93,6 +93,8 @@ export const recalcStatus = async (paymentId) => {
 };
 
 // Snapshot (fee/proratsiya/chegirma) ni qayta hisoblab, statusni ham yangilaydi.
+// Yozish atomik pipeline orqali: status DB'dagi JORIY paidAmount'dan keltirib
+// chiqariladi - hisob davomida kelib tushgan parallel to'lov statusni buzmaydi.
 export const recalc = async (paymentId) => {
   const payment = await StudentPayment.findById(paymentId);
   if (!payment) return null;
@@ -114,14 +116,31 @@ export const recalc = async (paymentId) => {
     leftAt,
   });
 
-  payment.baseFee = snap.baseFee;
-  payment.prorationFactor = snap.prorationFactor;
-  payment.discountApplied = snap.discountApplied;
-  payment.expectedAmount = snap.expectedAmount;
-  payment.status = deriveStatus(payment.paidAmount, snap.expectedAmount);
-  payment.recalculatedAt = new Date();
-  await payment.save();
-  return payment;
+  const paidExpr = { $ifNull: ["$paidAmount", 0] };
+  return StudentPayment.findByIdAndUpdate(
+    paymentId,
+    [
+      {
+        $set: {
+          baseFee: snap.baseFee,
+          prorationFactor: snap.prorationFactor,
+          discountApplied: snap.discountApplied,
+          expectedAmount: snap.expectedAmount,
+          status: {
+            $switch: {
+              branches: [
+                { case: { $lte: [paidExpr, 0] }, then: "unpaid" },
+                { case: { $lt: [paidExpr, snap.expectedAmount] }, then: "partial" },
+              ],
+              default: "paid",
+            },
+          },
+          recalculatedAt: new Date(),
+        },
+      },
+    ],
+    { new: true },
+  );
 };
 
 // Guruh+oy bo'yicha barcha to'lovlarni qayta hisoblaydi (fee o'zgarganda).
@@ -211,10 +230,14 @@ export const generateMonth = async (year, month) => {
   );
   const ids = activeGroupIds.map((g) => g._id);
 
+  // Faol a'zolar + shu OY ICHIDA ketganlar (leftAt exclusive: oy boshidan keyin
+  // ketgan bo'lsa, oy boshida hali a'zo edi - prorated to'lov yozuvi tegishli).
+  // Aks holda kechiktirilgan regenerate oy o'rtasida ketganlarning haqini tashlab ketardi.
+  const monthStart = new Date(Date.UTC(year, month - 1, 1));
   const memberships = await GroupMembership.find({
     group: { $in: ids },
-    leftAt: null,
     isDeleted: { $ne: true },
+    $or: [{ leftAt: null }, { leftAt: { $gt: monthStart } }],
   });
 
   let created = 0;

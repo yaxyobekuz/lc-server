@@ -17,7 +17,9 @@ export const monthly = async ({ year, month }) => {
         { $match: { year: y, month: m, isDeleted: { $ne: true } } },
         { $group: { _id: null, total: { $sum: "$amount" } } },
       ]),
-      // Kutilgan/to'langan/chegirma yig'indilari
+      // Kutilgan/to'langan/chegirma yig'indilari.
+      // debt har bir to'lov bo'yicha 0 ga clamp qilinadi - bitta o'quvchining
+      // ortiqcha to'lovi boshqasining real qarzini "yutib yubormasligi" uchun.
       StudentPayment.aggregate([
         { $match: { year: y, month: m } },
         {
@@ -25,6 +27,11 @@ export const monthly = async ({ year, month }) => {
             _id: null,
             expected: { $sum: "$expectedAmount" },
             paid: { $sum: "$paidAmount" },
+            debt: {
+              $sum: {
+                $max: [0, { $subtract: ["$expectedAmount", "$paidAmount"] }],
+              },
+            },
             discount: { $sum: "$discountApplied" },
             discountedCount: {
               $sum: { $cond: [{ $gt: ["$discountApplied", 0] }, 1, 0] },
@@ -52,13 +59,17 @@ export const monthly = async ({ year, month }) => {
         { $project: { _id: 1, income: 1, name: "$group.name" } },
         { $sort: { income: -1 } },
       ]),
-      // Guruhlar bo'yicha qarzdorlik
+      // Guruhlar bo'yicha qarzdorlik (har to'lov bo'yicha clamp - ichki netting yo'q)
       StudentPayment.aggregate([
         { $match: { year: y, month: m } },
         {
           $group: {
             _id: "$group",
-            debt: { $sum: { $subtract: ["$expectedAmount", "$paidAmount"] } },
+            debt: {
+              $sum: {
+                $max: [0, { $subtract: ["$expectedAmount", "$paidAmount"] }],
+              },
+            },
           },
         },
         {
@@ -97,7 +108,8 @@ export const monthly = async ({ year, month }) => {
   const p = paymentAgg.length ? paymentAgg[0] : {};
   const expected = p.expected || 0;
   const paid = p.paid || 0;
-  const debt = Math.max(0, expected - paid);
+  // Per-hujjat clamp'langan yig'indi (netto emas - real undirilishi kerak summa)
+  const debt = p.debt || 0;
 
   const byMethod = { cash: 0, card: 0 };
   for (const row of methodAgg) byMethod[row._id] = row.total;

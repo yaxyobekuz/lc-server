@@ -26,6 +26,7 @@ import {
   dateKeyOf,
   dayOfWeekOf,
   localTodayKey,
+  parseLocalDay,
   scheduleActiveOn,
 } from "../../../helpers/attendance.helper.js";
 import {
@@ -61,8 +62,9 @@ const syncTeacherGroupAbsences = async (teacherId, date, isAbsent, currentUser) 
 
 // Sana uchun barcha faol o'qituvchilar + holati (yozuv bo'lmasa default "keldi")
 export const listForDate = async (dateInput) => {
-  const date = new Date(dateInput);
-  if (Number.isNaN(date.getTime())) throw new ApiError(400, "Sana noto'g'ri");
+  // Mahalliy (Asia/Tashkent) kalendar kuni - UTC bilan kun siljimasin (A-2 parity)
+  const date = parseLocalDay(dateInput);
+  if (!date) throw new ApiError(400, "Sana noto'g'ri");
   const dateKey = dateKeyOf(date);
 
   const teachers = await User.find({ role: ROLES.TEACHER, isActive: true })
@@ -85,8 +87,10 @@ export const listForDate = async (dateInput) => {
 // Bulk saqlash. "present" - yozuv o'chiriladi (default holatga qaytadi),
 // "absent"/"excused" - upsert qilinadi.
 export const bulkRecord = async (dateInput, items, currentUser) => {
-  const date = new Date(dateInput);
-  if (Number.isNaN(date.getTime())) throw new ApiError(400, "Sana noto'g'ri");
+  // Mahalliy (Asia/Tashkent) kalendar kuni - yozuv kalitlari student davomati
+  // bilan bir xil bo'lishi shart (A-2 parity)
+  const date = parseLocalDay(dateInput);
+  if (!date) throw new ApiError(400, "Sana noto'g'ri");
   const dateKey = dateKeyOf(date);
   // Kelajak kun uchun davomat belgilanmaydi (o'tmishni tuzatish mumkin).
   // "Bugun" - mahalliy (Asia/Tashkent) kun, student davomati bilan bir xil.
@@ -95,6 +99,17 @@ export const bulkRecord = async (dateInput, items, currentUser) => {
   }
   if (!Array.isArray(items) || !items.length) {
     throw new ApiError(400, "Hech bo'lmaganda bitta yozuv kerak");
+  }
+
+  // Har bir teacherId haqiqiy o'qituvchi ekanini tekshiramiz - ixtiyoriy
+  // ObjectId (o'quvchi, yo'q user) uchun davomat yozuvi yaratilmasin.
+  const teacherIds = [...new Set(items.map((i) => String(i.teacherId)))];
+  const validTeachers = await User.find(
+    { _id: { $in: teacherIds }, role: ROLES.TEACHER },
+    { _id: 1 },
+  );
+  if (validTeachers.length !== teacherIds.length) {
+    throw new ApiError(400, "Bir yoki bir nechta o'qituvchi noto'g'ri");
   }
 
   let marked = 0;

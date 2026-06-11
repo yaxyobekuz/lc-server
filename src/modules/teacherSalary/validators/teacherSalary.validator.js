@@ -30,8 +30,18 @@ export const upsertSchema = z.object({
     salaryType: z.enum(["fixed", "percent", "mixed"]),
     fixedAmount: z.coerce.number().int().min(0).default(0),
     percentRate: z.coerce.number().min(0).max(100).default(0),
-    workStartDate: z.string().nullable().optional(),
-    workEndDate: z.string().nullable().optional(),
+    // Qat'iy format: noto'g'ri string Invalid Date bo'lib, proratsiya faktorini
+    // jimgina 0 ga tushirar (butun oy maoshi 0) edi - endi validatsiyada rad etiladi.
+    workStartDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Sana formati YYYY-MM-DD bo'lishi kerak")
+      .nullable()
+      .optional(),
+    workEndDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Sana formati YYYY-MM-DD bo'lishi kerak")
+      .nullable()
+      .optional(),
   }),
 });
 
