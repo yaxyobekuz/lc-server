@@ -92,6 +92,10 @@ export const update = async (id, body) => {
   const doc = await Discount.findOne({ _id: id, isDeleted: { $ne: true } });
   if (!doc) throw new ApiError(404, "Chegirma topilmadi");
 
+  // Mutatsiyadan OLDINGI qamrov - scope/oy o'zgarsa eski oy(lar) snapshot'ida
+  // chegirma "muzlab" qolmasligi uchun ularni ham qayta hisoblaymiz (H4).
+  const prevScope = { scope: doc.scope, year: doc.year, month: doc.month };
+
   if (body.type !== undefined) doc.type = body.type;
   if (body.value !== undefined) doc.value = body.value;
   if (body.scope !== undefined) doc.scope = body.scope;
@@ -105,6 +109,15 @@ export const update = async (id, body) => {
     doc.month = null;
   }
   await doc.save();
+
+  const scopeChanged =
+    prevScope.scope !== doc.scope ||
+    prevScope.year !== doc.year ||
+    prevScope.month !== doc.month;
+  if (scopeChanged) {
+    await studentPaymentService.recalcForStudentScope(doc.student, doc.group, prevScope);
+    await recalcTeacherForDiscount({ group: doc.group, ...prevScope });
+  }
 
   await studentPaymentService.recalcForStudentScope(doc.student, doc.group, {
     scope: doc.scope,

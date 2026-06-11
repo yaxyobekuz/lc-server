@@ -150,7 +150,6 @@ export const changePassword = async (currentUser, { currentPassword, newPassword
   if (!ok) throw new ApiError(400, "Joriy parol noto'g'ri");
 
   user.passwordHash = await hashPassword(newPassword);
-  user.plainPassword = newPassword;
   await user.save();
 
   // Parol o'zgargach barcha eski sessiyalarni bekor qilamiz
@@ -185,7 +184,6 @@ export const registerUser = async (body) => {
     username,
     phone: phone || undefined,
     passwordHash,
-    plainPassword: body.password,
     role: body.role,
     isActive: true,
     birthDate: body.birthDate ? new Date(body.birthDate) : null,

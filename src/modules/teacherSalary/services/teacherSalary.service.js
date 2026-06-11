@@ -62,7 +62,41 @@ const buildSnapshot = async (salary) => {
   });
 };
 
-// Faol tranzaksiyalar yig'indisidan paidAmount/status ni yangilaydi.
+// paidAmount ifodasidan status + overpaidAmount ni hisoblaydigan atomik
+// update-pipeline bosqichi ("o'qi → hisobla → save" poygasini yo'qotadi).
+const paidStatusStage = (newPaidExpr) => ({
+  $set: {
+    paidAmount: newPaidExpr,
+    overpaidAmount: {
+      $max: [0, { $subtract: [newPaidExpr, "$expectedAmount"] }],
+    },
+    status: {
+      $switch: {
+        branches: [
+          { case: { $lte: [newPaidExpr, 0] }, then: "unpaid" },
+          { case: { $lt: [newPaidExpr, "$expectedAmount"] }, then: "partial" },
+        ],
+        default: "paid",
+      },
+    },
+  },
+});
+
+// paidAmount ni atomik delta bilan o'zgartiradi. capToRemaining=true bo'lsa,
+// yangi paidAmount expectedAmount dan oshadigan bo'lsa - hujjat YANGILANMAYDI
+// (null qaytadi): qoldiqdan ortiq to'lovni shartli-atomik to'sish (C3).
+export const applyPaidDelta = async (salaryId, delta, { capToRemaining = false } = {}) => {
+  const newPaid = { $add: [{ $ifNull: ["$paidAmount", 0] }, delta] };
+  const filter = { _id: salaryId };
+  if (capToRemaining) {
+    filter.$expr = { $lte: [newPaid, "$expectedAmount"] };
+  }
+  return TeacherSalary.findOneAndUpdate(filter, [paidStatusStage(newPaid)], {
+    new: true,
+  });
+};
+
+// Faol tranzaksiyalar yig'indisidan paidAmount/status ni tiklaydi (repair yo'li).
 export const recalcStatus = async (salaryId) => {
   const salary = await TeacherSalary.findById(salaryId);
   if (!salary) return null;
@@ -71,10 +105,9 @@ export const recalcStatus = async (salaryId) => {
     { $group: { _id: null, total: { $sum: "$amount" } } },
   ]);
   const paidAmount = agg.length ? agg[0].total : 0;
-  salary.paidAmount = paidAmount;
-  salary.status = deriveStatus(paidAmount, salary.expectedAmount);
-  await salary.save();
-  return salary;
+  return TeacherSalary.findByIdAndUpdate(salaryId, [paidStatusStage(paidAmount)], {
+    new: true,
+  });
 };
 
 // Snapshot (maosh/foiz/proratsiya/adjustment) ni qayta hisoblab, statusni ham yangilaydi.
@@ -96,6 +129,9 @@ export const recalc = async (salaryId) => {
   salary.fineTotal = snap.fineTotal;
   salary.expectedAmount = snap.expectedAmount;
   salary.status = deriveStatus(salary.paidAmount, snap.expectedAmount);
+  // Retro o'zgarish expected'ni to'langan summadan pastga tushirsa - farq
+  // yashirilmasin: hisobotda ko'rinadigan ortiqcha to'lov sifatida saqlanadi (C6).
+  salary.overpaidAmount = Math.max(0, (salary.paidAmount || 0) - snap.expectedAmount);
   salary.recalculatedAt = new Date();
   await salary.save();
   return salary;
@@ -180,17 +216,19 @@ export const generateMonth = async (year, month) => {
   );
   let created = 0;
   for (const g of groups) {
-    const teacherId = (g.teachers || [])[0];
-    if (!teacherId) continue;
-    const existed = await TeacherSalary.findOne({
-      teacher: teacherId,
-      group: g._id,
-      year,
-      month,
-    });
-    if (existed) continue;
-    await ensureSalaryForTeacherGroup(teacherId, g._id, year, month);
-    created += 1;
+    // BARCHA biriktirilgan o'qituvchilar uchun (massivda bittadan ko'p bo'lsa ham -
+    // aks holda faqat birinchisi maosh olardi, qolganlari hisobdan tushib qolardi)
+    for (const teacherId of g.teachers || []) {
+      const existed = await TeacherSalary.findOne({
+        teacher: teacherId,
+        group: g._id,
+        year,
+        month,
+      });
+      if (existed) continue;
+      await ensureSalaryForTeacherGroup(teacherId, g._id, year, month);
+      created += 1;
+    }
   }
   return { groups: groups.length, created };
 };

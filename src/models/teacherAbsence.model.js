@@ -1,19 +1,11 @@
 import mongoose from "mongoose";
 import softDeletePlugin from "./plugins/softDelete.plugin.js";
 
-// O'qituvchi kelmagan kunda har bir o'quvchiga qo'llangan chegirma tafsiloti
-// (teskari qilish - qaytadan "keldi" - uchun saqlanadi).
-const applicationSchema = new mongoose.Schema(
-  {
-    student: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-    invoice: { type: mongoose.Schema.Types.ObjectId, ref: "Invoice", required: true },
-    deducted: { type: Number, default: 0 },
-    balanceCredited: { type: Number, default: 0 },
-    appliedBalanceReduced: { type: Number, default: 0 },
-  },
-  { _id: false },
-);
-
+// O'qituvchi kelmagan kun belgisi (per-guruh proyeksiya). PULGA TA'SIR QILMAYDI:
+// o'quvchi to'lovi ham, maosh ham bundan avtomatik o'zgarmaydi - jarima kerak
+// bo'lsa admin SalaryAdjustment orqali QO'LDA yozadi. (Avvalgi perStudentAmount/
+// applications maydonlari hech qachon to'ldirilmagan o'lik kod edi - olib tashlandi,
+// mavjud bo'lmagan "Invoice" modeliga ham ishora qilardi.)
 const teacherAbsenceSchema = new mongoose.Schema(
   {
     group: {
@@ -29,8 +21,6 @@ const teacherAbsenceSchema = new mongoose.Schema(
       required: true,
       match: [/^\d{4}-\d{2}-\d{2}$/, "Sana formati YYYY-MM-DD bo'lishi kerak"],
     },
-    perStudentAmount: { type: Number, default: 0 },
-    applications: { type: [applicationSchema], default: [] },
     recordedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

@@ -30,6 +30,9 @@ const paymentTransactionSchema = new mongoose.Schema(
     method: { type: String, enum: ["cash", "card"], required: true },
     paidAt: { type: Date, required: true, index: true },
     note: { type: String, trim: true, default: "" },
+    // Kliyent yuborgan takrorlanmas kalit - double-click/retry bir xil to'lovni
+    // ikki marta yozmasligi uchun (faqat batch'ning birinchi tranzaksiyasida).
+    idempotencyKey: { type: String, default: null },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
   },
   { timestamps: true },
@@ -37,6 +40,11 @@ const paymentTransactionSchema = new mongoose.Schema(
 
 // Kunlik kirim grafigi uchun
 paymentTransactionSchema.index({ year: 1, month: 1, paidAt: 1 });
+// Idempotentlik: bir xil kalit bilan ikkinchi yozuv E11000 bilan rad etiladi
+paymentTransactionSchema.index(
+  { idempotencyKey: 1 },
+  { unique: true, partialFilterExpression: { idempotencyKey: { $type: "string" } } },
+);
 
 paymentTransactionSchema.plugin(softDeletePlugin);
 

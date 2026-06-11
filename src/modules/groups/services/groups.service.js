@@ -267,9 +267,8 @@ export const create = async (body) => {
     durationMonths: body.durationMonths ?? null,
   });
 
-  // O'qituvchi biriktirilgan bo'lsa joriy oy maoshini yaratamiz (best-effort)
-  const teacherId = (group.teachers || [])[0];
-  if (teacherId) {
+  // Biriktirilgan har bir o'qituvchi uchun joriy oy maoshini yaratamiz (best-effort)
+  for (const teacherId of group.teachers || []) {
     try {
       const today = localTodayMidnight();
       await teacherSalaryService.ensureSalaryForTeacherGroup(
@@ -289,8 +288,18 @@ export const create = async (body) => {
 export const update = async (id, body) => {
   const group = await ensureGroup(id);
 
+  let teacherDiff = null;
   if (body.teachers !== undefined) {
     await ensureTeachers(body.teachers);
+    // Almashtirilgan o'qituvchilarni aniqlaymiz - replaceTeacher'dagi kabi
+    // maosh proratsiyasi shu yerda ham ishlashi shart (H5): aks holda eskisiga
+    // butun oy maoshi yozilgancha qolib, yangisi hisobsiz ishlardi.
+    const oldIds = (group.teachers || []).map(String);
+    const newIds = (body.teachers || []).map(String);
+    teacherDiff = {
+      removed: oldIds.filter((t) => !newIds.includes(t)),
+      added: newIds.filter((t) => !oldIds.includes(t)),
+    };
     group.teachers = body.teachers;
   }
   if (body.name !== undefined) group.name = body.name.trim();
@@ -314,6 +323,30 @@ export const update = async (id, body) => {
   }
 
   await group.save();
+
+  // O'qituvchi o'zgarishi bo'yicha maosh hook'lari (best-effort)
+  if (teacherDiff && (teacherDiff.removed.length || teacherDiff.added.length)) {
+    const today = localTodayMidnight();
+    const year = today.getUTCFullYear();
+    const month = today.getUTCMonth() + 1;
+    for (const teacherId of teacherDiff.removed) {
+      try {
+        await teacherSalaryService.markTeacherLeft(teacherId, group._id, year, month, today);
+      } catch (err) {
+        logger.warn({ err }, "Chiqarilgan o'qituvchi maoshi proratsiya qilinmadi");
+      }
+    }
+    for (const teacherId of teacherDiff.added) {
+      try {
+        await teacherSalaryService.ensureSalaryForTeacherGroup(teacherId, group._id, year, month, {
+          workStartDate: today,
+        });
+      } catch (err) {
+        logger.warn({ err }, "Qo'shilgan o'qituvchi uchun maosh yaratilmadi");
+      }
+    }
+  }
+
   return group;
 };
 
@@ -420,6 +453,23 @@ export const addStudent = async (groupId, studentId, { joinedAt } = {}) => {
   return membership;
 };
 
+// A'zolik yopilganda (chiqarish/ko'chirish) o'quvchining shu guruhdagi BARCHA oylik
+// to'lovlarini (avans bilan yaratilgan kelgusi oylar ham) leftAt bo'yicha qayta
+// proratsiya qiladi, so'ng o'qituvchi foiz maoshini yangilaydi (best-effort).
+const recalcFinanceOnLeave = async (groupId, studentId) => {
+  try {
+    await financePaymentService.recalcForStudentScope(studentId, groupId, {});
+    const today = localTodayMidnight();
+    await teacherSalaryService.recalcForGroupMonth(
+      groupId,
+      today.getUTCFullYear(),
+      today.getUTCMonth() + 1,
+    );
+  } catch (err) {
+    logger.warn({ err }, "A'zolik yopilganda to'lovlar qayta hisoblanmadi");
+  }
+};
+
 export const removeStudent = async (groupId, studentId, { reasonId } = {}) => {
   const leftAt = toUtcMidnight(new Date());
 
@@ -441,6 +491,9 @@ export const removeStudent = async (groupId, studentId, { reasonId } = {}) => {
   if (!membership) {
     throw new ApiError(404, "Faol a'zolik topilmadi");
   }
+
+  // Ketgan o'quvchi endi to'liq oy uchun hisoblanmasin (C1 tuzatish)
+  await recalcFinanceOnLeave(groupId, studentId);
 
   return membership;
 };
@@ -545,6 +598,9 @@ export const transferStudent = async (groupId, studentId, targetGroupId, { joine
     result = await transferSequential(groupId, studentId, targetGroupId, joinDate);
   }
 
+  // Eski guruhdagi to'lovlar leftAt bo'yicha qayta proratsiya bo'ladi -
+  // aks holda o'quvchi bir oy uchun ikkala guruhda ham to'liq hisoblanardi (C1)
+  await recalcFinanceOnLeave(groupId, studentId);
   // Yangi guruh uchun joriy oy to'lovini darhol yaratamiz
   await ensureFinanceForMembership(targetGroupId, result.opened);
   return result;

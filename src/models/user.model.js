@@ -9,8 +9,8 @@ const userSchema = new mongoose.Schema(
     username: { type: String, trim: true, unique: true, required: true, lowercase: true },
     phone: { type: String, trim: true, unique: true, sparse: true },
     passwordHash: { type: String, required: true, select: false },
-    // Owner panelida parolni ko'rsatish uchun ochiq nusxa (select:false)
-    plainPassword: { type: String, default: "", select: false },
+    // DIQQAT: parol OCHIQ MATNDA SAQLANMAYDI (avvalgi plainPassword maydoni
+    // xavfsizlik tuzatishida olib tashlangan - bcrypt hash yagona manba).
     role: { type: String, enum: ALL_ROLES, default: ROLES.STUDENT, required: true },
     isActive: { type: Boolean, default: true },
 
@@ -30,7 +30,7 @@ const userSchema = new mongoose.Schema(
 userSchema.set("toJSON", {
   transform: (_doc, ret) => {
     delete ret.passwordHash;
-    delete ret.plainPassword;
+    delete ret.plainPassword; // legacy hujjatlar uchun himoya
     delete ret.__v;
     return ret;
   },

@@ -24,7 +24,7 @@ const toObjectId = (id) => {
 };
 
 // Bir o'quvchi+guruh+oy uchun snapshot maydonlarini hisoblaydi (DB dan yuklab).
-const buildSnapshot = async ({ student, group, year, month, joinedAt }) => {
+const buildSnapshot = async ({ student, group, year, month, joinedAt, leftAt = null }) => {
   const [feeDoc, discounts, freezes] = await Promise.all([
     GroupFee.findOne({ group, year, month }),
     Discount.find({
@@ -39,16 +39,46 @@ const buildSnapshot = async ({ student, group, year, month, joinedAt }) => {
 
   return computePaymentSnapshot({
     baseFee: feeDoc ? feeDoc.amount : 0,
+    previousBaseFee: feeDoc ? feeDoc.previousAmount : null,
     year,
     month,
     joinedAt,
+    leftAt,
     freezes,
     discounts,
     effectiveFrom: feeDoc ? feeDoc.effectiveFrom : null,
   });
 };
 
-// Faol (o'chirilmagan) tranzaksiyalar yig'indisidan paidAmount/status ni yangilaydi.
+// paidAmount ifodasidan status'ni hisoblaydigan update-pipeline $set bosqichi.
+// Atomik yoziladi - "o'qi → hisobla → save" oralig'idagi poyga (lost update) yo'q.
+const paidStatusStage = (newPaidExpr) => ({
+  $set: {
+    paidAmount: newPaidExpr,
+    status: {
+      $switch: {
+        branches: [
+          { case: { $lte: [newPaidExpr, 0] }, then: "unpaid" },
+          { case: { $lt: [newPaidExpr, "$expectedAmount"] }, then: "partial" },
+        ],
+        default: "paid",
+      },
+    },
+  },
+});
+
+// paidAmount ni atomik delta bilan o'zgartiradi ($inc semantikasi) va statusni
+// shu yozuvning DB'dagi joriy qiymatlaridan keltirib chiqaradi. Parallel
+// tranzaksiyalar kommutativ qo'shiladi - hech biri yo'qolmaydi.
+export const applyPaidDelta = async (paymentId, delta) => {
+  const newPaid = { $add: [{ $ifNull: ["$paidAmount", 0] }, delta] };
+  return StudentPayment.findByIdAndUpdate(paymentId, [paidStatusStage(newPaid)], {
+    new: true,
+  });
+};
+
+// Faol (o'chirilmagan) tranzaksiyalar yig'indisidan paidAmount/status ni tiklaydi
+// (repair/recalc yo'li). Yozish atomik pipeline orqali - stale save yo'q.
 export const recalcStatus = async (paymentId) => {
   const payment = await StudentPayment.findById(paymentId);
   if (!payment) return null;
@@ -57,10 +87,9 @@ export const recalcStatus = async (paymentId) => {
     { $group: { _id: null, total: { $sum: "$amount" } } },
   ]);
   const paidAmount = agg.length ? agg[0].total : 0;
-  payment.paidAmount = paidAmount;
-  payment.status = deriveStatus(paidAmount, payment.expectedAmount);
-  await payment.save();
-  return payment;
+  return StudentPayment.findByIdAndUpdate(paymentId, [paidStatusStage(paidAmount)], {
+    new: true,
+  });
 };
 
 // Snapshot (fee/proratsiya/chegirma) ni qayta hisoblab, statusni ham yangilaydi.
@@ -69,9 +98,11 @@ export const recalc = async (paymentId) => {
   if (!payment) return null;
 
   let joinedAt = null;
+  let leftAt = null;
   if (payment.membership) {
     const m = await GroupMembership.findById(payment.membership);
     joinedAt = m ? m.joinedAt : null;
+    leftAt = m ? m.leftAt : null;
   }
 
   const snap = await buildSnapshot({
@@ -80,6 +111,7 @@ export const recalc = async (paymentId) => {
     year: payment.year,
     month: payment.month,
     joinedAt,
+    leftAt,
   });
 
   payment.baseFee = snap.baseFee;
@@ -142,6 +174,7 @@ export const ensurePaymentForMembership = async (membership, year, month) => {
     year,
     month,
     joinedAt: membership.joinedAt,
+    leftAt: membership.leftAt || null,
   });
 
   try {

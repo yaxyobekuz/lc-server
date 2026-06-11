@@ -76,6 +76,10 @@ export const update = async (id, body) => {
   const doc = await SalaryAdjustment.findOne({ _id: id, isDeleted: { $ne: true } });
   if (!doc) throw new ApiError(404, "Yozuv topilmadi");
 
+  // Mutatsiyadan OLDINGI qamrov - oy/scope o'zgarsa eski oy snapshot'ida
+  // bonus/jarima "muzlab" qolmasligi (ikki marta to'lanmasligi) uchun (H4).
+  const prevScope = { scope: doc.scope, year: doc.year, month: doc.month };
+
   if (body.kind !== undefined) doc.kind = body.kind;
   if (body.valueType !== undefined) doc.valueType = body.valueType;
   if (body.value !== undefined) doc.value = body.value;
@@ -90,6 +94,14 @@ export const update = async (id, body) => {
     doc.month = null;
   }
   await doc.save();
+
+  const scopeChanged =
+    prevScope.scope !== doc.scope ||
+    prevScope.year !== doc.year ||
+    prevScope.month !== doc.month;
+  if (scopeChanged) {
+    await teacherSalaryService.recalcForTeacherScope(doc.teacher, doc.group, prevScope);
+  }
 
   await teacherSalaryService.recalcForTeacherScope(doc.teacher, doc.group, {
     scope: doc.scope,

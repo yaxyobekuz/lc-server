@@ -22,12 +22,16 @@ const effectiveDayFor = (effectiveFrom, year, month) => {
 // Proratsiya (kalendar kun + muzlatish ayrimasi):
 // (startDay..endDay) ichidagi muzlatilmagan kunlar / oydagi jami kunlar.
 // startDay = max(qo'shilgan_kun, kuchga_kirgan_kun); endDay = ketgan_kun yoki oy oxiri.
-// joinedAt/effectiveFrom oy boshidan oldin → 1. leftAt yo'q → oy oxirigacha (inclusive).
+// joinedAt/effectiveFrom oy boshidan oldin → 1. leftAt yo'q → oy oxirigacha.
+// leftExclusive=false (maosh: workEndDate kuni ham ishlangan kun) → leftAt inclusive;
+// leftExclusive=true (a'zolik: leftAt kuni endi a'zo emas - removeStudent/transfer
+// va davomat bilan bir xil encoding) → oxirgi to'lanadigan kun = leftAt - 1.
 export const computeProration = ({
   year,
   month,
   joinedAt,
   leftAt = null,
+  leftExclusive = false,
   freezes = [],
   effectiveFrom = null,
 }) => {
@@ -41,8 +45,13 @@ export const computeProration = ({
   if (join.getTime() > monthEnd.getTime()) {
     return { factor: 0, payableDays: 0, totalDays };
   }
-  if (left && left.getTime() < monthStart.getTime()) {
-    return { factor: 0, payableDays: 0, totalDays };
+  if (left) {
+    const leftBeforeMonth = leftExclusive
+      ? left.getTime() <= monthStart.getTime()
+      : left.getTime() < monthStart.getTime();
+    if (leftBeforeMonth) {
+      return { factor: 0, payableDays: 0, totalDays };
+    }
   }
 
   const effectiveDay = effectiveDayFor(effectiveFrom, year, month);
@@ -54,8 +63,14 @@ export const computeProration = ({
   const joinStartDay =
     join.getTime() <= monthStart.getTime() ? 1 : join.getUTCDate();
   const startDay = Math.max(joinStartDay, effectiveDay);
-  const endDay =
-    !left || left.getTime() >= monthEnd.getTime() ? totalDays : left.getUTCDate();
+  let endDay;
+  if (!left || left.getTime() > monthEnd.getTime()) {
+    endDay = totalDays;
+  } else if (leftExclusive) {
+    endDay = left.getUTCDate() - 1;
+  } else {
+    endDay = left.getTime() >= monthEnd.getTime() ? totalDays : left.getUTCDate();
+  }
 
   let payable = 0;
   for (let d = startDay; d <= endDay; d += 1) {
@@ -84,23 +99,56 @@ export const resolveDiscountAmount = (discounts, proratedFee) => {
 };
 
 // To'liq snapshot hisobi - baseFee, proratsiya va chegirmalardan.
+// leftAt (a'zolik tugagan kun, EXCLUSIVE) o'tkazilsa, ketgan/ko'chirilgan o'quvchi
+// faqat a'zo bo'lgan kunlari uchun hisoblanadi - to'liq oy emas.
+// previousBaseFee berilsa (oy o'rtasida tarif o'zgargan): effectiveFrom'dan
+// OLDINGI a'zolik kunlari eski tarifda hisoblanadi - aks holda oyning birinchi
+// yarmi umuman hisobsiz qolib, summa ikkala tarifdan ham past chiqardi.
 export const computePaymentSnapshot = ({
   baseFee = 0,
+  previousBaseFee = null,
   year,
   month,
   joinedAt,
+  leftAt = null,
   freezes = [],
   discounts = [],
   effectiveFrom = null,
 }) => {
-  const { factor } = computeProration({
+  const main = computeProration({
     year,
     month,
     joinedAt,
+    leftAt,
+    leftExclusive: true,
     freezes,
     effectiveFrom,
   });
-  const proratedFee = Math.round((Number(baseFee) || 0) * factor);
+
+  let proratedFee = Math.round((Number(baseFee) || 0) * main.factor);
+  let factor = main.factor;
+
+  if (previousBaseFee != null && effectiveFrom) {
+    // effectiveFrom cheklovisiz to'liq a'zolik davri - farqi eski tarif kunlari
+    const full = computeProration({
+      year,
+      month,
+      joinedAt,
+      leftAt,
+      leftExclusive: true,
+      freezes,
+      effectiveFrom: null,
+    });
+    const beforeDays = Math.max(0, full.payableDays - main.payableDays);
+    if (beforeDays > 0 && full.totalDays > 0) {
+      proratedFee += Math.round(
+        ((Number(previousBaseFee) || 0) * beforeDays) / full.totalDays,
+      );
+    }
+    // Kliyent breakdown'i (baseFee × factor) aralash summa bilan mos kelishi uchun
+    factor = Number(baseFee) > 0 ? proratedFee / Number(baseFee) : main.factor;
+  }
+
   const discountApplied = resolveDiscountAmount(discounts, proratedFee);
   const expectedAmount = Math.max(0, proratedFee - discountApplied);
   return {

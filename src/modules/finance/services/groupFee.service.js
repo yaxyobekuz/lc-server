@@ -89,7 +89,35 @@ export const upsert = async (
 
   const set = { amount, source: "manual", updatedBy: currentUser?._id || null };
   // Kalit body'da bo'lsa o'rnatamiz (null → tozalash). Bo'lmasa - tegmaymiz.
-  if (effectiveFrom !== undefined) set.effectiveFrom = effectiveFrom;
+  if (effectiveFrom !== undefined) {
+    if (effectiveFrom) {
+      // Keyingi oyga tushgan effectiveFrom butun oy proratsiyasini 0 qilib,
+      // guruhning barcha qarzini o'chirib yuborardi - rad etamiz.
+      const eff = new Date(effectiveFrom);
+      const effIndex = eff.getUTCFullYear() * 12 + eff.getUTCMonth();
+      const feeIndex = Number(year) * 12 + (Number(month) - 1);
+      if (effIndex > feeIndex) {
+        throw new ApiError(
+          400,
+          "Kuchga kirish sanasi tanlangan oydan keyin bo'lishi mumkin emas",
+        );
+      }
+      // Oy o'rtasida TARIF O'ZGARTIRILSA - oldingi kunlar eski tarifda hisoblansin.
+      // (Yangi yaratilayotgan fee'da previousAmount yo'q - billing shu kundan boshlanadi.)
+      const existing = await GroupFee.findOne({ group: groupId, year, month });
+      if (
+        existing &&
+        existing.previousAmount == null &&
+        existing.amount !== amount
+      ) {
+        set.previousAmount = existing.amount;
+      }
+    } else {
+      // effectiveFrom tozalansa aralash hisob ham bekor bo'ladi
+      set.previousAmount = null;
+    }
+    set.effectiveFrom = effectiveFrom;
+  }
 
   const fee = await GroupFee.findOneAndUpdate(
     { group: groupId, year, month },

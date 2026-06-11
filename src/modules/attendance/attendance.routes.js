@@ -116,7 +116,8 @@ router.post(
   bulkRecord,
 );
 
-// O'qituvchi davomati (keldi/kelmadi) - kelmagan kun uchun o'quvchilarga dars haqi qaytariladi
+// O'qituvchi davomati (keldi/kelmadi) - faqat FAKT belgisi, pulga avtomatik
+// ta'sir qilmaydi (jarima admin tomonidan qo'lda yoziladi).
 router.get(
   "/groups/:groupId/teacher",
   requireAuth,
@@ -126,10 +127,13 @@ router.get(
   teacherAttendanceStatus,
 );
 
+// MUHIM: ATTENDANCE_MANAGE (owner-darajali) - oddiy o'qituvchi O'ZINING
+// "kelmadi" belgisini o'chira olmasligi kerak (jarima dalili yo'qolardi).
+// teacherAttendance moduli (manba-haqiqat) bilan bir xil darajada qo'riqlanadi.
 router.post(
   "/groups/:groupId/teacher",
   requireAuth,
-  requirePermission(PERMISSIONS.ATTENDANCE_RECORD),
+  requirePermission(PERMISSIONS.ATTENDANCE_MANAGE),
   requireGroupAccess(),
   validate(teacherSetSchema),
   teacherAttendanceSet,

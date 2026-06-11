@@ -45,6 +45,10 @@ const teacherSalarySchema = new mongoose.Schema(
 
     // To'langan (SalaryTransaction yig'indisidan keshlanadi)
     paidAmount: { type: Number, default: 0 },
+    // expectedAmount keyinchalik (retro chegirma/fee o'zgarishi) kamayib,
+    // to'langan summa undan oshib qolsa - farq shu yerda KO'RINADIGAN bo'lib
+    // saqlanadi (clamp bilan yashirilmaydi, clawback uchun asos).
+    overpaidAmount: { type: Number, default: 0 },
     status: {
       type: String,
       enum: ["unpaid", "partial", "paid"],

@@ -7,6 +7,8 @@ export const createSchema = z.object({
     method: z.enum(["cash", "card"], { required_error: "To'lov turini tanlang" }),
     paidAt: z.string().optional(),
     note: z.string().trim().max(300).optional(),
+    // Double-click/retry himoyasi uchun kliyent yaratadigan takrorlanmas kalit
+    idempotencyKey: z.string().trim().min(8).max(100).optional(),
   }),
 });
 

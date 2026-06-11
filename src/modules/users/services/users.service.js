@@ -9,6 +9,8 @@ import { buildUserProfile } from "../../../helpers/userProfile.helper.js";
 import { toUtcMidnight } from "../../../helpers/attendance.helper.js";
 import { deleteUser, restoreUser } from "../../../helpers/cascadeDelete.helper.js";
 import { logAction as logArchiveAction } from "../../archiveReasons/services/archiveReasons.service.js";
+import * as financePaymentService from "../../finance/services/studentPayment.service.js";
+import logger from "../../../config/logger.js";
 
 const STUDENT_ONLY_FIELDS = ["enrolledAt"];
 const TEACHER_ONLY_FIELDS = ["hiredAt"];
@@ -168,24 +170,25 @@ export const update = async (id, body) => {
   return user;
 };
 
-// Owner uchun: foydalanuvchining ochiq parolini ko'rsatish
+// Owner uchun: login ma'lumotini qaytaradi. Parol endi ochiq matnda
+// SAQLANMAYDI (xavfsizlik) - password doim bo'sh; owner kerak bo'lsa
+// setPassword orqali yangi parol o'rnatib, bir martalik ko'radi.
 export const getPassword = async (id) => {
-  const user = await User.findById(id).select("+plainPassword username role");
+  const user = await User.findById(id, { username: 1, role: 1 });
   if (!user) throw new ApiError(404, "Foydalanuvchi topilmadi");
   if (user.role === ROLES.OWNER) {
     throw new ApiError(403, "Owner parolini ko'rib bo'lmaydi");
   }
-  return { username: user.username, password: user.plainPassword || "" };
+  return { username: user.username, password: "" };
 };
 
-// Owner uchun: foydalanuvchiga yangi parol o'rnatish
+// Owner uchun: foydalanuvchiga yangi parol o'rnatish (javobda bir martalik qaytadi)
 export const setPassword = async (id, newPassword) => {
   const user = await getById(id);
   if (user.role === ROLES.OWNER) {
     throw new ApiError(403, "Owner parolini o'zgartirib bo'lmaydi");
   }
   user.passwordHash = await hashPassword(newPassword);
-  user.plainPassword = newPassword;
   await user.save();
 
   // Parol o'zgargach barcha eski sessiyalarni bekor qilamiz
@@ -216,6 +219,12 @@ export const softRemove = async (id, { reasonId, by } = {}) => {
       m.leftAt = today;
       m.leftReason = "removed";
       await m.save();
+    }
+    // Yopilgan a'zoliklar bo'yicha to'lovlar leftAt bilan qayta proratsiya bo'lsin (C1)
+    try {
+      await financePaymentService.recalcForStudent(user._id);
+    } catch (err) {
+      logger.warn({ err }, "Arxivlashda o'quvchi to'lovlari qayta hisoblanmadi");
     }
     try {
       await logArchiveAction({

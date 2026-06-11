@@ -14,6 +14,7 @@
     "seed:fake-extras": "node src/seeds/fakeExtras.seed.js",
     "seed:fake-extras2": "node src/seeds/fakeExtras2.seed.js",
     "migrate:attendance-slot": "node src/seeds/migrateAttendanceSlot.seed.js",
+    "migrate:remove-plain-passwords": "node src/seeds/removePlainPasswords.seed.js",
     "migrate:membership-index": "node src/seeds/migrateMembershipIndex.seed.js",
     "seed:all": "npm run seed:permissions && npm run seed:owner && npm run seed:communication && npm run seed:fake-data && npm run seed:fake-extras && npm run seed:fake-extras2"
   },

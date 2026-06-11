@@ -17,6 +17,10 @@ const groupFeeSchema = new mongoose.Schema(
     // Yangi summa qaysi sanadan kuchga kiradi (proratsiya shu kundan boshlanadi).
     // null → butun oy. Carry-forward bilan keyingi oyga tarqalmaydi.
     effectiveFrom: { type: Date, default: null },
+    // Oy o'rtasida tarif O'ZGARTIRILGANDA effectiveFrom'dan oldingi kunlar uchun
+    // amal qilgan eski tarif. null → oldingi davr hisoblanmaydi (oy o'rtasidan
+    // billing boshlanadigan yangi fee). Aralash hisob: eski×oldingi + yangi×keyingi.
+    previousAmount: { type: Number, min: 0, default: null },
     // "auto" - job carry-forward; "manual" - qo'lda tahrirlangan
     source: { type: String, enum: ["auto", "manual"], default: "auto" },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },

@@ -19,12 +19,24 @@ const MAX_ADVANCE_MONTHS = 24;
 // To'lov qabul qiladi. Summa joriy oy qoldig'idan oshsa, ortig'i ketma-ket
 // keyingi oylarga (avans) taqsimlanadi - har oyga alohida tranzaksiya yoziladi.
 // Shunda kirim har oyga taqsimlangan holda hisoblanadi.
-export const create = async ({ paymentId, amount, method, paidAt, note }, currentUser) => {
+// idempotencyKey berilsa: bir xil kalitli takror so'rov (double-click/retry)
+// yangi pul yozmaydi - mavjud tranzaksiya qaytariladi.
+export const create = async (
+  { paymentId, amount, method, paidAt, note, idempotencyKey },
+  currentUser,
+) => {
   const payment = await StudentPayment.findById(paymentId);
   if (!payment) throw new ApiError(404, "To'lov topilmadi");
 
   const day = paidAt ? parseLocalDay(paidAt) : localTodayMidnight();
   if (!day) throw new ApiError(400, "Noto'g'ri to'lov sanasi");
+
+  if (idempotencyKey) {
+    const existing = await PaymentTransaction.findOne({ idempotencyKey });
+    if (existing) {
+      return { allocated: 0, duplicate: true, transactions: [existing] };
+    }
+  }
 
   const membership = payment.membership
     ? await GroupMembership.findById(payment.membership)
@@ -65,20 +77,32 @@ export const create = async ({ paymentId, amount, method, paidAt, note }, curren
         : new Date(Date.UTC(cursor.year, cursor.month - 1, 1));
       const trxNote = isFirst ? baseNote : `${baseNote ? baseNote + " · " : ""}Avans (${dateKeyOf(day)})`;
 
-      const trx = await PaymentTransaction.create({
-        payment: current._id,
-        student: current.student,
-        group: current.group,
-        year: current.year,
-        month: current.month,
-        amount: alloc,
-        method,
-        paidAt: trxPaidAt,
-        note: trxNote,
-        createdBy: currentUser?._id || null,
-      });
+      let trx;
+      try {
+        trx = await PaymentTransaction.create({
+          payment: current._id,
+          student: current.student,
+          group: current.group,
+          year: current.year,
+          month: current.month,
+          amount: alloc,
+          method,
+          paidAt: trxPaidAt,
+          note: trxNote,
+          // Kalit faqat batch'ning birinchi yozuviga - unique index dublikatni to'sadi
+          idempotencyKey: created.length === 0 ? idempotencyKey || null : null,
+          createdBy: currentUser?._id || null,
+        });
+      } catch (err) {
+        // Parallel takror so'rov unique indexga urildi - dublikat yozmaymiz
+        if (err?.code === 11000 && idempotencyKey && created.length === 0) {
+          const existing = await PaymentTransaction.findOne({ idempotencyKey });
+          return { allocated: 0, duplicate: true, transactions: existing ? [existing] : [] };
+        }
+        throw err;
+      }
       created.push(trx);
-      await studentPaymentService.recalcStatus(current._id);
+      await studentPaymentService.applyPaidDelta(current._id, alloc);
       leftover -= alloc;
     }
 
@@ -92,30 +116,40 @@ export const create = async ({ paymentId, amount, method, paidAt, note }, curren
 
   // Hali ham ortiqcha qolsa (spill imkoni yo'q yoki cap) - joriy oyga ortiqcha sifatida
   if (leftover > 0) {
-    const trx = await PaymentTransaction.create({
-      payment: payment._id,
-      student: payment.student,
-      group: payment.group,
-      year: payment.year,
-      month: payment.month,
-      amount: leftover,
-      method,
-      paidAt: day,
-      note: baseNote,
-      createdBy: currentUser?._id || null,
-    });
+    let trx;
+    try {
+      trx = await PaymentTransaction.create({
+        payment: payment._id,
+        student: payment.student,
+        group: payment.group,
+        year: payment.year,
+        month: payment.month,
+        amount: leftover,
+        method,
+        paidAt: day,
+        note: baseNote,
+        idempotencyKey: created.length === 0 ? idempotencyKey || null : null,
+        createdBy: currentUser?._id || null,
+      });
+    } catch (err) {
+      if (err?.code === 11000 && idempotencyKey && created.length === 0) {
+        const existing = await PaymentTransaction.findOne({ idempotencyKey });
+        return { allocated: 0, duplicate: true, transactions: existing ? [existing] : [] };
+      }
+      throw err;
+    }
     created.push(trx);
-    await studentPaymentService.recalcStatus(payment._id);
+    await studentPaymentService.applyPaidDelta(payment._id, leftover);
   }
 
   return { allocated: created.length, transactions: created };
 };
 
-// Tranzaksiyani bekor qiladi (soft-delete), statusni qayta hisoblaydi.
+// Tranzaksiyani bekor qiladi (soft-delete), balansni atomik kamaytiradi.
 export const remove = async (id, currentUser) => {
   const trx = await PaymentTransaction.findOne({ _id: id, isDeleted: { $ne: true } });
   if (!trx) throw new ApiError(404, "Tranzaksiya topilmadi");
   await trx.softDelete(currentUser?._id);
-  await studentPaymentService.recalcStatus(trx.payment);
+  await studentPaymentService.applyPaidDelta(trx.payment, -trx.amount);
   return { _id: id };
 };

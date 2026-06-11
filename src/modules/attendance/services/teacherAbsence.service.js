@@ -10,6 +10,7 @@ import {
   dateKeyOf,
   dayOfWeekOf,
   scheduleActiveOn,
+  localTodayMidnight,
 } from "../../../helpers/attendance.helper.js";
 
 const parseDay = (dateInput) => {
@@ -43,6 +44,10 @@ export const setAbsent = async (groupId, dateInput, currentUser) => {
   if (!group) throw new ApiError(404, "Guruh topilmadi");
   const date = parseDay(dateInput);
   const dKey = dateKeyOf(date);
+  // Kelajak sanaga "kelmadi" yozib bo'lmaydi (bulkRecord bilan bir xil qoida)
+  if (date.getTime() > localTodayMidnight().getTime()) {
+    throw new ApiError(400, "Kelajak sanaga davomat belgilab bo'lmaydi");
+  }
   if (!isClassDayFor(group, dayOfWeekOf(date), date)) {
     throw new ApiError(400, "Bu kun bu guruh uchun dars kuni emas");
   }
