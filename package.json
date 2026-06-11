@@ -6,7 +6,6 @@
   "scripts": {
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
-    "test": "node --test \"src/**/*.test.js\"",
     "lint": "eslint .",
     "seed:permissions": "node src/seeds/permissions.seed.js",
     "seed:owner": "node src/seeds/owner.seed.js",

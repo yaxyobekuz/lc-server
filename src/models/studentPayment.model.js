@@ -40,12 +40,6 @@ const studentPaymentSchema = new mongoose.Schema(
       index: true,
     },
     recalculatedAt: { type: Date, default: null },
-
-    // Tarixiy import (onboarding) orqali yaratilgan to'lov yozuvi. Auditda
-    // tizimga kirishdan oldingi oylarni ajratish uchun. expectedAmount/status
-    // odatdagidek recalc orqali hisoblanadi - import faqat manbani belgilaydi.
-    imported: { type: Boolean, default: false, index: true },
-    importedAt: { type: Date, default: null },
   },
   { timestamps: true },
 );

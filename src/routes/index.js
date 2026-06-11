@@ -23,7 +23,6 @@ import adminDashboardRouter from "../modules/adminDashboard/adminDashboard.route
 import searchRouter from "../modules/search/search.routes.js";
 import financeRouter from "../modules/finance/finance.routes.js";
 import teacherSalaryRouter from "../modules/teacherSalary/teacherSalary.routes.js";
-import onboardingRouter from "../modules/onboarding/onboarding.routes.js";
 
 const router = Router();
 
@@ -67,8 +66,5 @@ router.use("/admin-dashboard", adminDashboardRouter);
 // Finance subsystem (Moliya)
 router.use("/finance", financeRouter);
 router.use("/teacher-salary", teacherSalaryRouter);
-
-// Onboarding (mavjud tarixiy ma'lumotni import qilish)
-router.use("/onboarding", onboardingRouter);
 
 export default router;

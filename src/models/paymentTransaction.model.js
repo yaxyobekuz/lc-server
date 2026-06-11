@@ -36,17 +36,6 @@ const paymentTransactionSchema = new mongoose.Schema(
     // Bitta naqd to'lov bir nechta oyga (avans) taqsimlanganda barcha bo'laklarni
     // bog'laydi - bekor qilishda BUTUN batch birga void bo'ladi (fantom avans qolmaydi).
     batchId: { type: mongoose.Schema.Types.ObjectId, default: null, index: true },
-    // Tarixiy import (onboarding sehrgari) orqali kiritilgan to'lov - hisobot va
-    // auditda real kassa kirimidan ajratish uchun. importedAt = import sanasi (real
-    // paidAt esa o'tmishdagi to'lov oyi). importBatch → qaysi import partiyasi.
-    imported: { type: Boolean, default: false, index: true },
-    importedAt: { type: Date, default: null },
-    importBatch: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "ImportBatch",
-      default: null,
-      index: true,
-    },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
   },
   { timestamps: true },
