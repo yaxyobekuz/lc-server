@@ -20,7 +20,7 @@ export const monthly = async ({ year, month }) => {
       // obligation har bir maosh bo'yicha 0 ga clamp - bitta o'qituvchining
       // ortiqcha to'lovi boshqasining haqini "yutib yubormasligi" uchun.
       TeacherSalary.aggregate([
-        { $match: { year: y, month: m } },
+        { $match: { year: y, month: m, isDeleted: { $ne: true } } },
         {
           $group: {
             _id: null,
@@ -58,7 +58,7 @@ export const monthly = async ({ year, month }) => {
       ]),
       // O'qituvchilar bo'yicha qoldiq (har maosh bo'yicha clamp - netting yo'q)
       TeacherSalary.aggregate([
-        { $match: { year: y, month: m } },
+        { $match: { year: y, month: m, isDeleted: { $ne: true } } },
         {
           $group: {
             _id: "$teacher",

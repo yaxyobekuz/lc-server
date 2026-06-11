@@ -23,8 +23,28 @@ const toObjectId = (id) => {
   return new mongoose.Types.ObjectId(String(id));
 };
 
+// Oy oralig'iga tegishli o'quvchi+guruh a'zolik davrlarini yuklaydi.
+// Rejoin (bir oyda ketib qayta qo'shilish) bo'lsa bir nechta davr qaytadi -
+// proratsiya har birini alohida sanab kunlarni qo'shadi.
+const loadMembershipPeriods = async (student, group, year, month) => {
+  const monthEnd = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+  const monthStart = new Date(Date.UTC(year, month - 1, 1));
+  const rows = await GroupMembership.find(
+    {
+      student,
+      group,
+      isDeleted: { $ne: true },
+      joinedAt: { $lte: monthEnd },
+      $or: [{ leftAt: null }, { leftAt: { $gt: monthStart } }],
+    },
+    { joinedAt: 1, leftAt: 1 },
+  ).lean();
+  return rows.map((r) => ({ joinedAt: r.joinedAt, leftAt: r.leftAt || null }));
+};
+
 // Bir o'quvchi+guruh+oy uchun snapshot maydonlarini hisoblaydi (DB dan yuklab).
-const buildSnapshot = async ({ student, group, year, month, joinedAt, leftAt = null }) => {
+// periods berilmasa, bitta {joinedAt, leftAt} davr ishlatiladi.
+const buildSnapshot = async ({ student, group, year, month, joinedAt, leftAt = null, periods = null }) => {
   const [feeDoc, discounts, freezes] = await Promise.all([
     GroupFee.findOne({ group, year, month }),
     Discount.find({
@@ -44,6 +64,7 @@ const buildSnapshot = async ({ student, group, year, month, joinedAt, leftAt = n
     month,
     joinedAt,
     leftAt,
+    periods,
     freezes,
     discounts,
     effectiveFrom: feeDoc ? feeDoc.effectiveFrom : null,
@@ -99,21 +120,25 @@ export const recalc = async (paymentId) => {
   const payment = await StudentPayment.findById(paymentId);
   if (!payment) return null;
 
-  let joinedAt = null;
-  let leftAt = null;
-  if (payment.membership) {
-    const m = await GroupMembership.findById(payment.membership);
-    joinedAt = m ? m.joinedAt : null;
-    leftAt = m ? m.leftAt : null;
-  }
+  // Shu oydagi BARCHA a'zolik davrlari (rejoin holatida bir nechta) bo'yicha
+  // hisoblaymiz - bitta membership ref'iga tayanib qolmaymiz, aks holda
+  // ketib-qaytgan o'quvchining ikkinchi davri billing'dan tushib qolardi.
+  const periods = await loadMembershipPeriods(
+    payment.student,
+    payment.group,
+    payment.year,
+    payment.month,
+  );
 
   const snap = await buildSnapshot({
     student: payment.student,
     group: payment.group,
     year: payment.year,
     month: payment.month,
-    joinedAt,
-    leftAt,
+    periods: periods.length ? periods : null,
+    // periods bo'sh bo'lsa (membership topilmadi) - eski membership ref bo'yicha
+    joinedAt: null,
+    leftAt: null,
   });
 
   const paidExpr = { $ifNull: ["$paidAmount", 0] };
@@ -185,7 +210,16 @@ export const ensurePaymentForMembership = async (membership, year, month) => {
     year,
     month,
   });
-  if (exists) return exists;
+  if (exists) {
+    // Rejoin: shu oyda to'lov allaqachon bor (eski a'zolikniki). Uni joriy
+    // a'zolikka ulab, barcha davrlar bo'yicha qayta hisoblaymiz - aks holda
+    // yangi davr kunlari billing'ga kirmay qolardi.
+    if (String(exists.membership) !== String(membership._id)) {
+      exists.membership = membership._id;
+      await exists.save();
+    }
+    return recalc(exists._id);
+  }
 
   const snap = await buildSnapshot({
     student: membership.student,
@@ -264,7 +298,7 @@ export const list = async ({
   page = 1,
   limit = 50,
 }) => {
-  const filter = {};
+  const filter = { isDeleted: { $ne: true } };
   if (groupId) filter.group = toObjectId(groupId);
   if (year) filter.year = Number(year);
   if (month) filter.month = Number(month);
@@ -321,7 +355,7 @@ export const historyByStudent = async (studentId) => {
   const student = await User.findById(sid, safeStudentProjection).lean();
   if (!student) throw new ApiError(404, "O'quvchi topilmadi");
 
-  const payments = await StudentPayment.find({ student: sid })
+  const payments = await StudentPayment.find({ student: sid, isDeleted: { $ne: true } })
     .populate("group", { name: 1 })
     .sort({ year: -1, month: -1 })
     .lean();

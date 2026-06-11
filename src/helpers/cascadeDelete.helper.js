@@ -7,6 +7,10 @@ import Attendance from "../models/attendance.model.js";
 import AttendanceExemption from "../models/attendanceExemption.model.js";
 import TeacherAttendance from "../models/teacherAttendance.model.js";
 import TeacherAbsence from "../models/teacherAbsence.model.js";
+import StudentPayment from "../models/studentPayment.model.js";
+import PaymentTransaction from "../models/paymentTransaction.model.js";
+import TeacherSalary from "../models/teacherSalary.model.js";
+import SalaryTransaction from "../models/salaryTransaction.model.js";
 import { ROLES } from "../constants/roles.js";
 import ApiError from "../utils/ApiError.js";
 
@@ -20,12 +24,18 @@ const setStudentRelated = (studentId, deleted, by) =>
     GroupMembership.updateMany({ student: studentId }, mark(deleted, by)),
     Attendance.updateMany({ student: studentId }, mark(deleted, by)),
     AttendanceExemption.updateMany({ student: studentId }, mark(deleted, by)),
+    // Moliya yozuvlari ham chiqarilsin - aks holda o'chirilgan o'quvchi
+    // hisobotlarda (kirim/qarz) sanalib turardi.
+    StudentPayment.updateMany({ student: studentId }, mark(deleted, by)),
+    PaymentTransaction.updateMany({ student: studentId }, mark(deleted, by)),
   ]);
 
 const setTeacherRelated = (teacherId, deleted, by) =>
   Promise.all([
     TeacherAttendance.updateMany({ teacher: teacherId }, mark(deleted, by)),
     TeacherAbsence.updateMany({ teacher: teacherId }, mark(deleted, by)),
+    TeacherSalary.updateMany({ teacher: teacherId }, mark(deleted, by)),
+    SalaryTransaction.updateMany({ teacher: teacherId }, mark(deleted, by)),
   ]);
 
 const setGroupRelated = async (groupId, deleted, by) => {
@@ -33,6 +43,10 @@ const setGroupRelated = async (groupId, deleted, by) => {
     GroupMembership.updateMany({ group: groupId }, mark(deleted, by)),
     Attendance.updateMany({ group: groupId }, mark(deleted, by)),
     TeacherAbsence.updateMany({ group: groupId }, mark(deleted, by)),
+    StudentPayment.updateMany({ group: groupId }, mark(deleted, by)),
+    PaymentTransaction.updateMany({ group: groupId }, mark(deleted, by)),
+    TeacherSalary.updateMany({ group: groupId }, mark(deleted, by)),
+    SalaryTransaction.updateMany({ group: groupId }, mark(deleted, by)),
   ]);
 };
 

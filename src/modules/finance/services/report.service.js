@@ -21,7 +21,7 @@ export const monthly = async ({ year, month }) => {
       // debt har bir to'lov bo'yicha 0 ga clamp qilinadi - bitta o'quvchining
       // ortiqcha to'lovi boshqasining real qarzini "yutib yubormasligi" uchun.
       StudentPayment.aggregate([
-        { $match: { year: y, month: m } },
+        { $match: { year: y, month: m, isDeleted: { $ne: true } } },
         {
           $group: {
             _id: null,
@@ -61,7 +61,7 @@ export const monthly = async ({ year, month }) => {
       ]),
       // Guruhlar bo'yicha qarzdorlik (har to'lov bo'yicha clamp - ichki netting yo'q)
       StudentPayment.aggregate([
-        { $match: { year: y, month: m } },
+        { $match: { year: y, month: m, isDeleted: { $ne: true } } },
         {
           $group: {
             _id: "$group",

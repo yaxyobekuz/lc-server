@@ -28,7 +28,7 @@ const toObjectId = (id) => {
 // proratsiya va chegirma hisobga olingan). Guruh to'lovi o'zgarsa bu ham o'zgaradi.
 export const computeGroupRevenue = async (group, year, month) => {
   const agg = await StudentPayment.aggregate([
-    { $match: { group: toObjectId(group), year, month } },
+    { $match: { group: toObjectId(group), year, month, isDeleted: { $ne: true } } },
     { $group: { _id: null, total: { $sum: "$expectedAmount" } } },
   ]);
   return agg.length ? agg[0].total : 0;
@@ -320,7 +320,7 @@ export const list = async ({
   page = 1,
   limit = 200,
 }) => {
-  const filter = {};
+  const filter = { isDeleted: { $ne: true } };
   if (groupId) filter.group = toObjectId(groupId);
   if (teacherId) filter.teacher = toObjectId(teacherId);
   if (year) filter.year = Number(year);
@@ -388,7 +388,7 @@ export const historyByTeacher = async (teacherId) => {
   const teacher = await User.findById(tid, safeTeacherProjection).lean();
   if (!teacher) throw new ApiError(404, "O'qituvchi topilmadi");
 
-  const salaries = await TeacherSalary.find({ teacher: tid })
+  const salaries = await TeacherSalary.find({ teacher: tid, isDeleted: { $ne: true } })
     .populate("group", { name: 1 })
     .sort({ year: -1, month: -1 })
     .lean();
@@ -432,7 +432,7 @@ export const historyByTeacher = async (teacherId) => {
 
 // Majburiyatlar: qoldig'i (expected - paid) > 0 bo'lgan maoshlar.
 export const obligations = async ({ groupId, year, month }) => {
-  const filter = { year: Number(year), month: Number(month) };
+  const filter = { year: Number(year), month: Number(month), isDeleted: { $ne: true } };
   if (groupId) filter.group = toObjectId(groupId);
 
   const items = await TeacherSalary.find(filter)

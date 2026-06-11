@@ -98,12 +98,37 @@ export const resolveDiscountAmount = (discounts, proratedFee) => {
   return clamp(percentCut + fixed, 0, proratedFee);
 };
 
+// Bir nechta a'zolik davri (periods) bo'yicha to'lanadigan kunlar yig'indisi.
+// Bir o'quvchi bitta oyda guruhdan ketib qayta qo'shilsa (rejoin) - har bir
+// davr alohida proratsiya qilinib, kunlar QO'SHILADI (bir kun ikki marta
+// sanalmaydi: davrlar a'zolik bo'yicha kesishmaydi). periods bo'sh bo'lsa
+// bitta {joinedAt, leftAt} davr sifatida qaraladi.
+const sumPayableDays = ({ year, month, periods, freezes, effectiveFrom }) => {
+  let payableDays = 0;
+  let totalDays = 0;
+  for (const p of periods) {
+    const r = computeProration({
+      year,
+      month,
+      joinedAt: p.joinedAt,
+      leftAt: p.leftAt || null,
+      leftExclusive: true,
+      freezes,
+      effectiveFrom,
+    });
+    totalDays = r.totalDays;
+    payableDays += r.payableDays;
+  }
+  return { payableDays, totalDays };
+};
+
 // To'liq snapshot hisobi - baseFee, proratsiya va chegirmalardan.
-// leftAt (a'zolik tugagan kun, EXCLUSIVE) o'tkazilsa, ketgan/ko'chirilgan o'quvchi
-// faqat a'zo bo'lgan kunlari uchun hisoblanadi - to'liq oy emas.
+// periods: o'quvchining shu oydagi a'zolik davrlari [{joinedAt, leftAt(EXCLUSIVE)}].
+// Bir nechta davr (rejoin) bo'lsa kunlar qo'shiladi. Orqaga-moslik uchun
+// joinedAt/leftAt to'g'ridan-to'g'ri ham qabul qilinadi (bitta davr).
 // previousBaseFee berilsa (oy o'rtasida tarif o'zgargan): effectiveFrom'dan
 // OLDINGI a'zolik kunlari eski tarifda hisoblanadi - aks holda oyning birinchi
-// yarmi umuman hisobsiz qolib, summa ikkala tarifdan ham past chiqardi.
+// yarmi hisobsiz qolib, summa ikkala tarifdan ham past chiqardi.
 export const computePaymentSnapshot = ({
   baseFee = 0,
   previousBaseFee = null,
@@ -111,42 +136,37 @@ export const computePaymentSnapshot = ({
   month,
   joinedAt,
   leftAt = null,
+  periods = null,
   freezes = [],
   discounts = [],
   effectiveFrom = null,
 }) => {
-  const main = computeProration({
-    year,
-    month,
-    joinedAt,
-    leftAt,
-    leftExclusive: true,
-    freezes,
-    effectiveFrom,
-  });
+  const effPeriods =
+    periods && periods.length ? periods : [{ joinedAt, leftAt }];
 
-  let proratedFee = Math.round((Number(baseFee) || 0) * main.factor);
-  let factor = main.factor;
+  const main = sumPayableDays({ year, month, periods: effPeriods, freezes, effectiveFrom });
+  const totalDays = main.totalDays || daysInMonth(year, month);
+
+  let proratedFee = Math.round(
+    ((Number(baseFee) || 0) * main.payableDays) / totalDays,
+  );
+  let factor = clamp(main.payableDays / totalDays, 0, 1);
 
   if (previousBaseFee != null && effectiveFrom) {
-    // effectiveFrom cheklovisiz to'liq a'zolik davri - farqi eski tarif kunlari
-    const full = computeProration({
+    // effectiveFrom cheklovisiz to'liq a'zolik kunlari - farqi eski tarif kunlari
+    const full = sumPayableDays({
       year,
       month,
-      joinedAt,
-      leftAt,
-      leftExclusive: true,
+      periods: effPeriods,
       freezes,
       effectiveFrom: null,
     });
     const beforeDays = Math.max(0, full.payableDays - main.payableDays);
-    if (beforeDays > 0 && full.totalDays > 0) {
-      proratedFee += Math.round(
-        ((Number(previousBaseFee) || 0) * beforeDays) / full.totalDays,
-      );
+    if (beforeDays > 0 && totalDays > 0) {
+      proratedFee += Math.round(((Number(previousBaseFee) || 0) * beforeDays) / totalDays);
     }
     // Kliyent breakdown'i (baseFee × factor) aralash summa bilan mos kelishi uchun
-    factor = Number(baseFee) > 0 ? proratedFee / Number(baseFee) : main.factor;
+    factor = Number(baseFee) > 0 ? proratedFee / Number(baseFee) : factor;
   }
 
   const discountApplied = resolveDiscountAmount(discounts, proratedFee);
