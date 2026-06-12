@@ -31,13 +31,24 @@ const botUserSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       default: null,
-      unique: true,
-      sparse: true,
     },
     flowState: { type: flowStateSchema, default: null },
     lastSeenAt: { type: Date, default: Date.now },
   },
   { timestamps: true },
+);
+
+// `user` bo'yicha unikal indeks: faqat bog'langan (null bo'lmagan) hujjatlar uchun.
+// MUHIM: `sparse` indeks `null` ni "yo'q" deb hisoblamaydi, schema esa `default: null`
+// qo'yadi - shu sabab bir nechta bog'lanmagan hujjat user:null bilan to'qnashib,
+// E11000 xatoga olib kelardi (Telegram bog'lanmasdi). `partialFilterExpression` bilan
+// uniqueness faqat user mavjud bo'lganda tekshiriladi.
+botUserSchema.index(
+  { user: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { user: { $type: "objectId" } },
+  },
 );
 
 botUserSchema.set("toJSON", {

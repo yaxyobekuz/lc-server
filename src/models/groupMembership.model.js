@@ -31,6 +31,10 @@ const groupMembershipSchema = new mongoose.Schema(
     },
     // Sabab keyin o'zgarsa/o'chsa ham hisobot buzilmasligi uchun snapshot.
     leftReasonTitle: { type: String, default: "" },
+    // O'quvchi guruhdan chiqarilganda login qilganda bir marta "siz {guruh}dan
+    // chiqarildingiz" modali ko'rsatiladi. Modal yopilgach bu sana to'ldiriladi
+    // va modal qayta ko'rinmaydi (faqat leftReason="removed" uchun ahamiyatli).
+    removalNoticeSeenAt: { type: Date, default: null },
     transferredTo: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Group",

@@ -17,6 +17,7 @@
     "migrate:remove-plain-passwords": "node src/seeds/removePlainPasswords.seed.js",
     "migrate:membership-index": "node src/seeds/migrateMembershipIndex.seed.js",
     "migrate:backfill-user-role": "node src/seeds/backfillUserRole.seed.js",
+    "migrate:botuser-index": "node src/seeds/migrateBotUserIndex.seed.js",
     "seed:all": "npm run seed:permissions && npm run seed:owner && npm run seed:communication && npm run seed:fake-data && npm run seed:fake-extras && npm run seed:fake-extras2"
   },
   "dependencies": {

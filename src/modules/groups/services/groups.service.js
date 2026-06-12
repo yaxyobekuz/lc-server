@@ -829,3 +829,54 @@ export const findAllActiveForStudent = async (studentId) => {
       group: m.group,
     }));
 };
+
+// Guruhdan chiqarilgan o'quvchiga login qilganda bir marta ko'rsatiladigan
+// xabar. Eng oxirgi "removed" a'zolikni qaytaradi, agar:
+//  • hali ko'rilmagan bo'lsa (removalNoticeSeenAt = null), va
+//  • o'quvchi o'sha guruhga hozir qayta a'zo bo'lmagan bo'lsa (qayta qo'shilgan
+//    bo'lsa xabar ortiqcha).
+// Bittadan ortiq bo'lsa - eng so'nggisi (leftAt bo'yicha) ko'rsatiladi.
+export const findPendingRemovalNotice = async (studentId) => {
+  const membership = await GroupMembership.findOne({
+    student: studentId,
+    leftReason: "removed",
+    leftAt: { $ne: null },
+    removalNoticeSeenAt: null,
+    isDeleted: { $ne: true },
+  })
+    .populate({ path: "group", select: "name" })
+    .sort({ leftAt: -1 });
+
+  if (!membership || !membership.group) return null;
+
+  // O'quvchi o'sha guruhga qayta faol a'zo bo'lganmi? Bo'lsa - xabar bermaymiz
+  // (ammo seen ham qilmaymiz, chunki bu boshqa a'zolik yozuvi).
+  const rejoined = await GroupMembership.exists({
+    student: studentId,
+    group: membership.group._id,
+    leftAt: null,
+    isDeleted: { $ne: true },
+  });
+  if (rejoined) return null;
+
+  return {
+    membershipId: String(membership._id),
+    groupName: membership.group.name,
+    reasonTitle: membership.leftReasonTitle || "",
+    leftAt: membership.leftAt,
+  };
+};
+
+// Xabar ko'rilgan deb belgilaydi (modal yopilganda chaqiriladi). Faqat shu
+// o'quvchining ko'rilmagan "removed" a'zoliklarini yopadi - shunda qayta
+// login qilinganda modal chiqmaydi.
+export const markRemovalNoticesSeen = async (studentId) => {
+  await GroupMembership.updateMany(
+    {
+      student: studentId,
+      leftReason: "removed",
+      removalNoticeSeenAt: null,
+    },
+    { $set: { removalNoticeSeenAt: new Date() } },
+  );
+};

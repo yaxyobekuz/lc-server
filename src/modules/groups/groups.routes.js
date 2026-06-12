@@ -34,12 +34,14 @@ import replaceTeacher from "./handlers/replaceTeacher.handler.js";
 import history from "./handlers/history.handler.js";
 import myActive from "./handlers/myActive.handler.js";
 import myTeach from "./handlers/myTeach.handler.js";
+import markRemovalNoticeSeen from "./handlers/markRemovalNoticeSeen.handler.js";
 
 const router = Router();
 
 // "Mening" routelar (param routelar oldida bo'lishi shart)
 router.get("/me/active", requireAuth, myActive);
 router.get("/me/teach", requireAuth, myTeach);
+router.post("/me/removal-notice/seen", requireAuth, markRemovalNoticeSeen);
 
 router.get(
   "/",

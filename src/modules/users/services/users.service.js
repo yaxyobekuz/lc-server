@@ -1,5 +1,6 @@
 import User from "../../../models/user.model.js";
 import GroupMembership from "../../../models/groupMembership.model.js";
+import ArchiveReason from "../../../models/archiveReason.model.js";
 import RefreshToken from "../../../models/refreshToken.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import { ROLES } from "../../../constants/roles.js";
@@ -211,6 +212,20 @@ export const softRemove = async (id, { reasonId, by } = {}) => {
   // O'quvchi arxivlansa - faol a'zoliklarni yopamiz va sababni logga yozamiz.
   if (user.role === ROLES.STUDENT) {
     const today = toUtcMidnight(new Date());
+
+    // Chiqish sababini a'zolikka ham snapshot bilan yozamiz, shunda retention
+    // ("Chiqib ketish tahlili") hisoboti shu o'quvchini to'g'ri sabab bo'yicha
+    // sanaydi - aks holda u "Sababsiz" guruhiga tushib qoladi.
+    let leftReasonDetail = null;
+    let leftReasonTitle = "";
+    if (reasonId) {
+      const reason = await ArchiveReason.findById(reasonId, { title: 1 }).lean();
+      if (reason) {
+        leftReasonDetail = reason._id;
+        leftReasonTitle = reason.title;
+      }
+    }
+
     const memberships = await GroupMembership.find({
       student: user._id,
       leftAt: null,
@@ -218,6 +233,8 @@ export const softRemove = async (id, { reasonId, by } = {}) => {
     for (const m of memberships) {
       m.leftAt = today;
       m.leftReason = "removed";
+      m.leftReasonDetail = leftReasonDetail;
+      m.leftReasonTitle = leftReasonTitle;
       await m.save();
     }
     // Yopilgan a'zoliklar bo'yicha to'lovlar leftAt bilan qayta proratsiya bo'lsin (C1)

@@ -4,6 +4,7 @@ import { ROLES } from "../constants/roles.js";
 import {
   list as listGroups,
   findAllActiveForStudent,
+  findPendingRemovalNotice,
 } from "../modules/groups/services/groups.service.js";
 
 const calcYears = (date) => {
@@ -51,6 +52,9 @@ export const buildUserProfile = async (userInput) => {
   if (user.role === ROLES.STUDENT) {
     const activeGroups = await findAllActiveForStudent(user._id);
 
+    // Guruhdan chiqarilgan bo'lsa - login qilganda bir marta xabar (modal) uchun.
+    const removalNotice = await findPendingRemovalNotice(user._id);
+
     // Davomat summary (joriy oy) - lazy import (circular dependency oldini olish)
     const { getStudentSummary: getAttSummary } = await import(
       "../modules/attendance/services/attendance.service.js"
@@ -71,6 +75,7 @@ export const buildUserProfile = async (userInput) => {
       ...base,
       activeGroups,
       attendanceSummary,
+      removalNotice,
       telegram,
     };
   }
