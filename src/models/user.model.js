@@ -15,6 +15,8 @@ const userSchema = new mongoose.Schema(
     passwordHash: { type: String, required: true, select: false },
     role: { type: String, enum: ALL_ROLES, default: ROLES.STUDENT, required: true },
     isActive: { type: Boolean, default: true },
+    // Arxivlangan (isActive=false qilingan) payt. Tiklanganda null bo'ladi.
+    archivedAt: { type: Date, default: null },
 
     // Profil ma'lumotlari (ixtiyoriy)
     birthDate: { type: Date, default: null },

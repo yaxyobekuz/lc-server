@@ -17,3 +17,12 @@ export const authLimiter = rateLimit({
   legacyHeaders: false,
   message: { success: false, message: "Juda ko'p urinish, biroz kuting" },
 });
+
+// Telegram WebApp verify endpointi uchun: daqiqasiga 40 ta so'rov
+export const botVerifyLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 40,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: "Juda ko'p urinish, biroz kuting" },
+});

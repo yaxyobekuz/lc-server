@@ -467,7 +467,45 @@ export const finish = async (id, { finishedAt } = {}) => {
   return group;
 };
 
-export const addStudent = async (groupId, studentId, { joinedAt } = {}) => {
+// Membershipning joinedAt oyidan tugash oyigacha (leftAt yoki bugun) har bir oy
+// uchun GroupFee (backfill) + proratsiyalangan to'lov + o'qituvchi maoshini
+// yaratadi/yangilaydi (best-effort). Eski o'quvchi joinedAt o'tgan oyga qo'yilsa,
+// o'tgan oylar qarzi ham proratsiyalangan holda chiqadi.
+const ensureFinanceForMembershipRange = async (groupId, membership) => {
+  try {
+    const today = localTodayMidnight();
+    // Tugash chegarasi: leftAt bo'lsa o'sha oy, aks holda joriy oy.
+    const endRef = membership.leftAt
+      ? toUtcMidnight(membership.leftAt)
+      : today;
+    const endYear = endRef.getUTCFullYear();
+    const endMonth = endRef.getUTCMonth() + 1; // 1-12
+
+    const join = membership.joinedAt;
+    let year = join.getUTCFullYear();
+    let month = join.getUTCMonth() + 1; // 1-12
+
+    while (year < endYear || (year === endYear && month <= endMonth)) {
+      await financeGroupFeeService.ensureGroupFeeBackfill(groupId, year, month);
+      await financePaymentService.ensurePaymentForMembership(membership, year, month);
+      await teacherSalaryService.recalcForGroupMonth(groupId, year, month);
+
+      month += 1;
+      if (month > 12) {
+        month = 1;
+        year += 1;
+      }
+    }
+  } catch (err) {
+    logger.warn({ err }, "A'zolik uchun oylik to'lovlar yaratilmadi");
+  }
+};
+
+export const addStudent = async (
+  groupId,
+  studentId,
+  { joinedAt, leftAt } = {},
+) => {
   const group = await ensureGroup(groupId);
   if (group.status === "finished") {
     throw new ApiError(400, "Yakunlangan guruhga o'quvchi qo'shib bo'lmaydi");
@@ -484,28 +522,101 @@ export const addStudent = async (groupId, studentId, { joinedAt } = {}) => {
     throw new ApiError(409, "O'quvchi allaqachon shu guruhda");
   }
 
-  // Boshlash sanasi - berilsa o'sha kun, aks holda mahalliy (Asia/Tashkent) "bugun".
+  // Boshlash sanasi - berilsa o'sha kun, aks holda guruh BOSHLANGAN sana (default):
+  // startDate (Dars boshlanish sanasi), u yo'q bo'lsa guruh yaratilgan sanasi.
   // MUHIM: davomat ham mahalliy "bugun" bilan ishlaydi - UTC ishlatilsa, yarim
   // tundan keyin (mahalliy 00:00–05:00) joinedAt ertangi/kechagi kunga tushib,
   // bugungi davomatda o'quvchi ko'rinmay qolardi.
+  const defaultJoin = group.startDate || group.createdAt;
+  const join = joinedAt ? toUtcMidnight(joinedAt) : toUtcMidnight(defaultJoin);
+  const left = leftAt ? toUtcMidnight(leftAt) : null;
+  if (left && left.getTime() < join.getTime()) {
+    throw new ApiError(400, "Tugatgan sana boshlash sanasidan oldin bo'lishi mumkin emas");
+  }
+
   const membership = await GroupMembership.create({
     group: groupId,
     student: studentId,
-    joinedAt: joinedAt ? toUtcMidnight(joinedAt) : localTodayMidnight(),
+    joinedAt: join,
+    leftAt: left,
   });
 
-  // O'quvchi qo'shilishi bilanoq joriy oy to'lovini yaratamiz (best-effort)
-  try {
-    const today = localTodayMidnight();
-    const year = today.getUTCFullYear();
-    const month = today.getUTCMonth() + 1;
-    await financeGroupFeeService.ensureGroupFee(groupId, year, month);
-    await financePaymentService.ensurePaymentForMembership(membership, year, month);
-    // Yangi o'quvchi guruh billed tushumini oshiradi → o'qituvchi foiz maoshi
-    await teacherSalaryService.recalcForGroupMonth(groupId, year, month);
-  } catch (err) {
-    logger.warn({ err }, "Yangi o'quvchi uchun oylik to'lov yaratilmadi");
+  // joinedAt oyidan tugash oyigacha barcha oylar uchun qarz yoziladi.
+  await ensureFinanceForMembershipRange(groupId, membership);
+
+  return membership;
+};
+
+// O'quvchining guruhdagi FAOL a'zoligi sanalarini (joinedAt/leftAt) tahrirlaydi.
+// Qulf: joinedAt'ni OLDINGA (kechroq sanaga) surishda, oradagi davrda biror oy
+// to'langan bo'lsa (paidAmount > 0) - rad etiladi. Ya'ni qarz yozilib to'langach,
+// "men keyinroq qo'shilganman" deb o'sha to'langan oyni o'chirib bo'lmaydi.
+export const updateMembership = async (
+  groupId,
+  studentId,
+  { joinedAt, leftAt } = {},
+) => {
+  const group = await ensureGroup(groupId);
+  await ensureStudent(studentId);
+
+  const membership = await GroupMembership.findOne({
+    group: groupId,
+    student: studentId,
+    leftAt: null,
+    isDeleted: { $ne: true },
+  });
+  if (!membership) {
+    throw new ApiError(404, "O'quvchining ushbu guruhda faol a'zoligi topilmadi");
   }
+
+  const oldJoin = toUtcMidnight(membership.joinedAt);
+  const newJoin =
+    joinedAt !== undefined && joinedAt !== null
+      ? toUtcMidnight(joinedAt)
+      : oldJoin;
+  // leftAt: undefined → o'zgartirmaymiz; null → "o'qimoqda"ga qaytaramiz.
+  const newLeft =
+    leftAt === undefined
+      ? membership.leftAt
+        ? toUtcMidnight(membership.leftAt)
+        : null
+      : leftAt
+      ? toUtcMidnight(leftAt)
+      : null;
+
+  if (newLeft && newLeft.getTime() < newJoin.getTime()) {
+    throw new ApiError(400, "Tugatgan sana boshlash sanasidan oldin bo'lishi mumkin emas");
+  }
+
+  // Qulf: joinedAt oldinga surilyaptimi (yangi sana eskidan kech)?
+  if (newJoin.getTime() > oldJoin.getTime()) {
+    // Yangi joinedAt oyidan OLDIN to'langan oy bormi?
+    const paid = await financePaymentService.earliestPaidMonthBefore(
+      studentId,
+      groupId,
+      { year: newJoin.getUTCFullYear(), month: newJoin.getUTCMonth() + 1 },
+    );
+    if (paid) {
+      throw new ApiError(
+        409,
+        `To'langan davrni o'zgartirib bo'lmaydi: ${paid.year}-yil ${paid.month}-oy uchun to'lov qilingan`,
+      );
+    }
+  }
+
+  membership.joinedAt = newJoin;
+  membership.leftAt = newLeft;
+  await membership.save();
+
+  // Eski davrda bo'lib, yangi davrga TUSHMAY qolgan oylarni 0 ga tushirish va
+  // yangi davr oylarini yaratish uchun shu o'quvchi-guruhning BARCHA to'lovlarini
+  // qayta hisoblaymiz, so'ng yangi davr oylari uchun yozuvlar ta'minlanadi.
+  try {
+    await financePaymentService.recalcForStudentScope(studentId, groupId, {});
+  } catch (err) {
+    logger.warn({ err }, "A'zolik tahrirlanganda eski to'lovlar qayta hisoblanmadi");
+  }
+  await ensureFinanceForMembershipRange(groupId, membership);
 
   return membership;
 };
@@ -588,18 +699,10 @@ const transferSequential = async (groupId, studentId, targetGroupId, joinDate) =
   }
 };
 
-// Yangi guruh uchun joriy oy moliya to'lovini yaratadi (best-effort) - addStudent kabi.
+// Transfer uchun: yangi a'zolikning joinedAt oyidan tugash oyigacha to'lovlarni
+// yaratadi (best-effort). addStudent bilan bir xil range helper'dan foydalanadi.
 const ensureFinanceForMembership = async (groupId, membership) => {
-  try {
-    const today = localTodayMidnight();
-    const year = today.getUTCFullYear();
-    const month = today.getUTCMonth() + 1;
-    await financeGroupFeeService.ensureGroupFee(groupId, year, month);
-    await financePaymentService.ensurePaymentForMembership(membership, year, month);
-    await teacherSalaryService.recalcForGroupMonth(groupId, year, month);
-  } catch (err) {
-    logger.warn({ err }, "Ko'chirilgan o'quvchi uchun moliya to'lovi yaratilmadi");
-  }
+  await ensureFinanceForMembershipRange(groupId, membership);
 };
 
 export const transferStudent = async (groupId, studentId, targetGroupId, { joinedAt } = {}) => {

@@ -8,6 +8,7 @@ import { listSchema } from "./validators/list.validator.js";
 import { createSchema } from "./validators/create.validator.js";
 import { updateSchema } from "./validators/update.validator.js";
 import { addStudentSchema } from "./validators/addStudent.validator.js";
+import { updateMembershipSchema } from "./validators/updateMembership.validator.js";
 import { transferSchema } from "./validators/transfer.validator.js";
 import { replaceTeacherSchema } from "./validators/replaceTeacher.validator.js";
 import {
@@ -26,6 +27,7 @@ import finish from "./handlers/finish.handler.js";
 import permanentRemove from "./handlers/permanentRemove.handler.js";
 import undelete from "./handlers/undelete.handler.js";
 import addStudent from "./handlers/addStudent.handler.js";
+import updateMembership from "./handlers/updateMembership.handler.js";
 import removeStudent from "./handlers/removeStudent.handler.js";
 import transferStudent from "./handlers/transferStudent.handler.js";
 import replaceTeacher from "./handlers/replaceTeacher.handler.js";
@@ -109,6 +111,13 @@ router.post(
   requirePermission(PERMISSIONS.GROUPS_MANAGE_STUDENTS),
   validate(addStudentSchema),
   addStudent,
+);
+router.patch(
+  "/:id/students/:studentId",
+  requireAuth,
+  requirePermission(PERMISSIONS.GROUPS_MANAGE_STUDENTS),
+  validate(updateMembershipSchema),
+  updateMembership,
 );
 router.delete(
   "/:id/students/:studentId",

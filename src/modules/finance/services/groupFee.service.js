@@ -38,6 +38,52 @@ export const ensureGroupFee = async (group, year, month) => {
   }
 };
 
+// Guruhning eng yaqin mavjud fee summasini topadi (berilgan oyga nisbatan).
+// Avval o'sha oydan KEYINGI eng yaqin oy (joriy/joriyga yaqin tarif),
+// topilmasa OLDINGI eng yaqin oy. Hech narsa bo'lmasa 0.
+// Eski o'quvchilarni qo'shganda o'tgan oylarda GroupFee bo'lmasa, qarz 0 chiqmasligi
+// uchun shu summa backfill qilinadi.
+const nearestFeeAmount = async (group, year, month) => {
+  const idx = year * 12 + (month - 1);
+  // Keyingi (>=) eng yaqin oy — joriy tarifni o'tmishga tarqatamiz.
+  const after = await GroupFee.find({ group })
+    .select({ year: 1, month: 1, amount: 1 })
+    .lean();
+  if (!after.length) return 0;
+  let best = null;
+  let bestDist = Infinity;
+  for (const f of after) {
+    const fIdx = f.year * 12 + (f.month - 1);
+    // Keyingi oylarni afzal ko'ramiz (joriy tarif), shu sababli teng masofada
+    // keyingisi yutadi.
+    const isAfter = fIdx >= idx;
+    const dist = Math.abs(fIdx - idx) * 2 + (isAfter ? 0 : 1);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = f;
+    }
+  }
+  return best ? best.amount : 0;
+};
+
+// Berilgan oy uchun GroupFee mavjudligini ta'minlaydi; bo'lmasa eng yaqin mavjud
+// tarif summasi bilan yaratadi (carry-forward emas — o'tmishga backfill).
+export const ensureGroupFeeBackfill = async (group, year, month) => {
+  const existing = await GroupFee.findOne({ group, year, month });
+  if (existing) return existing;
+  const amount = await nearestFeeAmount(group, year, month);
+  try {
+    return await GroupFee.findOneAndUpdate(
+      { group, year, month },
+      { $setOnInsert: { group, year, month, amount, source: "auto" } },
+      { upsert: true, new: true },
+    );
+  } catch (err) {
+    if (err?.code === 11000) return GroupFee.findOne({ group, year, month });
+    throw err;
+  }
+};
+
 // Tanlangan oy uchun barcha faol guruhlar + o'sha oy to'lovi (jadval uchun).
 export const list = async ({ year, month, search }) => {
   const match = { isActive: true, status: "active", isDeleted: { $ne: true } };

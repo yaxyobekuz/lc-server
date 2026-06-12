@@ -1,6 +1,10 @@
 import Holiday, { HOLIDAY_AUDIENCES } from "../../../models/holiday.model.js";
 import ApiError from "../../../utils/ApiError.js";
-import { dateKeyOf, toUtcMidnight } from "../../../helpers/attendance.helper.js";
+import {
+  dateKeyOf,
+  toUtcMidnight,
+  localTodayMidnight,
+} from "../../../helpers/attendance.helper.js";
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -139,22 +143,23 @@ export const softRemove = async (id) => {
   return doc;
 };
 
-const sameUtcDay = (a, b) => {
+// Ikki instant bir xil MAHALLIY (Asia/Tashkent) kalendar kuniga tegishlimi.
+// localTodayMidnight UTC+5 ga siljitib UTC-midnight ko'rinishini beradi, shuning
+// uchun siljitilgan kunlarni UTC bo'yicha solishtirish = mahalliy kun solishtiruvi.
+const sameLocalDay = (a, b) => {
   if (!a || !b) return false;
-  const da = new Date(a);
-  const db = new Date(b);
-  return (
-    da.getUTCFullYear() === db.getUTCFullYear() &&
-    da.getUTCMonth() === db.getUTCMonth() &&
-    da.getUTCDate() === db.getUTCDate()
-  );
+  return localTodayMidnight(a).getTime() === localTodayMidnight(b).getTime();
 };
 
-// Bugungi mos faol bayramlar (Agenda jobi uchun)
+// Bugungi mos faol bayramlar (Agenda jobi uchun).
+// "Bugun" MAHALLIY (Asia/Tashkent) kalendar kuni bo'yicha aniqlanadi - cron ham
+// mahalliy vaqtda ishlaydi. Aks holda job UTC 00:00 dan oldin (Toshkent 00:00-05:00)
+// ishlasa, xom UTC sanasi kechagi kunni ko'rsatib, bayram noto'g'ri kuni yuborilardi.
 export const getTodayHolidays = async (now = new Date()) => {
-  const month = now.getUTCMonth() + 1;
-  const day = now.getUTCDate();
-  const year = now.getUTCFullYear();
+  const local = localTodayMidnight(now);
+  const month = local.getUTCMonth() + 1;
+  const day = local.getUTCDate();
+  const year = local.getUTCFullYear();
 
   const all = await Holiday.find({
     isActive: true,
@@ -170,7 +175,7 @@ export const markSent = async (id, now = new Date()) => {
 };
 
 export const isAlreadySentToday = (holiday, now = new Date()) =>
-  sameUtcDay(holiday.lastSentAt, now);
+  sameLocalDay(holiday.lastSentAt, now);
 
 // Aktiv bayramlar ro'yxatining qisqa muddatli keshi (har so'rovda DB urilmasin).
 // Bayram CRUD juda kam, davomat hot path'i tez-tez chaqiriladi.

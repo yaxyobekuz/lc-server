@@ -192,6 +192,28 @@ export const recalcForStudentScope = async (student, group, { scope, year, month
   return payments.length;
 };
 
+// Berilgan (year,month) chegarasidan OLDINGI oylarda o'quvchining shu guruhda
+// to'lov qilingan (paidAmount > 0) yozuvi bormi - eng erta to'langan oyni qaytaradi
+// ({year, month}) yoki null. joinedAt'ni oldinga surishni qulflashda ishlatiladi:
+// to'langan davrni "men keyinroq qo'shilganman" deb o'chirib bo'lmaydi.
+export const earliestPaidMonthBefore = async (student, group, { year, month }) => {
+  const beforeIdx = year * 12 + (month - 1);
+  const paid = await StudentPayment.find(
+    { student, group, paidAmount: { $gt: 0 } },
+    { year: 1, month: 1 },
+  ).lean();
+  let best = null;
+  let bestIdx = Infinity;
+  for (const p of paid) {
+    const idx = p.year * 12 + (p.month - 1);
+    if (idx < beforeIdx && idx < bestIdx) {
+      bestIdx = idx;
+      best = { year: p.year, month: p.month };
+    }
+  }
+  return best;
+};
+
 // O'quvchi muzlatilganda tegishli barcha guruh/oy to'lovlarini qayta hisoblaydi.
 export const recalcForStudent = async (student) => {
   const payments = await StudentPayment.find({ student }, { _id: 1 });

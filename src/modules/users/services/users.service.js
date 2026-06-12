@@ -205,6 +205,7 @@ export const softRemove = async (id, { reasonId, by } = {}) => {
     throw new ApiError(403, "Owner foydalanuvchini o'chirib bo'lmaydi");
   }
   user.isActive = false;
+  user.archivedAt = new Date();
   await user.save();
 
   // O'quvchi arxivlansa - faol a'zoliklarni yopamiz va sababni logga yozamiz.
@@ -243,6 +244,7 @@ export const softRemove = async (id, { reasonId, by } = {}) => {
 export const restore = async (id, { reasonId, by } = {}) => {
   const user = await getById(id);
   user.isActive = true;
+  user.archivedAt = null;
   await user.save();
 
   if (user.role === ROLES.STUDENT) {

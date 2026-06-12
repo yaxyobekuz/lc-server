@@ -32,6 +32,13 @@ export const linkByPhone = async (telegramId, rawPhone) => {
   const user = await User.findOne({ phone, isActive: true });
   if (!user) return null;
 
+  // Bitta akkaunt faqat bitta Telegramga bog'lansin - oxirgi kontakt yuborgan
+  // Telegramga avtomatik o'tkazamiz, eski bog'lanishni uzamiz (unique indeks buzilmasin)
+  await BotUser.updateMany(
+    { user: user._id, telegramId: { $ne: telegramId } },
+    { $set: { user: null } },
+  );
+
   await BotUser.findOneAndUpdate(
     { telegramId },
     { $set: { user: user._id } },
