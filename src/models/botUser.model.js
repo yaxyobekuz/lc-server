@@ -19,7 +19,10 @@ const flowStateSchema = new mongoose.Schema(
 
 const botUserSchema = new mongoose.Schema(
   {
-    telegramId: { type: Number, required: true, unique: true, index: true },
+    // DIQQAT: telegramId ATAYLAB unique EMAS. Bitta Telegram bir nechta User
+    // akkauntiga bog'lanishi mumkin - har biri alohida BotUser hujjati bo'ladi
+    // (bir xil telegramId, har xil user). Unikallik (telegramId, user) juftligida.
+    telegramId: { type: Number, required: true, index: true },
     chatId: { type: Number, required: true },
     username: { type: String, trim: true, lowercase: true, default: null },
     firstName: { type: String, trim: true, default: "" },
@@ -38,15 +41,21 @@ const botUserSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-// `user` bo'yicha unikal indeks: faqat bog'langan (null bo'lmagan) hujjatlar uchun.
-// MUHIM: `sparse` indeks `null` ni "yo'q" deb hisoblamaydi, schema esa `default: null`
-// qo'yadi - shu sabab bir nechta bog'lanmagan hujjat user:null bilan to'qnashib,
-// E11000 xatoga olib kelardi (Telegram bog'lanmasdi). `partialFilterExpression` bilan
-// uniqueness faqat user mavjud bo'lganda tekshiriladi.
-// `user` bo'yicha oddiy (NON-UNIQUE) indeks - faqat tezkor qidiruv uchun.
-// Uniquelik ataylab YO'Q: bir Telegram boshqa akkauntga qayta bog'lanaversin
-// (last-login-wins), hech qachon E11000 bermasin.
+// `user` bo'yicha oddiy (NON-UNIQUE) indeks - tezkor qidiruv uchun.
 botUserSchema.index({ user: 1 });
+
+// (telegramId, user) juftligi bo'yicha unikallik: bir xil Telegram bir xil userga
+// faqat BIR marta bog'lanadi (takror login upsert qiladi, dublikat yaratmaydi).
+// Lekin bir xil telegramId boshqa-boshqa userlarga bemalol bog'lanaveradi.
+// partialFilterExpression: faqat user mavjud (bog'langan) hujjatlar uchun tekshiriladi -
+// bog'lanmagan (user:null) hujjatlar bir-biri bilan to'qnashmaydi.
+botUserSchema.index(
+  { telegramId: 1, user: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { user: { $type: "objectId" } },
+  },
+);
 
 botUserSchema.set("toJSON", {
   transform: (_doc, ret) => {

@@ -41,40 +41,42 @@ const parseTgUserLoose = (initData) => {
   }
 };
 
-// Eskirgan `user_1` unique indeksni o'chiradi (DB'da qolib ketgan bo'lsa).
+// Eskirgan unique indekslarni o'chiradi (DB'da qolib ketgan bo'lsa):
+//   - user_1        : bitta user faqat bitta Telegramga (endi shart emas)
+//   - telegramId_1  : bitta telegram faqat bitta userga (endi shart emas)
 // Mongoose autoIndex eski indeksni hech qachon o'chirmaydi - shuning uchun
 // E11000 bo'lganda shu yerda bir marta o'zimiz olib tashlaymiz.
 const dropStaleUserIndex = async () => {
-  try {
-    await BotUser.collection.dropIndex("user_1");
-    logger.warn("Eskirgan user_1 unique indeks o'chirildi (avto-tuzatish)");
-  } catch {
-    /* indeks yo'q yoki allaqachon o'chirilgan - e'tiborsiz */
+  for (const name of ["user_1", "telegramId_1"]) {
+    try {
+      await BotUser.collection.dropIndex(name);
+      logger.warn({ index: name }, "Eskirgan unique indeks o'chirildi (avto-tuzatish)");
+    } catch {
+      /* indeks yo'q yoki allaqachon o'chirilgan - e'tiborsiz */
+    }
   }
 };
 
-// Telegram ID ni User akkauntiga bog'laydi (BotUser bo'lmasa yaratadi).
-// REPLACE mantiq: bitta Telegram boshqa userdan kirsa, eski bog'lanish o'rnini bosadi
-// (findOneAndUpdate telegramId bo'yicha upsert). Bitta user faqat bitta Telegramga:
-// eski Telegram bog'lanishini uzamiz. Eskirgan unique indeks E11000 bersa - o'chirib qayta urinamiz.
+// Telegram ID ni User akkauntiga bog'laydi.
+// KO'P-AKKAUNT: bitta Telegram bir nechta userga bog'lanaversin - eski bog'lanishni
+// UZMAYMIZ. Bog'lanish (telegramId, user) JUFTLIGI bo'yicha:
+//   - shu juftlik bor bo'lsa  -> yangilaydi (dublikat yaratmaydi)
+//   - juftlik yo'q bo'lsa      -> YANGI BotUser hujjati yaratadi (bir xil tgId, boshqa user)
+// Shuning uchun bir TG ID ko'p userga bemalol birikadi, E11000 chiqmaydi.
 const linkTelegram = async (tgUser, userId) => {
   const run = async () => {
-    await BotUser.updateMany(
-      { user: userId, telegramId: { $ne: tgUser.id } },
-      { $set: { user: null } },
-    );
-
     await BotUser.findOneAndUpdate(
-      { telegramId: tgUser.id },
+      { telegramId: tgUser.id, user: userId },
       {
         $set: {
+          chatId: tgUser.id,
           username: tgUser.username ? String(tgUser.username).toLowerCase() : null,
           firstName: tgUser.first_name || "",
           lastName: tgUser.last_name || "",
           languageCode: tgUser.language_code || "uz",
           user: userId,
         },
-        $setOnInsert: { telegramId: tgUser.id, chatId: tgUser.id },
+        $setOnInsert: { telegramId: tgUser.id },
       },
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
@@ -83,7 +85,7 @@ const linkTelegram = async (tgUser, userId) => {
   try {
     await run();
   } catch (err) {
-    // E11000 = eskirgan `user` unique indeks (user:null to'qnashuvi). Indeksni o'chirib qayta urinamiz.
+    // E11000 = eskirgan unique indeks (telegramId_1 yoki user_1). O'chirib qayta urinamiz.
     if (err?.code === 11000) {
       logger.warn({ err: err?.message }, "linkTelegram E11000 - eskirgan indeks o'chirilib qayta urinilmoqda");
       await dropStaleUserIndex();
