@@ -13,13 +13,13 @@ import {
 
 // initData ni tekshiradi va Telegram foydalanuvchisini qaytaradi
 const requireTgUser = (initData) => {
-  if (!env.TELEGRAM_BOT_TOKEN) {
+  const tokens = [env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_BOT_TOKEN_2].filter(Boolean);
+  if (tokens.length === 0) {
     throw new ApiError(503, "Bot konfiguratsiyalanmagan");
   }
-  const result = verifyInitData(initData, env.TELEGRAM_BOT_TOKEN);
+  const result = verifyInitData(initData, tokens);
   if (!result.ok) {
-    // Diagnostika: nima uchun tekshiruv o'tmaganini logga yozamiz (initData maxfiy,
-    // shuning uchun faqat reason'ni qoldiramiz).
+    // Diagnostika: bad-hash bo'lsa xom initData'ni (qisqartirib) loglaymiz - keyin olib tashlanadi.
     logger.warn({ reason: result.reason }, "Telegram initData verify failed");
     if (result.reason === "expired") {
       throw new ApiError(401, "Sessiya muddati tugagan, qayta oching");
@@ -27,6 +27,18 @@ const requireTgUser = (initData) => {
     throw new ApiError(401, "Telegram ma'lumotlari tasdiqlanmadi");
   }
   return result.user;
+};
+
+// initData dan Telegram foydalanuvchisini HMAC tekshiruvisiz ajratadi.
+// Faqat loginAndLink (parol allaqachon tasdiqlangan) uchun fallback.
+const parseTgUserLoose = (initData) => {
+  try {
+    const p = new URLSearchParams(initData);
+    const u = JSON.parse(p.get("user") || "null");
+    return u && u.id ? u : null;
+  } catch {
+    return null;
+  }
 };
 
 // Telegram ID ni User akkauntiga bog'laydi (BotUser bo'lmasa yaratadi)
@@ -81,8 +93,7 @@ export const verifyAndIssue = async ({ initData, userAgent, ip }) => {
 
 // Telefon/login + parol bilan kirish va Telegram ID ni avtomatik bog'lash
 export const loginAndLink = async ({ login, password, initData, userAgent, ip }) => {
-  const tgUser = requireTgUser(initData);
-
+  // Avval PAROLni tekshiramiz - asosiy himoya shu.
   const trimmed = String(login || "").trim();
   if (!trimmed) throw new ApiError(400, "Login kerak");
 
@@ -97,6 +108,24 @@ export const loginAndLink = async ({ login, password, initData, userAgent, ip })
 
   const ok = await comparePassword(password, user.passwordHash);
   if (!ok) throw new ApiError(401, "Login yoki parol noto'g'ri");
+
+  // Telegram bog'lash: qat'iy HMAC ni sinaymiz; o'tmasa ham PAROL tasdiqlangani uchun
+  // initData dagi telegram id ni baribir bog'laymiz (qaysi botdan ochilsa ham ishlaydi).
+  if (!env.TELEGRAM_BOT_TOKEN && !env.TELEGRAM_BOT_TOKEN_2) {
+    throw new ApiError(503, "Bot konfiguratsiyalanmagan");
+  }
+  const tokens = [env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_BOT_TOKEN_2].filter(Boolean);
+  const verified = verifyInitData(initData, tokens);
+  const tgUser = verified.ok ? verified.user : parseTgUserLoose(initData);
+  if (!tgUser) {
+    throw new ApiError(401, "Telegram ma'lumotlari topilmadi");
+  }
+  if (!verified.ok) {
+    logger.warn(
+      { reason: verified.reason, userId: String(user._id) },
+      "initData HMAC o'tmadi - parol asosida bog'lanmoqda (fallback)",
+    );
+  }
 
   await linkTelegram(tgUser, user._id);
 

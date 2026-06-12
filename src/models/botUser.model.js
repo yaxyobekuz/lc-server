@@ -43,13 +43,10 @@ const botUserSchema = new mongoose.Schema(
 // qo'yadi - shu sabab bir nechta bog'lanmagan hujjat user:null bilan to'qnashib,
 // E11000 xatoga olib kelardi (Telegram bog'lanmasdi). `partialFilterExpression` bilan
 // uniqueness faqat user mavjud bo'lganda tekshiriladi.
-botUserSchema.index(
-  { user: 1 },
-  {
-    unique: true,
-    partialFilterExpression: { user: { $type: "objectId" } },
-  },
-);
+// `user` bo'yicha oddiy (NON-UNIQUE) indeks - faqat tezkor qidiruv uchun.
+// Uniquelik ataylab YO'Q: bir Telegram boshqa akkauntga qayta bog'lanaversin
+// (last-login-wins), hech qachon E11000 bermasin.
+botUserSchema.index({ user: 1 });
 
 botUserSchema.set("toJSON", {
   transform: (_doc, ret) => {

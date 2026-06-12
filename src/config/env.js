@@ -38,6 +38,7 @@ const env = Object.freeze({
   ALLOW_ALL_ORIGINS: allowAllOrigins,
 
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || "",
+  TELEGRAM_BOT_TOKEN_2: process.env.TELEGRAM_BOT_TOKEN_2 || "",
   TELEGRAM_BOT_ENABLED:
     String(process.env.TELEGRAM_BOT_ENABLED || "false").toLowerCase() === "true",
   TELEGRAM_BOT_WEBAPP_URL:
