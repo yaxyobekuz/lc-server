@@ -20,7 +20,7 @@ const requireTgUser = (initData) => {
   const result = verifyInitData(initData, tokens);
   if (!result.ok) {
     // Diagnostika: bad-hash bo'lsa xom initData'ni (qisqartirib) loglaymiz - keyin olib tashlanadi.
-    logger.warn({ reason: result.reason }, "Telegram initData verify failed");
+    logger.warn({ reason: result.reason, debug: result.debug }, "Telegram initData verify failed");
     if (result.reason === "expired") {
       throw new ApiError(401, "Sessiya muddati tugagan, qayta oching");
     }
@@ -41,9 +41,11 @@ const parseTgUserLoose = (initData) => {
   }
 };
 
-// Telegram ID ni User akkauntiga bog'laydi (BotUser bo'lmasa yaratadi)
+// Telegram ID ni User akkauntiga bog'laydi (BotUser bo'lmasa yaratadi).
+// REPLACE mantiq: bitta Telegram boshqa userdan kirsa, eski bog'lanish o'rnini bosadi
+// (findOneAndUpdate telegramId bo'yicha upsert - hech qachon E11000 bermaydi).
+// Bitta user faqat bitta Telegramga: eski Telegram bog'lanishini uzamiz.
 const linkTelegram = async (tgUser, userId) => {
-  // Bitta akkaunt faqat bitta Telegramga bog'lansin - eski bog'lanishni uzamiz
   await BotUser.updateMany(
     { user: userId, telegramId: { $ne: tgUser.id } },
     { $set: { user: null } },
@@ -122,12 +124,21 @@ export const loginAndLink = async ({ login, password, initData, userAgent, ip })
   }
   if (!verified.ok) {
     logger.warn(
-      { reason: verified.reason, userId: String(user._id) },
+      { reason: verified.reason, userId: String(user._id), debug: verified.debug },
       "initData HMAC o'tmadi - parol asosida bog'lanmoqda (fallback)",
     );
   }
 
-  await linkTelegram(tgUser, user._id);
+  // Bog'lash muvaffaqiyatsiz bo'lsa ham (DB xatosi/E11000) PAROL to'g'ri bo'lgani uchun
+  // login to'xtamasin - foydalanuvchi kirsin, xatoni logga yozamiz.
+  try {
+    await linkTelegram(tgUser, user._id);
+  } catch (err) {
+    logger.error(
+      { err: err?.message, code: err?.code, userId: String(user._id), tgId: tgUser.id },
+      "Telegram bog'lashda xato (login baribir davom etadi)",
+    );
+  }
 
   const { accessToken, refreshToken } = await issueTokens(user, {
     userAgent,
