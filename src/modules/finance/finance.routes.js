@@ -20,6 +20,11 @@ import {
   idParamSchema as transactionIdSchema,
 } from "./validators/transaction.validator.js";
 import {
+  pendingSchema as refundPendingSchema,
+  historySchema as refundHistorySchema,
+  createSchema as refundCreateSchema,
+} from "./validators/refund.validator.js";
+import {
   listSchema as discountListSchema,
   createSchema as discountCreateSchema,
   updateSchema as discountUpdateSchema,
@@ -36,6 +41,9 @@ import paymentGetById from "./handlers/studentPayment.getById.handler.js";
 import paymentHistoryByStudent from "./handlers/studentPayment.historyByStudent.handler.js";
 import transactionCreate from "./handlers/transaction.create.handler.js";
 import transactionRemove from "./handlers/transaction.remove.handler.js";
+import refundPending from "./handlers/refund.pending.handler.js";
+import refundHistory from "./handlers/refund.history.handler.js";
+import refundCreate from "./handlers/refund.create.handler.js";
 import discountList from "./handlers/discount.list.handler.js";
 import discountCreate from "./handlers/discount.create.handler.js";
 import discountUpdate from "./handlers/discount.update.handler.js";
@@ -111,6 +119,29 @@ router.delete(
   requirePermission(PERMISSIONS.FINANCE_PAY),
   validate(transactionIdSchema),
   transactionRemove,
+);
+
+// ── Qaytariladigan pul (refund) ──
+router.get(
+  "/refunds/pending",
+  requireAuth,
+  requirePermission(PERMISSIONS.FINANCE_READ),
+  validate(refundPendingSchema),
+  refundPending,
+);
+router.get(
+  "/refunds/history",
+  requireAuth,
+  requirePermission(PERMISSIONS.FINANCE_READ),
+  validate(refundHistorySchema),
+  refundHistory,
+);
+router.post(
+  "/refunds",
+  requireAuth,
+  requirePermission(PERMISSIONS.FINANCE_PAY),
+  validate(refundCreateSchema),
+  refundCreate,
 );
 
 // ── Chegirmalar ──
