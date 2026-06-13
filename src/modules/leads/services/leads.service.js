@@ -64,6 +64,10 @@ const normalizeOptionalPhone = (raw) => {
 export const create = async (body, currentUser) => {
   const phone = normalizeOptionalPhone(body.phone);
   if (!phone) throw new ApiError(400, "Telefon kerak");
+
+  const exists = await Lead.findOne({ phone });
+  if (exists) throw new ApiError(409, "Bu telefon raqamli lid allaqachon mavjud");
+
   const status = body.status || "new";
 
   const lead = await Lead.create({
@@ -93,7 +97,12 @@ export const update = async (id, body, currentUser) => {
   if (body.firstName !== undefined) lead.firstName = String(body.firstName).trim();
   if (body.lastName !== undefined) lead.lastName = String(body.lastName).trim();
   if (body.age !== undefined) lead.age = body.age ?? null;
-  if (body.phone !== undefined) lead.phone = normalizeOptionalPhone(body.phone);
+  if (body.phone !== undefined) {
+    const phone = normalizeOptionalPhone(body.phone);
+    const exists = await Lead.findOne({ phone, _id: { $ne: lead._id } });
+    if (exists) throw new ApiError(409, "Bu telefon raqamli lid allaqachon mavjud");
+    lead.phone = phone;
+  }
   if (body.parentPhone !== undefined) {
     lead.parentPhone = body.parentPhone
       ? normalizeOptionalPhone(body.parentPhone)
