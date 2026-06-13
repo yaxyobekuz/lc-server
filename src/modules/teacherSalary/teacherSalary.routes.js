@@ -22,6 +22,11 @@ import {
   updateSchema as adjustmentUpdateSchema,
   idParamSchema as adjustmentIdSchema,
 } from "./validators/salaryAdjustment.validator.js";
+import {
+  listSchema as configListSchema,
+  upsertSchema as configUpsertSchema,
+  pairParamSchema as configPairSchema,
+} from "./validators/salaryConfig.validator.js";
 import { monthlySchema } from "./validators/report.validator.js";
 
 import salaryList from "./handlers/salary.list.handler.js";
@@ -37,6 +42,9 @@ import adjustmentList from "./handlers/adjustment.list.handler.js";
 import adjustmentCreate from "./handlers/adjustment.create.handler.js";
 import adjustmentUpdate from "./handlers/adjustment.update.handler.js";
 import adjustmentRemove from "./handlers/adjustment.remove.handler.js";
+import configList from "./handlers/config.list.handler.js";
+import configUpsert from "./handlers/config.upsert.handler.js";
+import configRemove from "./handlers/config.remove.handler.js";
 import reportMonthly from "./handlers/report.monthly.handler.js";
 
 const router = Router();
@@ -135,6 +143,29 @@ router.delete(
   requirePermission(PERMISSIONS.SALARY_MANAGE),
   validate(adjustmentIdSchema),
   adjustmentRemove,
+);
+
+// ── Stabil maosh sozlamalari (per o'qituvchi + guruh foiz/fiksa) ──
+router.get(
+  "/configs",
+  requireAuth,
+  requirePermission(PERMISSIONS.SALARY_READ),
+  validate(configListSchema),
+  configList,
+);
+router.put(
+  "/configs",
+  requireAuth,
+  requirePermission(PERMISSIONS.SALARY_MANAGE),
+  validate(configUpsertSchema),
+  configUpsert,
+);
+router.delete(
+  "/configs/:teacher/:group",
+  requireAuth,
+  requirePermission(PERMISSIONS.SALARY_MANAGE),
+  validate(configPairSchema),
+  configRemove,
 );
 
 // ── Hisobotlar ──

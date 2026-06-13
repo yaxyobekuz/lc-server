@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import TeacherSalary from "../../../models/teacherSalary.model.js";
+import TeacherSalaryConfig from "../../../models/teacherSalaryConfig.model.js";
 import SalaryTransaction from "../../../models/salaryTransaction.model.js";
 import SalaryAdjustment from "../../../models/salaryAdjustment.model.js";
 import StudentPayment from "../../../models/studentPayment.model.js";
@@ -197,22 +198,30 @@ export const ensureSalaryForTeacherGroup = async (
   const exists = await TeacherSalary.findOne({ teacher, group, year, month });
   if (exists) return exists;
 
-  // Carry-forward: o'tgan oy konfiguratsiyasi
+  // Maosh qoidasini quyidagi tartibda aniqlaymiz:
+  // 1) Stabil config (owner bir marta belgilagan foiz/fiksa) - eng ustun;
+  // 2) Carry-forward (o'tgan oy konfiguratsiyasi) - config bo'lmasa;
+  // 3) Default (fixed, 0) - ikkalasi ham bo'lmasa.
+  const config = await TeacherSalaryConfig.findOne({ teacher, group }).lean();
   const prevYear = month === 1 ? year - 1 : year;
   const prevMonth = month === 1 ? 12 : month - 1;
-  const prev = await TeacherSalary.findOne({ teacher, group, year: prevYear, month: prevMonth });
+  const prev = config
+    ? null
+    : await TeacherSalary.findOne({ teacher, group, year: prevYear, month: prevMonth });
 
+  const rule = config || prev;
   const draft = new TeacherSalary({
     teacher,
     group,
     year,
     month,
-    salaryType: prev ? prev.salaryType : "fixed",
-    fixedAmount: prev ? prev.fixedAmount : 0,
-    percentRate: prev ? prev.percentRate : 0,
+    salaryType: rule ? rule.salaryType : "fixed",
+    fixedAmount: rule ? rule.fixedAmount : 0,
+    percentRate: rule ? rule.percentRate : 0,
     workStartDate: workStartDate ? toUtcMidnight(workStartDate) : null,
     workEndDate: workEndDate ? toUtcMidnight(workEndDate) : null,
-    source: "auto",
+    // Config'dan kelgan bo'lsa "manual" (ataylab belgilangan qoida), aks holda "auto"
+    source: config ? "manual" : "auto",
   });
   const snap = await buildSnapshot(draft);
   draft.groupRevenue = await computeGroupRevenue(group, year, month);
