@@ -91,10 +91,13 @@ const paidStatusStage = (newPaidExpr) => ({
 // paidAmount ni atomik delta bilan o'zgartiradi ($inc semantikasi) va statusni
 // shu yozuvning DB'dagi joriy qiymatlaridan keltirib chiqaradi. Parallel
 // tranzaksiyalar kommutativ qo'shiladi - hech biri yo'qolmaydi.
-export const applyPaidDelta = async (paymentId, delta) => {
+// session berilsa, yozuv shu MongoDB tranzaksiyasi ichida bajariladi (to'lov
+// qabul qilish/bekor qilishda PaymentTransaction bilan birga atomik bo'lsin).
+export const applyPaidDelta = async (paymentId, delta, { session } = {}) => {
   const newPaid = { $add: [{ $ifNull: ["$paidAmount", 0] }, delta] };
   return StudentPayment.findByIdAndUpdate(paymentId, [paidStatusStage(newPaid)], {
     new: true,
+    session: session || undefined,
   });
 };
 
@@ -116,8 +119,9 @@ export const recalcStatus = async (paymentId) => {
 // Snapshot (fee/proratsiya/chegirma) ni qayta hisoblab, statusni ham yangilaydi.
 // Yozish atomik pipeline orqali: status DB'dagi JORIY paidAmount'dan keltirib
 // chiqariladi - hisob davomida kelib tushgan parallel to'lov statusni buzmaydi.
-export const recalc = async (paymentId) => {
-  const payment = await StudentPayment.findById(paymentId);
+// session berilsa, ochiq MongoDB tranzaksiyasi ichida o'qib-yozadi.
+export const recalc = async (paymentId, { session } = {}) => {
+  const payment = await StudentPayment.findById(paymentId).session(session || null);
   if (!payment) return null;
 
   // Shu oydagi BARCHA a'zolik davrlari (rejoin holatida bir nechta) bo'yicha
@@ -164,7 +168,7 @@ export const recalc = async (paymentId) => {
         },
       },
     ],
-    { new: true },
+    { new: true, session: session || undefined },
   );
 };
 
@@ -224,23 +228,25 @@ export const recalcForStudent = async (student) => {
 };
 
 // Bitta a'zolik uchun (o'quvchi guruhga qo'shilganda) shu oy to'lovini yaratadi.
-export const ensurePaymentForMembership = async (membership, year, month) => {
+// session berilsa, ochiq MongoDB tranzaksiyasi ichida o'qib-yozadi (avans spill
+// paytida PaymentTransaction bilan birga atomik bo'lsin).
+export const ensurePaymentForMembership = async (membership, year, month, { session } = {}) => {
   if (!membership) return null;
   const exists = await StudentPayment.findOne({
     student: membership.student,
     group: membership.group,
     year,
     month,
-  });
+  }).session(session || null);
   if (exists) {
     // Rejoin: shu oyda to'lov allaqachon bor (eski a'zolikniki). Uni joriy
     // a'zolikka ulab, barcha davrlar bo'yicha qayta hisoblaymiz - aks holda
     // yangi davr kunlari billing'ga kirmay qolardi.
     if (String(exists.membership) !== String(membership._id)) {
       exists.membership = membership._id;
-      await exists.save();
+      await exists.save({ session: session || undefined });
     }
-    return recalc(exists._id);
+    return recalc(exists._id, { session });
   }
 
   const snap = await buildSnapshot({
@@ -253,17 +259,23 @@ export const ensurePaymentForMembership = async (membership, year, month) => {
   });
 
   try {
-    return await StudentPayment.create({
-      student: membership.student,
-      group: membership.group,
-      membership: membership._id,
-      year,
-      month,
-      ...snap,
-      paidAmount: 0,
-      status: deriveStatus(0, snap.expectedAmount),
-      recalculatedAt: new Date(),
-    });
+    const docs = await StudentPayment.create(
+      [
+        {
+          student: membership.student,
+          group: membership.group,
+          membership: membership._id,
+          year,
+          month,
+          ...snap,
+          paidAmount: 0,
+          status: deriveStatus(0, snap.expectedAmount),
+          recalculatedAt: new Date(),
+        },
+      ],
+      { session: session || undefined },
+    );
+    return docs[0];
   } catch (err) {
     // Unique index poyga holati (parallel generatsiya) - mavjudni qaytaramiz
     if (err?.code === 11000) {
@@ -272,7 +284,7 @@ export const ensurePaymentForMembership = async (membership, year, month) => {
         group: membership.group,
         year,
         month,
-      });
+      }).session(session || null);
     }
     throw err;
   }

@@ -9,6 +9,7 @@ import TeacherAttendance from "../models/teacherAttendance.model.js";
 import TeacherAbsence from "../models/teacherAbsence.model.js";
 import StudentPayment from "../models/studentPayment.model.js";
 import PaymentTransaction from "../models/paymentTransaction.model.js";
+import Refund from "../models/refund.model.js";
 import TeacherSalary from "../models/teacherSalary.model.js";
 import SalaryTransaction from "../models/salaryTransaction.model.js";
 import { ROLES } from "../constants/roles.js";
@@ -28,6 +29,9 @@ const setStudentRelated = (studentId, deleted, by) =>
     // hisobotlarda (kirim/qarz) sanalib turardi.
     StudentPayment.updateMany({ student: studentId }, mark(deleted, by)),
     PaymentTransaction.updateMany({ student: studentId }, mark(deleted, by)),
+    // Qaytarilgan pul yozuvi orphan qolmasligi uchun (o'chirilgan StudentPayment'ga
+    // ishora qilib qaytarish hisobotini buzmasin).
+    Refund.updateMany({ student: studentId }, mark(deleted, by)),
   ]);
 
 const setTeacherRelated = (teacherId, deleted, by) =>
@@ -45,6 +49,7 @@ const setGroupRelated = async (groupId, deleted, by) => {
     TeacherAbsence.updateMany({ group: groupId }, mark(deleted, by)),
     StudentPayment.updateMany({ group: groupId }, mark(deleted, by)),
     PaymentTransaction.updateMany({ group: groupId }, mark(deleted, by)),
+    Refund.updateMany({ group: groupId }, mark(deleted, by)),
     TeacherSalary.updateMany({ group: groupId }, mark(deleted, by)),
     SalaryTransaction.updateMany({ group: groupId }, mark(deleted, by)),
   ]);

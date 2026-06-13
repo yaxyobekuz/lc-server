@@ -38,22 +38,53 @@ const attachTelegram = async (userObjs) => {
   }
 };
 
-// O'quvchi+guruh juftliklari ichidan guruhdan KETGANLARINI aniqlaydi.
-// Ketgan = shu juftlik uchun faol (leftAt:null) a'zolik YO'Q. Rejoin holatida
-// o'quvchi qayta faol bo'lsa - hali ketmagan deb hisoblanadi (refund bermaymiz,
-// ortiqcha pul avans bo'lib qoladi). Faol juftliklar Set sifatida qaytadi.
-const loadActivePairs = async (pairs) => {
-  if (!pairs.length) return new Set();
-  const orFilters = pairs.map((p) => ({ student: p.student, group: p.group }));
-  const active = await GroupMembership.find(
+// O'quvchi shu (year, month) OYIDA guruhda a'zo bo'lganmi - ya'ni o'sha oyni
+// qamraydigan FAOL (leftAt:null) a'zolik bormi. Rejoin holatida kelajakdagi
+// yangi a'zolik o'tgan oyni qamramaydi (joinedAt > oy oxiri), shuning uchun
+// o'tgan oydagi refund noto'g'ri bloklanmaydi (#4A).
+const isActiveForMonth = async (student, group, year, month) => {
+  const monthEnd = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+  const m = await GroupMembership.findOne({
+    student,
+    group,
+    leftAt: null,
+    isDeleted: { $ne: true },
+    joinedAt: { $lte: monthEnd },
+  });
+  return !!m;
+};
+
+// O'quvchi+guruh+oy uchligi ichidan SHU OYDA hali a'zo bo'lganlarini aniqlaydi
+// (avans, refund emas). Ketgan/o'sha oyni qamramaydigan a'zolik bo'lgan uchliklar
+// refundga loyiq. Faol uchliklar Set (`student:group:year:month`) sifatida qaytadi.
+const loadActiveForMonth = async (triples) => {
+  if (!triples.length) return new Set();
+  const memberships = await GroupMembership.find(
     {
-      $or: orFilters,
+      $or: triples.map((t) => ({ student: t.student, group: t.group })),
       leftAt: null,
       isDeleted: { $ne: true },
     },
-    { student: 1, group: 1 },
+    { student: 1, group: 1, joinedAt: 1 },
   ).lean();
-  return new Set(active.map((m) => `${m.student}:${m.group}`));
+
+  // student:group -> joinedAt (faol a'zolik) xaritasi
+  const joinedByPair = new Map();
+  for (const m of memberships) {
+    joinedByPair.set(`${m.student}:${m.group}`, m.joinedAt);
+  }
+
+  const result = new Set();
+  for (const t of triples) {
+    const joinedAt = joinedByPair.get(`${t.student}:${t.group}`);
+    if (!joinedAt) continue; // faol a'zolik yo'q - ketgan, refundga loyiq
+    const monthEnd = new Date(Date.UTC(t.year, t.month, 0, 23, 59, 59, 999));
+    // Faol a'zolik shu oyni qamrasa (oy oxiridan oldin qo'shilgan) - avans, refund emas.
+    if (new Date(joinedAt).getTime() <= monthEnd.getTime()) {
+      result.add(`${t.student}:${t.group}:${t.year}:${t.month}`);
+    }
+  }
+  return result;
 };
 
 // Surplus (qaytarilishi kerak) bo'lgan to'lovlar ro'yxati: paidAmount > expectedAmount
@@ -77,19 +108,22 @@ export const listPending = async ({ search, page = 1, limit = 50 } = {}) => {
     return { items: [], total: 0, page, limit };
   }
 
-  // 2) Allaqachon refund qilinganlarni chiqarib tashlaymiz.
+  // 2) Allaqachon refund qilinganlarni chiqarib tashlaymiz (o'chirilmaganlari).
   const refunded = await Refund.find(
-    { payment: { $in: surplus.map((p) => p._id) } },
+    { payment: { $in: surplus.map((p) => p._id) }, isDeleted: { $ne: true } },
     { payment: 1 },
   ).lean();
   const refundedSet = new Set(refunded.map((r) => String(r.payment)));
 
-  // 3) O'quvchi guruhdan ketganmi - faqat ketganlar refundga loyiq.
+  // 3) O'quvchi shu OYDA guruhda a'zo emasmi - faqat o'sha oy uchun ketganlar
+  //    refundga loyiq (rejoin'da o'tgan oy refundi bloklanmaydi, #4A bilan izchil).
   const candidates = surplus.filter((p) => !refundedSet.has(String(p._id)));
-  const activePairs = await loadActivePairs(
+  const activeForMonth = await loadActiveForMonth(
     candidates.map((p) => ({
       student: p.student?._id || p.student,
       group: p.group?._id || p.group,
+      year: p.year,
+      month: p.month,
     })),
   );
 
@@ -97,7 +131,7 @@ export const listPending = async ({ search, page = 1, limit = 50 } = {}) => {
     .filter((p) => {
       const sid = p.student?._id || p.student;
       const gid = p.group?._id || p.group;
-      return !activePairs.has(`${sid}:${gid}`);
+      return !activeForMonth.has(`${sid}:${gid}:${p.year}:${p.month}`);
     })
     .map((p) => ({
       _id: p._id,
@@ -150,17 +184,15 @@ export const create = async ({ paymentId, note }, currentUser) => {
     throw new ApiError(400, "Bu to'lovda qaytariladigan ortiqcha summa yo'q");
   }
 
-  // O'quvchi shu guruhda hali faol bo'lsa - ortiqcha pul avans, qaytarilmaydi.
-  const active = await GroupMembership.findOne({
-    student: payment.student,
-    group: payment.group,
-    leftAt: null,
-    isDeleted: { $ne: true },
-  });
-  if (active) {
+  // O'quvchi SHU TO'LOV OYIDA hali a'zo bo'lsa - ortiqcha summa avans, qaytarilmaydi.
+  // MUHIM: "umuman faol a'zolik bormi" emas, balki "shu oyni qamraydigan a'zolik
+  // bormi" ni tekshiramiz (#4A rejoin race). Aks holda o'quvchi o'tgan oy uchun
+  // ortiqcha to'lab ketib, KEYIN boshqa oyda qayta qo'shilsa - yangi (kelajak)
+  // a'zolik o'tgan oydagi haqli refundni noto'g'ri bloklab, pul "limbo"da qolardi.
+  if (await isActiveForMonth(payment.student, payment.group, payment.year, payment.month)) {
     throw new ApiError(
       400,
-      "O'quvchi guruhda faol - ortiqcha summa avans hisobiga yoziladi, qaytarilmaydi",
+      "O'quvchi bu oyda guruhda faol - ortiqcha summa avans hisobiga yoziladi, qaytarilmaydi",
     );
   }
 
@@ -189,7 +221,7 @@ export const listHistory = async ({ year, month, page = 1, limit = 50 } = {}) =>
   page = Math.max(1, Number(page) || 1);
   limit = Math.min(200, Math.max(1, Number(limit) || 50));
 
-  const filter = {};
+  const filter = { isDeleted: { $ne: true } };
   if (year) filter.year = Number(year);
   if (month) filter.month = Number(month);
 

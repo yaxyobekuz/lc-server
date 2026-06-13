@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import softDeletePlugin from "./plugins/softDelete.plugin.js";
 
 // O'quvchiga qaytarilgan ortiqcha pul yozuvi. Guruhdan ketgan o'quvchi to'lovni
 // to'liq (yoki avans) qilib, oy o'rtasida chiqib ketsa - proratsiya tufayli
@@ -49,6 +50,10 @@ const refundSchema = new mongoose.Schema(
 
 // Hisobotlar (oy bo'yicha qaytarilgan pul) uchun
 refundSchema.index({ year: 1, month: 1 });
+
+// O'quvchi/guruh butunlay o'chirilganda Refund yozuvi ham chiqarib tashlanadi
+// (orphan qolmasligi uchun) - boshqa moliya yozuvlari kabi isDeleted bilan.
+refundSchema.plugin(softDeletePlugin);
 
 const Refund = mongoose.model("Refund", refundSchema);
 

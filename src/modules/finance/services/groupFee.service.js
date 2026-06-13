@@ -22,18 +22,21 @@ const prevMonthAmount = async (group, year, month) => {
 };
 
 // Guruh+oy uchun to'lov yozuvi mavjudligini ta'minlaydi (carry-forward bilan).
-export const ensureGroupFee = async (group, year, month) => {
-  const existing = await GroupFee.findOne({ group, year, month });
+// session berilsa, ochiq MongoDB tranzaksiyasi ichida o'qib-yozadi.
+export const ensureGroupFee = async (group, year, month, { session } = {}) => {
+  const existing = await GroupFee.findOne({ group, year, month }).session(session || null);
   if (existing) return existing;
   const amount = await prevMonthAmount(group, year, month);
   try {
     return await GroupFee.findOneAndUpdate(
       { group, year, month },
       { $setOnInsert: { group, year, month, amount, source: "auto" } },
-      { upsert: true, new: true },
+      { upsert: true, new: true, session: session || undefined },
     );
   } catch (err) {
-    if (err?.code === 11000) return GroupFee.findOne({ group, year, month });
+    if (err?.code === 11000) {
+      return GroupFee.findOne({ group, year, month }).session(session || null);
+    }
     throw err;
   }
 };
