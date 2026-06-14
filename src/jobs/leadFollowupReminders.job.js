@@ -18,7 +18,7 @@ export default function defineLeadFollowupReminders(agenda) {
     let sent = 0;
 
     for (const lead of leads) {
-      const note = lead.followUpNote ? ` — ${lead.followUpNote}` : "";
+      const note = lead.followUpNote ? ` - ${lead.followUpNote}` : "";
       try {
         await createSystemNotification({
           message: `Qayta bog'lanish: ${fullName(lead)}${note}`,

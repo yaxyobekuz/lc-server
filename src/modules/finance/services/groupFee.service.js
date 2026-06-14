@@ -48,7 +48,7 @@ export const ensureGroupFee = async (group, year, month, { session } = {}) => {
 // uchun shu summa backfill qilinadi.
 const nearestFeeAmount = async (group, year, month) => {
   const idx = year * 12 + (month - 1);
-  // Keyingi (>=) eng yaqin oy — joriy tarifni o'tmishga tarqatamiz.
+  // Keyingi (>=) eng yaqin oy - joriy tarifni o'tmishga tarqatamiz.
   const after = await GroupFee.find({ group })
     .select({ year: 1, month: 1, amount: 1 })
     .lean();
@@ -70,7 +70,7 @@ const nearestFeeAmount = async (group, year, month) => {
 };
 
 // Berilgan oy uchun GroupFee mavjudligini ta'minlaydi; bo'lmasa eng yaqin mavjud
-// tarif summasi bilan yaratadi (carry-forward emas — o'tmishga backfill).
+// tarif summasi bilan yaratadi (carry-forward emas - o'tmishga backfill).
 export const ensureGroupFeeBackfill = async (group, year, month) => {
   const existing = await GroupFee.findOne({ group, year, month });
   if (existing) return existing;
