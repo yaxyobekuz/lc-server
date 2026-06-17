@@ -8,10 +8,10 @@ import {
   listSchema as groupFeeListSchema,
   byGroupSchema,
   upsertSchema,
-  regenerateSchema,
 } from "./validators/groupFee.validator.js";
 import {
   listSchema as paymentListSchema,
+  obligationsSchema as paymentObligationsSchema,
   idParamSchema as paymentIdSchema,
   studentIdParamSchema as paymentStudentIdSchema,
 } from "./validators/studentPayment.validator.js";
@@ -19,11 +19,6 @@ import {
   createSchema as transactionCreateSchema,
   idParamSchema as transactionIdSchema,
 } from "./validators/transaction.validator.js";
-import {
-  pendingSchema as refundPendingSchema,
-  historySchema as refundHistorySchema,
-  createSchema as refundCreateSchema,
-} from "./validators/refund.validator.js";
 import {
   listSchema as discountListSchema,
   createSchema as discountCreateSchema,
@@ -35,15 +30,12 @@ import { monthlySchema } from "./validators/report.validator.js";
 import groupFeeList from "./handlers/groupFee.list.handler.js";
 import groupFeeByGroup from "./handlers/groupFee.byGroup.handler.js";
 import groupFeeUpsert from "./handlers/groupFee.upsert.handler.js";
-import regenerate from "./handlers/regenerate.handler.js";
 import paymentList from "./handlers/studentPayment.list.handler.js";
+import paymentObligations from "./handlers/studentPayment.obligations.handler.js";
 import paymentGetById from "./handlers/studentPayment.getById.handler.js";
 import paymentHistoryByStudent from "./handlers/studentPayment.historyByStudent.handler.js";
 import transactionCreate from "./handlers/transaction.create.handler.js";
 import transactionRemove from "./handlers/transaction.remove.handler.js";
-import refundPending from "./handlers/refund.pending.handler.js";
-import refundHistory from "./handlers/refund.history.handler.js";
-import refundCreate from "./handlers/refund.create.handler.js";
 import discountList from "./handlers/discount.list.handler.js";
 import discountCreate from "./handlers/discount.create.handler.js";
 import discountUpdate from "./handlers/discount.update.handler.js";
@@ -74,13 +66,6 @@ router.put(
   validate(upsertSchema),
   groupFeeUpsert,
 );
-router.post(
-  "/regenerate",
-  requireAuth,
-  requirePermission(PERMISSIONS.FINANCE_MANAGE),
-  validate(regenerateSchema),
-  regenerate,
-);
 
 // ── O'quvchi to'lovlari ──
 router.get(
@@ -89,6 +74,14 @@ router.get(
   requirePermission(PERMISSIONS.FINANCE_READ),
   validate(paymentListSchema),
   paymentList,
+);
+// Qarzdorlar (oylik plan qoldig'i > 0) - ":id" dan OLDIN (aks holda "obligations" id deb qabul qilinardi).
+router.get(
+  "/student-payments/obligations",
+  requireAuth,
+  requirePermission(PERMISSIONS.FINANCE_READ),
+  validate(paymentObligationsSchema),
+  paymentObligations,
 );
 router.get(
   "/student-payments/by-student/:studentId",
@@ -119,29 +112,6 @@ router.delete(
   requirePermission(PERMISSIONS.FINANCE_PAY),
   validate(transactionIdSchema),
   transactionRemove,
-);
-
-// ── Qaytariladigan pul (refund) ──
-router.get(
-  "/refunds/pending",
-  requireAuth,
-  requirePermission(PERMISSIONS.FINANCE_READ),
-  validate(refundPendingSchema),
-  refundPending,
-);
-router.get(
-  "/refunds/history",
-  requireAuth,
-  requirePermission(PERMISSIONS.FINANCE_READ),
-  validate(refundHistorySchema),
-  refundHistory,
-);
-router.post(
-  "/refunds",
-  requireAuth,
-  requirePermission(PERMISSIONS.FINANCE_PAY),
-  validate(refundCreateSchema),
-  refundCreate,
 );
 
 // ── Chegirmalar ──

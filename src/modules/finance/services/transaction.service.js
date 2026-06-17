@@ -1,15 +1,8 @@
-import mongoose from "mongoose";
 import PaymentTransaction from "../../../models/paymentTransaction.model.js";
 import StudentPayment from "../../../models/studentPayment.model.js";
-import GroupMembership from "../../../models/groupMembership.model.js";
 import ApiError from "../../../utils/ApiError.js";
-import {
-  parseLocalDay,
-  localTodayMidnight,
-  dateKeyOf,
-} from "../../../helpers/attendance.helper.js";
+import { parseLocalDay, localTodayMidnight } from "../../../helpers/attendance.helper.js";
 import * as studentPaymentService from "./studentPayment.service.js";
-import * as groupFeeService from "./groupFee.service.js";
 import { runFinanceTxn } from "./financeTxn.helper.js";
 
 // Idempotentlik dublikati - takror so'rovni "yangi pul emas" deb qaytaradi.
@@ -19,17 +12,10 @@ const duplicateResult = (existing) => ({
   transactions: existing ? [existing] : [],
 });
 
-const nextMonth = (year, month) =>
-  month === 12 ? { year: year + 1, month: 1 } : { year, month: month + 1 };
-
-// Eng ko'pi bilan necha oy oldinga avans taqsimlanadi (cheksiz loop qo'riqlovi)
-const MAX_ADVANCE_MONTHS = 24;
-
-// To'lov qabul qiladi. Summa joriy oy qoldig'idan oshsa, ortig'i ketma-ket
-// keyingi oylarga (avans) taqsimlanadi - har oyga alohida tranzaksiya yoziladi.
-// Shunda kirim har oyga taqsimlangan holda hisoblanadi.
-// idempotencyKey berilsa: bir xil kalitli takror so'rov (double-click/retry)
-// yangi pul yozmaydi - mavjud tranzaksiya qaytariladi.
+// To'lov qabul qiladi. Faqat shu oylik PLAN qoldig'igacha (expected - paid) -
+// plan bo'yicha ORTIQCHA to'lov yoki keyingi oylarga avans QILIB BO'LMAYDI.
+// Cheklov shartli-atomik update bilan tekshiriladi (parallel double-click ham
+// capdan o'tmaydi). idempotencyKey berilsa: takror so'rov yangi pul yozmaydi.
 export const create = async (
   { paymentId, amount, method, paidAt, note, idempotencyKey },
   currentUser,
@@ -49,137 +35,38 @@ export const create = async (
     if (existing) return duplicateResult(existing);
   }
 
-  // Spill (avans) joriy a'zolikka bog'liq - uning _id'si loop ichida har safar
-  // YANGI holatda (leftAt) qayta o'qiladi (#3A stale membership tuzatildi).
-  const membership = payment.membership
-    ? await GroupMembership.findById(payment.membership)
-    : null;
+  // Avval balans atomik oshiriladi (cap sharti bilan), keyin tranzaksiya yoziladi.
+  const updated = await studentPaymentService.applyPaidDelta(payment._id, amount, {
+    capToRemaining: true,
+  });
+  if (!updated) {
+    if (idempotencyKey) {
+      const existing = await PaymentTransaction.findOne({ idempotencyKey });
+      if (existing) return duplicateResult(existing);
+    }
+    const remaining = Math.max(0, (payment.expectedAmount || 0) - (payment.paidAmount || 0));
+    throw new ApiError(400, `To'lov plan qoldig'idan oshib ketadi (qoldiq: ${remaining} so'm)`);
+  }
 
-  const baseNote = note || "";
-
-  // BUTUN to'lov (joriy oy + barcha avans bo'laklari) bitta MongoDB tranzaksiyasida
-  // bajariladi. Yarmida xato bo'lsa HAMMASI rollback - "yarim yozilgan to'lov"
-  // (pul yo'qolishi yoki fantom paidAmount) bo'lmaydi (#2A, batch atomiklik).
   try {
-    return await runFinanceTxn(async (session) => {
-      // Tranzaksiya ichida payment'ni qayta o'qiymiz (eng yangi paidAmount/leftAt).
-      const root = await StudentPayment.findById(paymentId).session(session || null);
-      if (!root) throw new ApiError(404, "To'lov topilmadi");
-
-      const created = [];
-      // Bitta so'rovdagi barcha bo'laklar (avans oylari) shu ID bilan bog'lanadi.
-      const batchId = new mongoose.Types.ObjectId();
-      let leftover = amount;
-      let cursor = { year: root.year, month: root.month };
-      let current = root;
-      let isFirst = true;
-      let steps = 0;
-
-      while (leftover > 0 && steps < MAX_ADVANCE_MONTHS) {
-        steps += 1;
-
-        if (!current) {
-          await groupFeeService.ensureGroupFee(root.group, cursor.year, cursor.month, {
-            session,
-          });
-          current = await studentPaymentService.ensurePaymentForMembership(
-            membership,
-            cursor.year,
-            cursor.month,
-            { session },
-          );
-        }
-
-        const remaining = Math.max(
-          0,
-          (current?.expectedAmount || 0) - (current?.paidAmount || 0),
-        );
-        const alloc = Math.min(leftover, remaining);
-
-        if (alloc > 0) {
-          // Avans (kelgusi oy) tranzaksiyasi o'sha oyning 1-sanasiga yoziladi -
-          // kirim shu oyga tegishli bo'lib hisoblanadi; haqiqiy sana note'da qoladi.
-          const trxPaidAt = isFirst
-            ? day
-            : new Date(Date.UTC(cursor.year, cursor.month - 1, 1));
-          const trxNote = isFirst
-            ? baseNote
-            : `${baseNote ? baseNote + " · " : ""}Avans (${dateKeyOf(day)})`;
-
-          const [trx] = await PaymentTransaction.create(
-            [
-              {
-                payment: current._id,
-                student: current.student,
-                group: current.group,
-                year: current.year,
-                month: current.month,
-                amount: alloc,
-                method,
-                paidAt: trxPaidAt,
-                note: trxNote,
-                // Kalit faqat batch'ning birinchi yozuviga - unique index dublikatni to'sadi
-                idempotencyKey: created.length === 0 ? idempotencyKey || null : null,
-                batchId,
-                createdBy: currentUser?._id || null,
-              },
-            ],
-            { session: session || undefined },
-          );
-          created.push(trx);
-          // Yangi paidAmount'ni qaytarib olamiz - keyingi iteratsiya stale o'qimasin.
-          current = await studentPaymentService.applyPaidDelta(current._id, alloc, {
-            session,
-          });
-          leftover -= alloc;
-        }
-
-        if (leftover <= 0) break;
-
-        // SPILL qarori HAR iteratsiyada YANGI o'qilgan membership holatiga tayanadi -
-        // bir marta olingan stale snapshot'ga emas (#3A). O'quvchi to'lov davomida
-        // guruhdan chiqsa (leftAt), keyingi oylarga fantom to'lov yozilmaydi.
-        const live = membership
-          ? await GroupMembership.findById(membership._id).session(session || null)
-          : null;
-        const canSpill = !!live && !live.leftAt && !live.isDeleted;
-        if (!canSpill) break;
-
-        cursor = nextMonth(cursor.year, cursor.month);
-        current = null;
-        isFirst = false;
-      }
-
-      // Hali ortiqcha qolsa (spill imkoni yo'q yoki cap) - joriy oyga ortiqcha sifatida.
-      if (leftover > 0) {
-        const [trx] = await PaymentTransaction.create(
-          [
-            {
-              payment: root._id,
-              student: root.student,
-              group: root.group,
-              year: root.year,
-              month: root.month,
-              amount: leftover,
-              method,
-              paidAt: day,
-              note: baseNote,
-              idempotencyKey: created.length === 0 ? idempotencyKey || null : null,
-              batchId,
-              createdBy: currentUser?._id || null,
-            },
-          ],
-          { session: session || undefined },
-        );
-        created.push(trx);
-        await studentPaymentService.applyPaidDelta(root._id, leftover, { session });
-      }
-
-      return { allocated: created.length, transactions: created };
+    const trx = await PaymentTransaction.create({
+      payment: payment._id,
+      student: payment.student,
+      group: payment.group,
+      year: payment.year,
+      month: payment.month,
+      amount,
+      method,
+      paidAt: day,
+      note: note || "",
+      idempotencyKey: idempotencyKey || null,
+      createdBy: currentUser?._id || null,
     });
+    return { allocated: 1, transactions: [trx] };
   } catch (err) {
-    // Parallel takror so'rov unique idempotency indexga urildi (tranzaksiya abort
-    // bo'ldi) - dublikat yozmaymiz, mavjud tranzaksiyani qaytaramiz.
+    // Tranzaksiya yozilmasa - balans oshirilgancha qolmasin (rollback).
+    await studentPaymentService.applyPaidDelta(payment._id, -amount);
+    // Parallel takror so'rov unique idempotency indexga urildi - dublikatni qaytaramiz.
     if (err?.code === 11000 && idempotencyKey) {
       const existing = await PaymentTransaction.findOne({ idempotencyKey });
       if (existing) return duplicateResult(existing);

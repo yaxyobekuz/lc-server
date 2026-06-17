@@ -12,6 +12,15 @@ export const listSchema = z.object({
   }),
 });
 
+export const obligationsSchema = z.object({
+  query: z.object({
+    groupId: z.string().optional(),
+    year: z.coerce.number().int().min(2000).max(3000),
+    // Ixtiyoriy: berilmasa - tanlangan yilning BARCHA oylari bo'yicha qarzdorlar.
+    month: z.coerce.number().int().min(1).max(12).optional(),
+  }),
+});
+
 export const idParamSchema = z.object({
   params: z.object({ id: z.string().min(1) }),
 });

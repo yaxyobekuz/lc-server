@@ -59,7 +59,6 @@ const buildSnapshot = async ({ student, group, year, month, joinedAt, leftAt = n
 
   return computePaymentSnapshot({
     baseFee: feeDoc ? feeDoc.amount : 0,
-    previousBaseFee: feeDoc ? feeDoc.previousAmount : null,
     year,
     month,
     joinedAt,
@@ -67,7 +66,6 @@ const buildSnapshot = async ({ student, group, year, month, joinedAt, leftAt = n
     periods,
     freezes,
     discounts,
-    effectiveFrom: feeDoc ? feeDoc.effectiveFrom : null,
   });
 };
 
@@ -91,11 +89,20 @@ const paidStatusStage = (newPaidExpr) => ({
 // paidAmount ni atomik delta bilan o'zgartiradi ($inc semantikasi) va statusni
 // shu yozuvning DB'dagi joriy qiymatlaridan keltirib chiqaradi. Parallel
 // tranzaksiyalar kommutativ qo'shiladi - hech biri yo'qolmaydi.
+// capToRemaining=true bo'lsa: yangi paidAmount expectedAmount dan oshadigan bo'lsa
+// hujjat YANGILANMAYDI (null qaytadi) - plan qoldig'idan ortiq to'lovni shartli-atomik
+// to'sish (parallel double-click ham capdan o'tmaydi).
 // session berilsa, yozuv shu MongoDB tranzaksiyasi ichida bajariladi (to'lov
 // qabul qilish/bekor qilishda PaymentTransaction bilan birga atomik bo'lsin).
-export const applyPaidDelta = async (paymentId, delta, { session } = {}) => {
+export const applyPaidDelta = async (
+  paymentId,
+  delta,
+  { session, capToRemaining = false } = {},
+) => {
   const newPaid = { $add: [{ $ifNull: ["$paidAmount", 0] }, delta] };
-  return StudentPayment.findByIdAndUpdate(paymentId, [paidStatusStage(newPaid)], {
+  const filter = { _id: paymentId };
+  if (capToRemaining) filter.$expr = { $lte: [newPaid, "$expectedAmount"] };
+  return StudentPayment.findOneAndUpdate(filter, [paidStatusStage(newPaid)], {
     new: true,
     session: session || undefined,
   });
@@ -321,6 +328,23 @@ export const generateMonth = async (year, month) => {
     created += 1;
   }
   return { memberships: memberships.length, created };
+};
+
+// Qarzdorlar: oylik plan bo'yicha qoldig'i (expected - paid) > 0 bo'lgan o'quvchilar.
+// month berilmasa - tanlangan yilning BARCHA oylari bo'yicha (har oy alohida qator).
+export const obligations = async ({ groupId, year, month }) => {
+  const filter = { year: Number(year), isDeleted: { $ne: true } };
+  if (month) filter.month = Number(month);
+  if (groupId) filter.group = toObjectId(groupId);
+
+  const items = await StudentPayment.find(filter)
+    .populate("student", safeStudentProjection)
+    .populate("group", { name: 1 })
+    .sort({ month: 1, createdAt: -1 });
+
+  return items
+    .map((p) => ({ ...p.toJSON(), remaining: Math.max(0, p.expectedAmount - p.paidAmount) }))
+    .filter((p) => p.remaining > 0);
 };
 
 export const list = async ({
