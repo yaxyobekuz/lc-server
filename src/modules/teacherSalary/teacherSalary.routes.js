@@ -26,7 +26,6 @@ import {
   upsertSchema as configUpsertSchema,
   pairParamSchema as configPairSchema,
 } from "./validators/salaryConfig.validator.js";
-import { monthlySchema } from "./validators/report.validator.js";
 import {
   listSchema as ratePeriodListSchema,
   idParamSchema as ratePeriodIdSchema,
@@ -53,7 +52,6 @@ import ratePeriodList from "./handlers/ratePeriod.list.handler.js";
 import ratePeriodCreate from "./handlers/ratePeriod.create.handler.js";
 import ratePeriodUpdate from "./handlers/ratePeriod.update.handler.js";
 import ratePeriodRemove from "./handlers/ratePeriod.remove.handler.js";
-import reportMonthly from "./handlers/report.monthly.handler.js";
 
 const router = Router();
 
@@ -197,15 +195,6 @@ router.delete(
   requirePermission(PERMISSIONS.SALARY_MANAGE),
   validate(ratePeriodIdSchema),
   ratePeriodRemove,
-);
-
-// ── Hisobotlar ──
-router.get(
-  "/reports/monthly",
-  requireAuth,
-  requirePermission(PERMISSIONS.SALARY_READ),
-  validate(monthlySchema),
-  reportMonthly,
 );
 
 export default router;
