@@ -25,8 +25,6 @@ import {
   updateSchema as discountUpdateSchema,
   idParamSchema as discountIdSchema,
 } from "./validators/discount.validator.js";
-import { monthlySchema } from "./validators/report.validator.js";
-
 import groupFeeList from "./handlers/groupFee.list.handler.js";
 import groupFeeByGroup from "./handlers/groupFee.byGroup.handler.js";
 import groupFeeUpsert from "./handlers/groupFee.upsert.handler.js";
@@ -40,7 +38,6 @@ import discountList from "./handlers/discount.list.handler.js";
 import discountCreate from "./handlers/discount.create.handler.js";
 import discountUpdate from "./handlers/discount.update.handler.js";
 import discountRemove from "./handlers/discount.remove.handler.js";
-import reportMonthly from "./handlers/report.monthly.handler.js";
 
 const router = Router();
 
@@ -142,15 +139,6 @@ router.delete(
   requirePermission(PERMISSIONS.FINANCE_MANAGE),
   validate(discountIdSchema),
   discountRemove,
-);
-
-// ── Hisobotlar ──
-router.get(
-  "/reports/monthly",
-  requireAuth,
-  requirePermission(PERMISSIONS.FINANCE_READ),
-  validate(monthlySchema),
-  reportMonthly,
 );
 
 export default router;
