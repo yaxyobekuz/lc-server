@@ -7,6 +7,7 @@ import { ROLES } from "../../../constants/roles.js";
 import { localTodayMidnight, toUtcMidnight } from "../../../helpers/attendance.helper.js";
 import { getById } from "./groups.service.js";
 import * as teacherSalaryService from "../../teacherSalary/services/teacherSalary.service.js";
+import * as teacherGroupPeriodService from "./teacherGroupPeriod.service.js";
 
 const toObjectId = (id) => {
   if (id instanceof mongoose.Types.ObjectId) return id;
@@ -42,37 +43,25 @@ export const replaceTeacher = async (groupId, body) => {
     throw new ApiError(400, "Yangi o'qituvchi noto'g'ri");
   }
 
-  // group.teachers - eskini yangisiga almashtiramiz
-  group.teachers = (group.teachers || []).map((t) =>
-    String(t) === String(oldId) ? newId : t,
-  );
-  await group.save();
-
   // Almashtirish sanasi (oy o'rtasi proratsiyasi uchun): body.date yoki bugun.
   const changeDate = body.date ? toUtcMidnight(body.date) : localTodayMidnight();
   const year = changeDate.getUTCFullYear();
   const month = changeDate.getUTCMonth() + 1;
 
-  // Eski o'qituvchining OXIRGI ish kuni - almashtirish kunidan bir kun oldin.
-  // workEndDate proratsiyada inclusive, yangi o'qituvchi esa changeDate'dan
-  // boshlaydi - ikkalasiga ham changeDate'ni berish o'sha kunni IKKI MARTA
-  // to'lardi (M4). changeDate oy 1-kuni bo'lsa, oxirgi kun o'tgan oyga tushadi
-  // va joriy oy maoshi 0 ga proratsiya bo'ladi - bu to'g'ri.
-  const lastWorkDay = new Date(changeDate.getTime() - 24 * 60 * 60 * 1000);
+  // Eski o'qituvchi davrini changeDate'da yopamiz (EXCLUSIVE → oxirgi ish kuni
+  // changeDate'dan bir kun oldin), yangisini changeDate'dan boshlaymiz. Maosh
+  // proratsiyasi davrlardan derived - o'sha kun ikki marta to'lanmaydi.
+  // teachers[] keshi assign/unassign ichida sinxronlanadi.
   try {
-    await teacherSalaryService.markTeacherLeft(oldId, group._id, year, month, lastWorkDay);
+    await teacherGroupPeriodService.unassignTeacher(group._id, oldId, { endDate: changeDate });
   } catch (err) {
-    logger.warn({ err }, "Eski o'qituvchi maoshi proratsiya qilinmadi");
+    logger.warn({ err }, "Eski o'qituvchi davri yopilmadi");
   }
-
-  // Yangi o'qituvchi uchun joriy oy maoshini yaratamiz (best-effort).
-  // Oy o'rtasida almashtirilsa, changeDate proratsiya uchun workStartDate bo'ladi.
   try {
-    await teacherSalaryService.ensureSalaryForTeacherGroup(newId, group._id, year, month, {
-      workStartDate: changeDate,
-    });
+    await teacherGroupPeriodService.assignTeacher(group._id, newId, { startDate: changeDate });
+    await teacherSalaryService.ensureSalaryForTeacherGroup(newId, group._id, year, month);
   } catch (err) {
-    logger.warn({ err }, "Almashtirilgan o'qituvchi uchun maosh yaratilmadi");
+    logger.warn({ err }, "Almashtirilgan o'qituvchi biriktirilmadi / maosh yaratilmadi");
   }
 
   return getById(group._id);

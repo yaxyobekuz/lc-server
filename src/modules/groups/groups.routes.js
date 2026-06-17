@@ -16,6 +16,12 @@ import {
   studentParamsSchema,
   historyQuerySchema,
 } from "./validators/misc.validator.js";
+import {
+  listSchema as teacherPeriodListSchema,
+  createSchema as teacherPeriodCreateSchema,
+  updateSchema as teacherPeriodUpdateSchema,
+  removeSchema as teacherPeriodRemoveSchema,
+} from "./validators/teacherPeriod.validator.js";
 
 import list from "./handlers/list.handler.js";
 import getById from "./handlers/getById.handler.js";
@@ -35,6 +41,10 @@ import history from "./handlers/history.handler.js";
 import myActive from "./handlers/myActive.handler.js";
 import myTeach from "./handlers/myTeach.handler.js";
 import markRemovalNoticeSeen from "./handlers/markRemovalNoticeSeen.handler.js";
+import teacherPeriodList from "./handlers/teacherPeriod.list.handler.js";
+import teacherPeriodCreate from "./handlers/teacherPeriod.create.handler.js";
+import teacherPeriodUpdate from "./handlers/teacherPeriod.update.handler.js";
+import teacherPeriodRemove from "./handlers/teacherPeriod.remove.handler.js";
 
 const router = Router();
 
@@ -150,6 +160,36 @@ router.get(
   requirePermission(PERMISSIONS.GROUPS_READ),
   validate(historyQuerySchema),
   history,
+);
+
+// ── O'qituvchi dars berish DAVRLARI (manba haqiqati - timeline) ──
+router.get(
+  "/:id/teacher-periods",
+  requireAuth,
+  requirePermission(PERMISSIONS.GROUPS_READ),
+  validate(teacherPeriodListSchema),
+  teacherPeriodList,
+);
+router.post(
+  "/:id/teacher-periods",
+  requireAuth,
+  requirePermission(PERMISSIONS.GROUPS_UPDATE),
+  validate(teacherPeriodCreateSchema),
+  teacherPeriodCreate,
+);
+router.patch(
+  "/:id/teacher-periods/:periodId",
+  requireAuth,
+  requirePermission(PERMISSIONS.GROUPS_UPDATE),
+  validate(teacherPeriodUpdateSchema),
+  teacherPeriodUpdate,
+);
+router.delete(
+  "/:id/teacher-periods/:periodId",
+  requireAuth,
+  requirePermission(PERMISSIONS.GROUPS_UPDATE),
+  validate(teacherPeriodRemoveSchema),
+  teacherPeriodRemove,
 );
 
 export default router;

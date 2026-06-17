@@ -19,6 +19,8 @@ import logger from "../../../config/logger.js";
 import * as financeGroupFeeService from "../../finance/services/groupFee.service.js";
 import * as financePaymentService from "../../finance/services/studentPayment.service.js";
 import * as teacherSalaryService from "../../teacherSalary/services/teacherSalary.service.js";
+import * as teacherGroupPeriodService from "./teacherGroupPeriod.service.js";
+import { assertPeriodInvariants } from "../../../helpers/period.helper.js";
 
 export const safeUserProjection = {
   firstName: 1,
@@ -294,7 +296,8 @@ export const create = async (body) => {
   const group = await Group.create({
     name: body.name.trim(),
     schedule: normalizeSchedule(body.schedule, { dropEffective: true }),
-    teachers: body.teachers || [],
+    // teachers[] - davrlardan HOSILA kesh; assignTeacher syncGroupTeachersCache qiladi.
+    teachers: [],
     startDate: body.startDate ? toUtcMidnight(body.startDate) : null,
     durationMonths: body.durationMonths ?? null,
   });
@@ -322,9 +325,12 @@ export const create = async (body) => {
     logger.warn({ err }, "Yangi guruh uchun oylik to'lov yaratilmadi");
   }
 
-  // Biriktirilgan har bir o'qituvchi uchun joriy oy maoshini yaratamiz (best-effort)
-  for (const teacherId of group.teachers || []) {
+  // O'qituvchilarni dars berish DAVRI sifatida biriktiramiz (manba haqiqati).
+  // assignTeacher ochiq davr ochib, teachers[] keshini sinxronlaydi.
+  const startDate = group.startDate || today;
+  for (const teacherId of body.teachers || []) {
     try {
+      await teacherGroupPeriodService.assignTeacher(group._id, teacherId, { startDate });
       await teacherSalaryService.ensureSalaryForTeacherGroup(
         teacherId,
         group._id,
@@ -332,11 +338,11 @@ export const create = async (body) => {
         month,
       );
     } catch (err) {
-      logger.warn({ err }, "Guruh o'qituvchisi uchun maosh yaratilmadi");
+      logger.warn({ err }, "Guruh o'qituvchisi biriktirilmadi / maosh yaratilmadi");
     }
   }
 
-  return group;
+  return Group.findById(group._id);
 };
 
 export const update = async (id, body) => {
@@ -354,7 +360,8 @@ export const update = async (id, body) => {
       removed: oldIds.filter((t) => !newIds.includes(t)),
       added: newIds.filter((t) => !oldIds.includes(t)),
     };
-    group.teachers = body.teachers;
+    // teachers[] keshi to'g'ridan-to'g'ri o'rnatilmaydi - assign/unassign davr
+    // amallari syncGroupTeachersCache orqali yangilaydi.
   }
   if (body.name !== undefined) group.name = body.name.trim();
   // Versiyalash: client HOZIRGI versiya qatorlarini + bitta "amal qilish sanasi"
@@ -378,44 +385,43 @@ export const update = async (id, body) => {
 
   await group.save();
 
-  // O'qituvchi o'zgarishi bo'yicha maosh hook'lari (best-effort)
+  // O'qituvchi o'zgarishi - dars berish davrlari orqali (maosh proratsiyasi
+  // davrlardan derived). unassign endDate=bugun (EXCLUSIVE) → oxirgi ish kuni kecha.
   if (teacherDiff && (teacherDiff.removed.length || teacherDiff.added.length)) {
     const today = localTodayMidnight();
     const year = today.getUTCFullYear();
     const month = today.getUTCMonth() + 1;
-    // Chiqarilganning oxirgi ish kuni - kecha (yangi o'qituvchi bugundan boshlaydi;
-    // workEndDate inclusive bo'lgani uchun bugunni berish kunni 2x to'lardi)
-    const lastWorkDay = new Date(today.getTime() - 24 * 60 * 60 * 1000);
     for (const teacherId of teacherDiff.removed) {
       try {
-        await teacherSalaryService.markTeacherLeft(teacherId, group._id, year, month, lastWorkDay);
+        await teacherGroupPeriodService.unassignTeacher(group._id, teacherId, { endDate: today });
       } catch (err) {
-        logger.warn({ err }, "Chiqarilgan o'qituvchi maoshi proratsiya qilinmadi");
+        logger.warn({ err }, "Chiqarilgan o'qituvchi davri yopilmadi");
       }
     }
     for (const teacherId of teacherDiff.added) {
       try {
-        await teacherSalaryService.ensureSalaryForTeacherGroup(teacherId, group._id, year, month, {
-          workStartDate: today,
-        });
+        await teacherGroupPeriodService.assignTeacher(group._id, teacherId, { startDate: today });
+        await teacherSalaryService.ensureSalaryForTeacherGroup(teacherId, group._id, year, month);
       } catch (err) {
-        logger.warn({ err }, "Qo'shilgan o'qituvchi uchun maosh yaratilmadi");
+        logger.warn({ err }, "Qo'shilgan o'qituvchi biriktirilmadi / maosh yaratilmadi");
       }
     }
   }
 
-  return group;
+  return Group.findById(group._id);
 };
 
-// Guruh o'qituvchilarining shu oydagi maoshini tugash sanasiga proratsiya qiladi.
+// Guruh tugaganda aktiv o'qituvchilarning dars berish davrini yopadi (tugash
+// sanasida). endDate EXCLUSIVE → `end` inclusive oxirgi ish kuni bo'lib qoladi.
+// Maosh shu oyda davrdan derived proratsiya bilan hisoblanadi.
 const prorateTeachersOnEnd = async (group, end) => {
-  const year = end.getUTCFullYear();
-  const month = end.getUTCMonth() + 1;
-  for (const teacherId of group.teachers || []) {
+  const endExclusive = new Date(toUtcMidnight(end).getTime() + 24 * 60 * 60 * 1000);
+  const activeIds = await teacherGroupPeriodService.activeTeacherIdsForGroup(group._id, end);
+  for (const teacherId of activeIds) {
     try {
-      await teacherSalaryService.markTeacherLeft(teacherId, group._id, year, month, end);
+      await teacherGroupPeriodService.unassignTeacher(group._id, teacherId, { endDate: endExclusive });
     } catch (err) {
-      logger.warn({ err }, "Guruh tugashida o'qituvchi maoshi proratsiya qilinmadi");
+      logger.warn({ err }, "Guruh tugashida o'qituvchi davri yopilmadi");
     }
   }
 };
@@ -534,6 +540,17 @@ export const addStudent = async (
     throw new ApiError(400, "Tugatgan sana boshlash sanasidan oldin bo'lishi mumkin emas");
   }
 
+  // A'zolik davrlari kesishmasligi + bitta ochiq (tugamagan) bo'lishi shart.
+  const otherMems = await GroupMembership.find(
+    { group: groupId, student: studentId, isDeleted: { $ne: true } },
+    { joinedAt: 1, leftAt: 1 },
+  ).lean();
+  assertPeriodInvariants(
+    { startDate: join, endDate: left },
+    otherMems.map((m) => ({ startDate: m.joinedAt, endDate: m.leftAt })),
+    "date",
+  );
+
   const membership = await GroupMembership.create({
     group: groupId,
     student: studentId,
@@ -603,6 +620,17 @@ export const updateMembership = async (
       );
     }
   }
+
+  // Yangi sanalar boshqa a'zolik davrlari bilan kesishmasligini tekshiramiz.
+  const otherMems = await GroupMembership.find(
+    { group: groupId, student: studentId, _id: { $ne: membership._id }, isDeleted: { $ne: true } },
+    { joinedAt: 1, leftAt: 1 },
+  ).lean();
+  assertPeriodInvariants(
+    { startDate: newJoin, endDate: newLeft },
+    otherMems.map((m) => ({ startDate: m.joinedAt, endDate: m.leftAt })),
+    "date",
+  );
 
   membership.joinedAt = newJoin;
   membership.leftAt = newLeft;
