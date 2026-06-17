@@ -45,17 +45,11 @@ export const upsertSchema = z.object({
   }),
 });
 
-export const regenerateSchema = z.object({
-  body: z.object({
-    year: z.coerce.number().int().min(2000).max(3000),
-    month: z.coerce.number().int().min(1).max(12),
-  }),
-});
-
 export const obligationsSchema = z.object({
   query: z.object({
     groupId: z.string().optional(),
     year: z.coerce.number().int().min(2000).max(3000),
-    month: z.coerce.number().int().min(1).max(12),
+    // Ixtiyoriy: berilmasa - tanlangan yilning BARCHA oylari bo'yicha.
+    month: z.coerce.number().int().min(1).max(12).optional(),
   }),
 });

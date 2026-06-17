@@ -8,7 +8,6 @@ import {
   listSchema as salaryListSchema,
   idParamSchema as salaryIdSchema,
   upsertSchema,
-  regenerateSchema,
   obligationsSchema,
   teacherIdParamSchema as salaryTeacherIdSchema,
 } from "./validators/teacherSalary.validator.js";
@@ -28,13 +27,18 @@ import {
   pairParamSchema as configPairSchema,
 } from "./validators/salaryConfig.validator.js";
 import { monthlySchema } from "./validators/report.validator.js";
+import {
+  listSchema as ratePeriodListSchema,
+  idParamSchema as ratePeriodIdSchema,
+  createSchema as ratePeriodCreateSchema,
+  updateSchema as ratePeriodUpdateSchema,
+} from "./validators/ratePeriod.validator.js";
 
 import salaryList from "./handlers/salary.list.handler.js";
 import salaryGetById from "./handlers/salary.getById.handler.js";
 import salaryHistoryByTeacher from "./handlers/salary.historyByTeacher.handler.js";
 import salaryMyFinance from "./handlers/salary.myFinance.handler.js";
 import salaryUpsert from "./handlers/salary.upsert.handler.js";
-import regenerate from "./handlers/regenerate.handler.js";
 import obligations from "./handlers/obligations.handler.js";
 import transactionCreate from "./handlers/transaction.create.handler.js";
 import transactionRemove from "./handlers/transaction.remove.handler.js";
@@ -45,6 +49,10 @@ import adjustmentRemove from "./handlers/adjustment.remove.handler.js";
 import configList from "./handlers/config.list.handler.js";
 import configUpsert from "./handlers/config.upsert.handler.js";
 import configRemove from "./handlers/config.remove.handler.js";
+import ratePeriodList from "./handlers/ratePeriod.list.handler.js";
+import ratePeriodCreate from "./handlers/ratePeriod.create.handler.js";
+import ratePeriodUpdate from "./handlers/ratePeriod.update.handler.js";
+import ratePeriodRemove from "./handlers/ratePeriod.remove.handler.js";
 import reportMonthly from "./handlers/report.monthly.handler.js";
 
 const router = Router();
@@ -83,13 +91,6 @@ router.get(
   requirePermission(PERMISSIONS.SALARY_READ),
   validate(salaryIdSchema),
   salaryGetById,
-);
-router.post(
-  "/regenerate",
-  requireAuth,
-  requirePermission(PERMISSIONS.SALARY_MANAGE),
-  validate(regenerateSchema),
-  regenerate,
 );
 router.get(
   "/obligations",
@@ -166,6 +167,36 @@ router.delete(
   requirePermission(PERMISSIONS.SALARY_MANAGE),
   validate(configPairSchema),
   configRemove,
+);
+
+// ── Maosh stavkasi DAVRLARI (manba haqiqati - timeline) ──
+router.get(
+  "/rate-periods",
+  requireAuth,
+  requirePermission(PERMISSIONS.SALARY_READ),
+  validate(ratePeriodListSchema),
+  ratePeriodList,
+);
+router.post(
+  "/rate-periods",
+  requireAuth,
+  requirePermission(PERMISSIONS.SALARY_MANAGE),
+  validate(ratePeriodCreateSchema),
+  ratePeriodCreate,
+);
+router.patch(
+  "/rate-periods/:id",
+  requireAuth,
+  requirePermission(PERMISSIONS.SALARY_MANAGE),
+  validate(ratePeriodUpdateSchema),
+  ratePeriodUpdate,
+);
+router.delete(
+  "/rate-periods/:id",
+  requireAuth,
+  requirePermission(PERMISSIONS.SALARY_MANAGE),
+  validate(ratePeriodIdSchema),
+  ratePeriodRemove,
 );
 
 // ── Hisobotlar ──
