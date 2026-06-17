@@ -23,6 +23,7 @@ import defineGenerateMonthlyFinance, {
 import defineGenerateMonthlySalary, {
   JOB_NAME as MONTHLY_SALARY_JOB,
 } from "./generateMonthlySalary.job.js";
+import { catchUpMonthlyGeneration } from "./catchUpMonthly.js";
 
 // Barcha cron jadvallari mahalliy (Asia/Tashkent) vaqt bo'yicha ishlaydi -
 // server qaysi TZ da bo'lishidan qat'i nazar. Aks holda UTC serverда "20:00"
@@ -64,6 +65,10 @@ export const startJobs = async () => {
   await every("6 0 1 * *", MONTHLY_SALARY_JOB);
 
   logger.info({ timezone: TZ }, "Agenda ishga tushirildi");
+
+  // Server o'chiq paytda (1-sanada) o'tkazib yuborilgan oylik generatsiyani fonда to'ldiradi.
+  // Await qilinmaydi - startup'ni bloklamaslik uchun; o'zi xatolarni ushlaydi.
+  catchUpMonthlyGeneration();
 };
 
 export const stopJobs = async () => {
