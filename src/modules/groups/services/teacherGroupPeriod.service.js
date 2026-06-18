@@ -1,21 +1,27 @@
 import mongoose from "mongoose";
 import TeacherGroupPeriod from "../../../models/teacherGroupPeriod.model.js";
 import TeacherSalary from "../../../models/teacherSalary.model.js";
+import SalaryTransaction from "../../../models/salaryTransaction.model.js";
 import Group from "../../../models/group.model.js";
 import User from "../../../models/user.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import logger from "../../../config/logger.js";
 import { ROLES } from "../../../constants/roles.js";
 import { toUtcMidnight, localTodayMidnight } from "../../../helpers/attendance.helper.js";
-import { assertPeriodInvariants, monthToIndex } from "../../../helpers/period.helper.js";
+import { assertPeriodInvariants } from "../../../helpers/period.helper.js";
+
+// Maosh stavkasini turiga qarab normallashtiradi (fixed→foiz 0, percent→fiksa 0).
+const normalizeRate = (salaryType, fixedAmount, percentRate) => ({
+  salaryType: salaryType || "fixed",
+  fixedAmount: salaryType === "percent" ? 0 : Number(fixedAmount) || 0,
+  percentRate: salaryType === "fixed" ? 0 : Number(percentRate) || 0,
+});
 
 const toObjectId = (id) => {
   if (id instanceof mongoose.Types.ObjectId) return id;
   if (!mongoose.isValidObjectId(id)) throw new ApiError(400, "Noto'g'ri identifikator");
   return new mongoose.Types.ObjectId(String(id));
 };
-
-const DAY = 24 * 60 * 60 * 1000;
 
 // --- RESOLVERLAR ---
 
@@ -51,42 +57,25 @@ export const teacherPeriodsActiveInMonth = async (group, year, month) => {
   });
 };
 
-// O'qituvchining bir oydagi ish holati (maosh proratsiyasi uchun). Qaytaradi:
-//  - { mode:"active", workStartDate, workEndDate(INCLUSIVE) } - shu oyda dars bergan;
-//  - { mode:"inactive" } - davrlar bor, lekin shu oyda dars bermagan → maosh 0;
-//  - { mode:"none" } - bu juftlik uchun umuman davr yo'q (migratsiya qilinmagan)
-//    → chaqiruvchi yozuvning eski workStartDate/workEndDate maydonlariga qaytadi.
-// endDate EXCLUSIVE saqlanadi - inclusive oxirgi kun = endDate - 1 kun.
-export const resolveWorkForMonth = async (teacher, group, year, month) => {
-  const all = await TeacherGroupPeriod.find(
-    { teacher: toObjectId(teacher), group: toObjectId(group), isDeleted: { $ne: true } },
-    { startDate: 1, endDate: 1 },
-  ).lean();
-  if (!all.length) return { mode: "none" };
-
+// O'qituvchi+guruhning shu oy bilan kesishadigan MAOSH davrlari (stavka bilan).
+// Maosh snapshot hisobida ishlatiladi - oydagi har bir davr alohida proratsiya
+// qilinib summalar qo'shiladi.
+export const periodsForMonth = async (teacher, group, year, month) => {
   const monthStart = new Date(Date.UTC(year, month - 1, 1)).getTime();
   const monthEnd = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999)).getTime();
-  const mine = all.filter((p) => {
-    const s = new Date(p.startDate).getTime();
-    const e = p.endDate ? new Date(p.endDate).getTime() : Infinity;
+  const rows = await TeacherGroupPeriod.find(
+    {
+      teacher: toObjectId(teacher),
+      group: toObjectId(group),
+      isDeleted: { $ne: true },
+    },
+    { startDate: 1, endDate: 1, salaryType: 1, fixedAmount: 1, percentRate: 1 },
+  ).lean();
+  return rows.filter((r) => {
+    const s = new Date(r.startDate).getTime();
+    const e = r.endDate ? new Date(r.endDate).getTime() : Infinity;
     return s <= monthEnd && e > monthStart;
   });
-  if (!mine.length) return { mode: "inactive" };
-
-  // Oddiy holat: oyda bitta davr. Bir nechta bo'lsa - eng keng oyna (start min, end max).
-  let start = Infinity;
-  let endExcl = -Infinity;
-  let open = false;
-  for (const p of mine) {
-    start = Math.min(start, new Date(p.startDate).getTime());
-    if (!p.endDate) open = true;
-    else endExcl = Math.max(endExcl, new Date(p.endDate).getTime());
-  }
-  return {
-    mode: "active",
-    workStartDate: new Date(start),
-    workEndDate: open ? null : new Date(endExcl - DAY),
-  };
 };
 
 // Guruhda hozir aktiv o'qituvchilar bo'lgan guruh id'lari (teacher uchun).
@@ -125,32 +114,46 @@ export const syncGroupTeachersCache = async (group) => {
 
 // --- RECOMPUTE (o'zgargan oylardagi shu o'qituvchi maoshi) ---
 
-const recomputeSalaries = async (teacher, group, fromTs, toTs) => {
+// Davr qamragan oylar ro'yxati (year/month). OY darajasida ishlaydi: oxiri JORIY
+// OYGACHA cheklanadi - kelajak OYLAR uchun maosh plani yaratilmaydi (ular oylik
+// jobda paydo bo'ladi), lekin joriy oyning kelajak KUNIDA boshlangan davr ham
+// joriy oyni qayta hisoblaydi. endDate EXCLUSIVE - oxirgi kun = endDate - 1 kun.
+const monthIdx = (d) => d.getUTCFullYear() * 12 + d.getUTCMonth();
+
+const monthsSpanned = (startDate, endDateExcl) => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const curIdx = monthIdx(localTodayMidnight());
+  const startIdx = monthIdx(new Date(startDate));
+  let endIdx;
+  if (endDateExcl) {
+    endIdx = monthIdx(new Date(new Date(endDateExcl).getTime() - DAY));
+  } else {
+    endIdx = curIdx; // ochiq davr → joriy oygacha
+  }
+  endIdx = Math.min(endIdx, curIdx); // kelajak oylar yo'q
+  if (startIdx > endIdx) return [];
+  const months = [];
+  for (let idx = startIdx; idx <= endIdx; idx += 1) {
+    months.push({ year: Math.floor(idx / 12), month: (idx % 12) + 1 });
+  }
+  return months;
+};
+
+// Oraliqdagi har bir oy uchun maosh planini YARATADI (yo'q bo'lsa) va qayta
+// hisoblaydi. Yangi davr qo'shilganda o'sha oy uchun plan darhol paydo bo'ladi.
+const recomputeForRange = async (teacher, group, startDate, endDate) => {
   const teacherSalaryService = await import(
     "../../teacherSalary/services/teacherSalary.service.js"
   );
-  const fromIdx = monthToIndex(
-    new Date(fromTs).getUTCFullYear(),
-    new Date(fromTs).getUTCMonth() + 1,
-  );
-  const toIdx = monthToIndex(
-    new Date(toTs).getUTCFullYear(),
-    new Date(toTs).getUTCMonth() + 1,
-  );
-  const salaries = await TeacherSalary.find(
-    { teacher: toObjectId(teacher), group: toObjectId(group) },
-    { _id: 1, year: 1, month: 1 },
-  ).lean();
-  for (const s of salaries) {
-    const idx = monthToIndex(s.year, s.month);
-    if (idx >= fromIdx && idx <= toIdx) await teacherSalaryService.recalc(s._id);
+  for (const { year, month } of monthsSpanned(startDate, endDate)) {
+    const sal = await teacherSalaryService.ensureSalaryForTeacherGroup(
+      teacher,
+      group,
+      year,
+      month,
+    );
+    if (sal) await teacherSalaryService.recalc(sal._id);
   }
-};
-
-const recomputeForRange = async (teacher, group, startDate, endDate) => {
-  const fromTs = new Date(startDate).getTime();
-  const toTs = endDate ? new Date(endDate).getTime() : localTodayMidnight().getTime();
-  await recomputeSalaries(teacher, group, fromTs, Math.max(fromTs, toTs));
 };
 
 // --- CRUD (invariant-li) ---
@@ -168,7 +171,7 @@ const loadScope = async (teacher, group, excludeId) => {
 };
 
 export const create = async (
-  { teacher, group, startDate, endDate = null },
+  { teacher, group, startDate, endDate = null, salaryType, fixedAmount, percentRate },
   currentUser,
 ) => {
   await assertTeacher(teacher);
@@ -187,6 +190,7 @@ export const create = async (
     group,
     startDate: candidate.startDate,
     endDate: candidate.endDate,
+    ...normalizeRate(salaryType, fixedAmount, percentRate),
     createdBy: currentUser?._id || null,
     updatedBy: currentUser?._id || null,
   });
@@ -215,6 +219,13 @@ export const update = async (id, patch, currentUser) => {
   const oldEnd = doc.endDate;
   doc.startDate = next.startDate;
   doc.endDate = next.endDate;
+  // Maosh stavkasi - berilgan bo'lsa yangilanadi.
+  if (patch.salaryType !== undefined) {
+    const rate = normalizeRate(patch.salaryType, patch.fixedAmount, patch.percentRate);
+    doc.salaryType = rate.salaryType;
+    doc.fixedAmount = rate.fixedAmount;
+    doc.percentRate = rate.percentRate;
+  }
   doc.updatedBy = currentUser?._id || null;
   await doc.save();
 
@@ -227,6 +238,25 @@ export const update = async (id, patch, currentUser) => {
 export const remove = async (id) => {
   const doc = await TeacherGroupPeriod.findById(id);
   if (!doc || doc.isDeleted) throw new ApiError(404, "Dars berish davri topilmadi");
+
+  // To'lov qo'riqlovchisi: davr qamragan oylarda maosh to'lovi (tranzaktsiya)
+  // bo'lsa - o'chirib bo'lmaydi (avval to'lovlar o'chirilishi kerak).
+  const months = monthsSpanned(doc.startDate, doc.endDate);
+  if (months.length) {
+    const paid = await SalaryTransaction.findOne({
+      teacher: doc.teacher,
+      group: doc.group,
+      isDeleted: { $ne: true },
+      $or: months,
+    });
+    if (paid) {
+      throw new ApiError(
+        400,
+        "Bu davrga oid maosh to'lovi mavjud. Avval to'lovlarni o'chiring.",
+      );
+    }
+  }
+
   await doc.softDelete();
   await syncGroupTeachersCache(doc.group);
   await recomputeForRange(doc.teacher, doc.group, doc.startDate, doc.endDate);
