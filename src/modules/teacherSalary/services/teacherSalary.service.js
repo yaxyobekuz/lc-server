@@ -1,7 +1,6 @@
 import mongoose from "mongoose";
 import TeacherSalary from "../../../models/teacherSalary.model.js";
 import SalaryTransaction from "../../../models/salaryTransaction.model.js";
-import SalaryAdjustment from "../../../models/salaryAdjustment.model.js";
 import StudentPayment from "../../../models/studentPayment.model.js";
 import Group from "../../../models/group.model.js";
 import User from "../../../models/user.model.js";
@@ -40,17 +39,7 @@ export const computeGroupRevenue = async (group, year, month) => {
 // bir o'qituvchining bir nechta davri (maosh o'zgarishi / qayta kelishi) yig'iladi.
 // { snap, groupRevenue, rate } qaytaradi - rate = aktiv (oxirgi) davr stavkasi.
 const buildSnapshot = async (salary) => {
-  const [adjustments, groupRevenue, periods] = await Promise.all([
-    SalaryAdjustment.find({
-      teacher: salary.teacher,
-      group: salary.group,
-      isActive: true,
-      isDeleted: { $ne: true },
-      $or: [
-        { scope: "permanent" },
-        { scope: "monthly", year: salary.year, month: salary.month },
-      ],
-    }),
+  const [groupRevenue, periods] = await Promise.all([
     computeGroupRevenue(salary.group, salary.year, salary.month),
     teacherGroupPeriodService.periodsForMonth(
       salary.teacher,
@@ -65,7 +54,6 @@ const buildSnapshot = async (salary) => {
     groupRevenue,
     year: salary.year,
     month: salary.month,
-    adjustments,
   });
 
   const rate = {
@@ -125,7 +113,7 @@ export const recalcStatus = async (salaryId) => {
   });
 };
 
-// Snapshot (maosh/foiz/proratsiya/adjustment) ni qayta hisoblab, statusni ham yangilaydi.
+// Snapshot (maosh/foiz/proratsiya) ni qayta hisoblab, statusni ham yangilaydi.
 // Yozish atomik pipeline orqali: status/overpaid DB'dagi JORIY paidAmount'dan
 // keltirib chiqariladi - hisob davomida kelib tushgan parallel to'lov buzmaydi.
 // Retro o'zgarish expected'ni to'langandan pastga tushirsa, farq overpaidAmount
@@ -154,8 +142,6 @@ export const recalc = async (salaryId) => {
           proratedFixed: snap.proratedFixed,
           percentAmount: snap.percentAmount,
           baseEarnings: snap.baseEarnings,
-          bonusTotal: snap.bonusTotal,
-          fineTotal: snap.fineTotal,
           expectedAmount: snap.expectedAmount,
           status: {
             $switch: {
@@ -187,18 +173,6 @@ export const recalcForGroupMonth = async (group, year, month) => {
 // Guruhning barcha oylik maoshlarini qayta hisoblaydi (doimiy chegirma o'zgarganda).
 export const recalcForGroup = async (group) => {
   const salaries = await TeacherSalary.find({ group }, { _id: 1 });
-  for (const s of salaries) await recalc(s._id);
-  return salaries.length;
-};
-
-// O'qituvchi+guruh bonus/jarimasi o'zgarganda tegishli oylarni qayta hisoblaydi.
-export const recalcForTeacherScope = async (teacher, group, { scope, year, month } = {}) => {
-  const filter = { teacher, group };
-  if (scope === "monthly" && year && month) {
-    filter.year = year;
-    filter.month = month;
-  }
-  const salaries = await TeacherSalary.find(filter, { _id: 1 });
   for (const s of salaries) await recalc(s._id);
   return salaries.length;
 };
@@ -316,24 +290,12 @@ export const getById = async (id) => {
     .populate("group", { name: 1 });
   if (!salary) throw new ApiError(404, "Maosh topilmadi");
 
-  const [transactions, adjustments] = await Promise.all([
-    SalaryTransaction.find({ salary: salary._id, isDeleted: { $ne: true } }).sort({
-      paidAt: -1,
-      createdAt: -1,
-    }),
-    SalaryAdjustment.find({
-      teacher: salary.teacher._id || salary.teacher,
-      group: salary.group._id || salary.group,
-      isActive: true,
-      isDeleted: { $ne: true },
-      $or: [
-        { scope: "permanent" },
-        { scope: "monthly", year: salary.year, month: salary.month },
-      ],
-    }).sort({ createdAt: -1 }),
-  ]);
+  const transactions = await SalaryTransaction.find({
+    salary: salary._id,
+    isDeleted: { $ne: true },
+  }).sort({ paidAt: -1, createdAt: -1 });
 
-  return { ...salary.toJSON(), transactions, adjustments };
+  return { ...salary.toJSON(), transactions };
 };
 
 // Bitta o'qituvchining barcha oylardagi maoshlari + har biriga tegishli
@@ -386,37 +348,9 @@ export const historyByTeacher = async (teacherId) => {
 };
 
 // O'qituvchining O'ZI uchun moliya ko'rinishi (teacher panel "Moliya" bo'limi).
-// historyByTeacher ustiga bonus/jarima yig'indilari va faol bonus/jarima
-// qoidalari ro'yxatini qo'shadi. Faqat req.user._id bilan chaqiriladi - ruxsat
-// tekshiruvi shart emas (o'z ma'lumotini ko'radi).
-export const myFinance = async (teacherId) => {
-  const base = await historyByTeacher(teacherId);
-  const tid = toObjectId(teacherId);
-
-  // Har oy snapshot'idagi bonus/jarima yig'indilari (haqiqatda qo'llangan).
-  const totalBonus = base.items.reduce((s, p) => s + (p.bonusTotal || 0), 0);
-  const totalFine = base.items.reduce((s, p) => s + (p.fineTotal || 0), 0);
-
-  // Faol bonus/jarima qoidalari (doimiy + oylik) - sababi bilan ko'rsatish uchun.
-  const adjustments = await SalaryAdjustment.find({
-    teacher: tid,
-    isActive: true,
-    isDeleted: { $ne: true },
-  })
-    .populate("group", { name: 1 })
-    .sort({ createdAt: -1 })
-    .lean();
-
-  return {
-    ...base,
-    adjustments,
-    summary: {
-      ...base.summary,
-      totalBonus,
-      totalFine,
-    },
-  };
-};
+// Faqat req.user._id bilan chaqiriladi - ruxsat tekshiruvi shart emas (o'z
+// ma'lumotini ko'radi).
+export const myFinance = async (teacherId) => historyByTeacher(teacherId);
 
 // Majburiyatlar: qoldig'i (expected - paid) > 0 bo'lgan maoshlar.
 // month berilmasa - tanlangan yilning BARCHA oylari bo'yicha (har oy alohida qator).

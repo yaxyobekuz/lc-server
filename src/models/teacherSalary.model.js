@@ -39,8 +39,6 @@ const teacherSalarySchema = new mongoose.Schema(
     proratedFixed: { type: Number, default: 0 },
     percentAmount: { type: Number, default: 0 },
     baseEarnings: { type: Number, default: 0 },
-    bonusTotal: { type: Number, default: 0 },
-    fineTotal: { type: Number, default: 0 },
     expectedAmount: { type: Number, required: true, default: 0 },
 
     // To'langan (SalaryTransaction yig'indisidan keshlanadi)

@@ -8,21 +8,6 @@ export { computeProration, deriveStatus, daysInMonth };
 
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 
-// Bonus/jarima yig'indilarini baseEarnings ga nisbatan hisoblaydi.
-export const resolveAdjustments = (adjustments, baseEarnings) => {
-  let bonusTotal = 0;
-  let fineTotal = 0;
-  for (const a of adjustments || []) {
-    const amt =
-      a.valueType === "percent"
-        ? Math.round((baseEarnings * clamp(Number(a.value) || 0, 0, 100)) / 100)
-        : Number(a.value) || 0;
-    if (a.kind === "bonus") bonusTotal += amt;
-    else fineTotal += amt;
-  }
-  return { bonusTotal, fineTotal };
-};
-
 const DAY = 24 * 60 * 60 * 1000;
 
 // To'liq maosh snapshot hisobi - bir oydagi BARCHA maosh davrlari yig'indisi.
@@ -35,7 +20,6 @@ export const computePeriodsSnapshot = ({
   groupRevenue = 0,
   year,
   month,
-  adjustments = [],
 }) => {
   const totalDays = daysInMonth(year, month);
   const sorted = [...periods].sort(
@@ -87,8 +71,7 @@ export const computePeriodsSnapshot = ({
   }
 
   const baseEarnings = proratedFixed + percentAmount;
-  const { bonusTotal, fineTotal } = resolveAdjustments(adjustments, baseEarnings);
-  const expectedAmount = Math.max(0, baseEarnings + bonusTotal - fineTotal);
+  const expectedAmount = Math.max(0, baseEarnings);
 
   return {
     prorationFactor: clamp(payableDays / totalDays, 0, 1),
@@ -97,8 +80,6 @@ export const computePeriodsSnapshot = ({
     proratedFixed,
     percentAmount,
     baseEarnings,
-    bonusTotal,
-    fineTotal,
     expectedAmount,
     // Stavka (display) + ish oynasi (breakdown "Ish davri").
     salaryType: activeType,
