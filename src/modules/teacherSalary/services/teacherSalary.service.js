@@ -7,9 +7,7 @@ import Group from "../../../models/group.model.js";
 import User from "../../../models/user.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import { ROLES } from "../../../constants/roles.js";
-import { toUtcMidnight } from "../../../helpers/attendance.helper.js";
-import { computeSalarySnapshot, deriveStatus } from "./salaryCompute.helper.js";
-import * as salaryRatePeriodService from "./salaryRatePeriod.service.js";
+import { computePeriodsSnapshot, deriveStatus } from "./salaryCompute.helper.js";
 import * as teacherGroupPeriodService from "../../groups/services/teacherGroupPeriod.service.js";
 
 const safeTeacherProjection = {
@@ -37,12 +35,12 @@ export const computeGroupRevenue = async (group, year, month) => {
 };
 
 // Bir maosh yozuvi uchun snapshot maydonlarini hisoblaydi (DB dan yuklab).
-// Stavka (salaryType/fixedAmount/percentRate) MANBA HAQIQATI - rate davri:
-// shu oyga amal qiladigan TeacherSalaryRatePeriod. Davr bo'lmasa (eski/migratsiya
-// qilinmagan) - yozuvning o'z maydonlari ishlatiladi (orqaga-moslik).
-// { snap, groupRevenue, rate } qaytaradi - recalc rate'ni yozuvga ham ko'chiradi.
+// MANBA HAQIQATI - shu oy bilan kesishadigan TeacherGroupPeriod davrlari: har biri
+// o'z stavkasi (salaryType/fixedAmount/percentRate) va sana oynasi bilan. Bir oyda
+// bir o'qituvchining bir nechta davri (maosh o'zgarishi / qayta kelishi) yig'iladi.
+// { snap, groupRevenue, rate } qaytaradi - rate = aktiv (oxirgi) davr stavkasi.
 const buildSnapshot = async (salary) => {
-  const [adjustments, groupRevenue, ratePeriod, work] = await Promise.all([
+  const [adjustments, groupRevenue, periods] = await Promise.all([
     SalaryAdjustment.find({
       teacher: salary.teacher,
       group: salary.group,
@@ -54,13 +52,7 @@ const buildSnapshot = async (salary) => {
       ],
     }),
     computeGroupRevenue(salary.group, salary.year, salary.month),
-    salaryRatePeriodService.rateForMonth(
-      salary.teacher,
-      salary.group,
-      salary.year,
-      salary.month,
-    ),
-    teacherGroupPeriodService.resolveWorkForMonth(
+    teacherGroupPeriodService.periodsForMonth(
       salary.teacher,
       salary.group,
       salary.year,
@@ -68,39 +60,19 @@ const buildSnapshot = async (salary) => {
     ),
   ]);
 
-  const rate = {
-    salaryType: ratePeriod ? ratePeriod.salaryType : salary.salaryType,
-    fixedAmount: ratePeriod ? ratePeriod.fixedAmount : salary.fixedAmount,
-    percentRate: ratePeriod ? ratePeriod.percentRate : salary.percentRate,
-  };
-
-  // Ish oynasi MANBA HAQIQATI - dars berish davri (TeacherGroupPeriod).
-  // active → davr oynasi; inactive → shu oyda dars bermagan (oy oxiridan keyingi
-  // start bilan factor 0); none → migratsiya qilinmagan, yozuvning eski maydonlari.
-  let workStartDate;
-  let workEndDate;
-  if (work.mode === "active") {
-    workStartDate = work.workStartDate;
-    workEndDate = work.workEndDate;
-  } else if (work.mode === "inactive") {
-    workStartDate = new Date(Date.UTC(salary.year, salary.month, 1));
-    workEndDate = null;
-  } else {
-    workStartDate = salary.workStartDate;
-    workEndDate = salary.workEndDate;
-  }
-
-  const snap = computeSalarySnapshot({
-    salaryType: rate.salaryType,
-    fixedAmount: rate.fixedAmount,
-    percentRate: rate.percentRate,
+  const snap = computePeriodsSnapshot({
+    periods,
     groupRevenue,
     year: salary.year,
     month: salary.month,
-    workStartDate,
-    workEndDate,
     adjustments,
   });
+
+  const rate = {
+    salaryType: snap.salaryType,
+    fixedAmount: snap.fixedAmount,
+    percentRate: snap.percentRate,
+  };
 
   return { snap, groupRevenue, rate };
 };
@@ -173,6 +145,8 @@ export const recalc = async (salaryId) => {
           salaryType: rate.salaryType,
           fixedAmount: rate.fixedAmount,
           percentRate: rate.percentRate,
+          workStartDate: snap.workStartDate || null,
+          workEndDate: snap.workEndDate || null,
           groupRevenue,
           prorationFactor: snap.prorationFactor,
           payableDays: snap.payableDays,
@@ -230,32 +204,13 @@ export const recalcForTeacherScope = async (teacher, group, { scope, year, month
 };
 
 // O'qituvchi guruhga biriktirilganda shu oy maoshini yaratadi (best-effort hook).
-export const ensureSalaryForTeacherGroup = async (
-  teacher,
-  group,
-  year,
-  month,
-  { workStartDate, workEndDate } = {},
-) => {
+// Stavka/ish-oynasi davrlardan (TeacherGroupPeriod) keltirib chiqariladi.
+export const ensureSalaryForTeacherGroup = async (teacher, group, year, month) => {
   if (!teacher || !group) return null;
   const exists = await TeacherSalary.findOne({ teacher, group, year, month });
   if (exists) return exists;
 
-  // Maosh stavkasi MANBA HAQIQATI - shu oyga amal qiladigan rate davri.
-  // Davr bo'lmasa default (fixed, 0) - keyin owner stavka davri qo'shadi.
-  const ratePeriod = await salaryRatePeriodService.rateForMonth(teacher, group, year, month);
-  const draft = new TeacherSalary({
-    teacher,
-    group,
-    year,
-    month,
-    salaryType: ratePeriod ? ratePeriod.salaryType : "fixed",
-    fixedAmount: ratePeriod ? ratePeriod.fixedAmount : 0,
-    percentRate: ratePeriod ? ratePeriod.percentRate : 0,
-    workStartDate: workStartDate ? toUtcMidnight(workStartDate) : null,
-    workEndDate: workEndDate ? toUtcMidnight(workEndDate) : null,
-    source: ratePeriod ? "manual" : "auto",
-  });
+  const draft = new TeacherSalary({ teacher, group, year, month, source: "auto" });
   const { snap, groupRevenue, rate } = await buildSnapshot(draft);
   Object.assign(draft, rate, snap);
   draft.groupRevenue = groupRevenue;
@@ -303,49 +258,8 @@ export const generateMonth = async (year, month) => {
   return { groups: groups.length, created };
 };
 
-// Maosh konfiguratsiyasini o'rnatadi (upsert), so'ng qayta hisoblaydi.
-export const upsertSalary = async (
-  { teacher, group, year, month, salaryType, fixedAmount, percentRate, workStartDate, workEndDate },
-  currentUser,
-) => {
-  const grp = await Group.findById(group);
-  if (!grp) throw new ApiError(404, "Guruh topilmadi");
-
-  // teacher haqiqatan o'qituvchi roli ekanini tekshiramiz - ixtiyoriy ObjectId
-  // (o'quvchi, o'chirilgan user) ga soxta maosh yozuvi yaratib bo'lmasin (M2).
-  const teacherDoc = await User.findOne({
-    _id: teacher,
-    role: ROLES.TEACHER,
-    isDeleted: { $ne: true },
-  });
-  if (!teacherDoc) throw new ApiError(400, "O'qituvchi topilmadi");
-
-  if (workStartDate && workEndDate) {
-    const ws = toUtcMidnight(workStartDate);
-    const we = toUtcMidnight(workEndDate);
-    if (ws && we && we.getTime() < ws.getTime()) {
-      throw new ApiError(400, "Ish tugash sanasi boshlanishidan oldin bo'lishi mumkin emas");
-    }
-  }
-
-  const salary = await TeacherSalary.findOneAndUpdate(
-    { teacher, group, year, month },
-    {
-      $set: {
-        salaryType,
-        fixedAmount: salaryType === "percent" ? 0 : fixedAmount || 0,
-        percentRate: salaryType === "fixed" ? 0 : percentRate || 0,
-        workStartDate: workStartDate ? toUtcMidnight(workStartDate) : null,
-        workEndDate: workEndDate ? toUtcMidnight(workEndDate) : null,
-        source: "manual",
-      },
-      $setOnInsert: { teacher, group, year, month, createdBy: currentUser?._id || null },
-    },
-    { upsert: true, new: true },
-  );
-
-  return recalc(salary._id);
-};
+// (upsertSalary olib tashlandi - stavka/ish-oynasi endi TeacherGroupPeriod
+// davrlaridan derived. Maosh o'zgartirish faqat davrlar orqali bo'ladi.)
 
 // (markTeacherLeft olib tashlandi - ish tugashi endi TeacherGroupPeriod davrini
 // yopish orqali bo'ladi; maosh proratsiyasi davrlardan derived - teacherGroupPeriod

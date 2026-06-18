@@ -23,46 +23,75 @@ export const resolveAdjustments = (adjustments, baseEarnings) => {
   return { bonusTotal, fineTotal };
 };
 
-// To'liq maosh snapshot hisobi.
-// Fiksa va foiz qismlari ishlangan kunlar ulushiga (factor) proratsiya qilinadi -
-// o'qituvchi oy o'rtasida boshlasa (workStartDate) yoki tugatsa (workEndDate).
-export const computeSalarySnapshot = ({
-  salaryType = "fixed",
-  fixedAmount = 0,
-  percentRate = 0,
+const DAY = 24 * 60 * 60 * 1000;
+
+// To'liq maosh snapshot hisobi - bir oydagi BARCHA maosh davrlari yig'indisi.
+// Har bir davr [startDate, endDate) (endDate EXCLUSIVE) o'z stavkasi bilan oy
+// ichidagi kunlariga proratsiya qilinadi va summalar QO'SHILADI. Davrlar
+// kesishmaydi (invariant) - kun ikki marta sanalmaydi. "Maosh turi" (display)
+// oydagi eng oxirgi davr turini oladi - "aktiv davr turi".
+export const computePeriodsSnapshot = ({
+  periods = [],
   groupRevenue = 0,
   year,
   month,
-  workStartDate,
-  workEndDate,
   adjustments = [],
 }) => {
-  const { factor, payableDays, totalDays } = computeProration({
-    year,
-    month,
-    joinedAt: workStartDate || null,
-    leftAt: workEndDate || null,
-    freezes: [],
-  });
+  const totalDays = daysInMonth(year, month);
+  const sorted = [...periods].sort(
+    (a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime(),
+  );
 
-  const useFixed = salaryType === "fixed" || salaryType === "mixed";
-  const usePercent = salaryType === "percent" || salaryType === "mixed";
+  let proratedFixed = 0;
+  let percentAmount = 0;
+  let payableDays = 0;
+  let minStart = null;
+  let maxEndExcl = null;
+  let hasOpen = false;
+  // Aktiv (oxirgi) davr stavkasi - faqat ko'rsatish uchun.
+  let activeType = "fixed";
+  let activeFixed = 0;
+  let activePercent = 0;
 
-  const proratedFixed = useFixed
-    ? Math.round((Number(fixedAmount) || 0) * factor)
-    : 0;
-  const percentAmount = usePercent
-    ? Math.round(
-        ((Number(groupRevenue) || 0) * (Number(percentRate) || 0) * factor) / 100,
-      )
-    : 0;
+  for (const p of sorted) {
+    const { factor, payableDays: pd } = computeProration({
+      year,
+      month,
+      joinedAt: p.startDate || null,
+      leftAt: p.endDate || null,
+      leftExclusive: true,
+      freezes: [],
+    });
+
+    const useFixed = p.salaryType === "fixed" || p.salaryType === "mixed";
+    const usePercent = p.salaryType === "percent" || p.salaryType === "mixed";
+    if (useFixed) proratedFixed += Math.round((Number(p.fixedAmount) || 0) * factor);
+    if (usePercent) {
+      percentAmount += Math.round(
+        ((Number(groupRevenue) || 0) * (Number(p.percentRate) || 0) * factor) / 100,
+      );
+    }
+    payableDays += pd;
+
+    activeType = p.salaryType || "fixed";
+    activeFixed = Number(p.fixedAmount) || 0;
+    activePercent = Number(p.percentRate) || 0;
+
+    const s = new Date(p.startDate);
+    if (!minStart || s.getTime() < minStart.getTime()) minStart = s;
+    if (!p.endDate) hasOpen = true;
+    else {
+      const e = new Date(p.endDate);
+      if (!maxEndExcl || e.getTime() > maxEndExcl.getTime()) maxEndExcl = e;
+    }
+  }
+
   const baseEarnings = proratedFixed + percentAmount;
-
   const { bonusTotal, fineTotal } = resolveAdjustments(adjustments, baseEarnings);
   const expectedAmount = Math.max(0, baseEarnings + bonusTotal - fineTotal);
 
   return {
-    prorationFactor: factor,
+    prorationFactor: clamp(payableDays / totalDays, 0, 1),
     payableDays,
     totalDays,
     proratedFixed,
@@ -71,5 +100,11 @@ export const computeSalarySnapshot = ({
     bonusTotal,
     fineTotal,
     expectedAmount,
+    // Stavka (display) + ish oynasi (breakdown "Ish davri").
+    salaryType: activeType,
+    fixedAmount: activeFixed,
+    percentRate: activePercent,
+    workStartDate: minStart,
+    workEndDate: hasOpen || !maxEndExcl ? null : new Date(maxEndExcl.getTime() - DAY),
   };
 };
