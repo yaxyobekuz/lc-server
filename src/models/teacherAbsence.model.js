@@ -2,10 +2,10 @@ import mongoose from "mongoose";
 import softDeletePlugin from "./plugins/softDelete.plugin.js";
 
 // O'qituvchi kelmagan kun belgisi (per-guruh proyeksiya). PULGA TA'SIR QILMAYDI:
-// o'quvchi to'lovi ham, maosh ham bundan avtomatik o'zgarmaydi - jarima kerak
-// bo'lsa admin SalaryAdjustment orqali QO'LDA yozadi. (Avvalgi perStudentAmount/
-// applications maydonlari hech qachon to'ldirilmagan o'lik kod edi - olib tashlandi,
-// mavjud bo'lmagan "Invoice" modeliga ham ishora qilardi.)
+// o'quvchi to'lovi ham, maosh ham bundan avtomatik o'zgarmaydi - faqat hisobot/
+// kuzatuv uchun. (Avvalgi perStudentAmount/applications maydonlari hech qachon
+// to'ldirilmagan o'lik kod edi - olib tashlandi, mavjud bo'lmagan "Invoice"
+// modeliga ham ishora qilardi.)
 const teacherAbsenceSchema = new mongoose.Schema(
   {
     group: {

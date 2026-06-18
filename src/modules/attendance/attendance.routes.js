@@ -117,7 +117,7 @@ router.post(
 );
 
 // O'qituvchi davomati (keldi/kelmadi) - faqat FAKT belgisi, pulga avtomatik
-// ta'sir qilmaydi (jarima admin tomonidan qo'lda yoziladi).
+// ta'sir qilmaydi (faqat hisobot/kuzatuv uchun).
 router.get(
   "/groups/:groupId/teacher",
   requireAuth,
@@ -128,7 +128,7 @@ router.get(
 );
 
 // MUHIM: ATTENDANCE_MANAGE (owner-darajali) - oddiy o'qituvchi O'ZINING
-// "kelmadi" belgisini o'chira olmasligi kerak (jarima dalili yo'qolardi).
+// "kelmadi" belgisini o'chira olmasligi kerak (hisobot dalili yo'qolardi).
 // teacherAttendance moduli (manba-haqiqat) bilan bir xil darajada qo'riqlanadi.
 router.post(
   "/groups/:groupId/teacher",
