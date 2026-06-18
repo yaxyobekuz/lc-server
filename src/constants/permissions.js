@@ -60,7 +60,6 @@ export const PERMISSIONS = Object.freeze({
   // Teacher salary (O'qituvchi maoshlari)
   SALARY_READ: "salary.read",
   SALARY_PAY: "salary.pay",
-  SALARY_MANAGE: "salary.manage",
 });
 
 // Human-readable labels (used by the seed)
@@ -151,5 +150,4 @@ export const PERMISSION_LABELS = {
 
   [PERMISSIONS.SALARY_READ]: { label: "Maoshlarni ko'rish", group: "finance" },
   [PERMISSIONS.SALARY_PAY]: { label: "Maosh to'lash", group: "finance" },
-  [PERMISSIONS.SALARY_MANAGE]: { label: "Maoshlarni boshqarish", group: "finance" },
 };
