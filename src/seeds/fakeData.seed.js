@@ -12,9 +12,10 @@ import AttendanceExemption from "../models/attendanceExemption.model.js";
 import Feedback from "../models/feedback.model.js";
 import FeedbackType from "../models/feedbackType.model.js";
 
-const TEACHER_COUNT = 40;
-const STUDENT_COUNT = 800;
-const GROUP_COUNT = 40;
+// Sonlarni env orqali kichraytirsa bo'ladi (demo uchun): SEED_TEACHERS=5 ...
+const TEACHER_COUNT = Number(process.env.SEED_TEACHERS) || 40;
+const STUDENT_COUNT = Number(process.env.SEED_STUDENTS) || 800;
+const GROUP_COUNT = Number(process.env.SEED_GROUPS) || 40;
 const COMMON_PASSWORD = "parol123";
 const RUN_TAG = Date.now().toString(36);
 const PHONE_BASE = parseInt(RUN_TAG.slice(-6), 36) % 9000000;
