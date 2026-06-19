@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import GroupFee from "../../../models/groupFee.model.js";
 import Group from "../../../models/group.model.js";
 import ApiError from "../../../utils/ApiError.js";
+import { assertGroupActive } from "../../../helpers/group.helper.js";
 import logger from "../../../config/logger.js";
 import { localTodayMidnight } from "../../../helpers/attendance.helper.js";
 import * as studentPaymentService from "./studentPayment.service.js";
@@ -131,7 +132,7 @@ export const byGroup = async (groupId) => {
 // qo'shimcha sana yo'q. O'chirish yo'q. To'lovlarni qayta hisoblaydi.
 export const upsert = async ({ groupId, year, month, amount }, currentUser) => {
   const group = await Group.findById(groupId);
-  if (!group) throw new ApiError(404, "Guruh topilmadi");
+  assertGroupActive(group);
 
   const fee = await GroupFee.findOneAndUpdate(
     { group: groupId, year, month },

@@ -1,6 +1,8 @@
 import PaymentTransaction from "../../../models/paymentTransaction.model.js";
 import StudentPayment from "../../../models/studentPayment.model.js";
+import Group from "../../../models/group.model.js";
 import ApiError from "../../../utils/ApiError.js";
+import { assertGroupActive } from "../../../helpers/group.helper.js";
 import { parseLocalDay, localTodayMidnight } from "../../../helpers/attendance.helper.js";
 import * as studentPaymentService from "./studentPayment.service.js";
 import { runFinanceTxn } from "./financeTxn.helper.js";
@@ -22,6 +24,11 @@ export const create = async (
 ) => {
   const payment = await StudentPayment.findById(paymentId);
   if (!payment) throw new ApiError(404, "To'lov topilmadi");
+
+  // Arxivlangan guruhga to'lov qabul qilinmaydi (avval arxivdan chiqarish kerak).
+  assertGroupActive(
+    await Group.findById(payment.group, { isActive: 1, isDeleted: 1 }),
+  );
 
   const day = paidAt ? parseLocalDay(paidAt) : localTodayMidnight();
   if (!day) throw new ApiError(400, "Noto'g'ri to'lov sanasi");

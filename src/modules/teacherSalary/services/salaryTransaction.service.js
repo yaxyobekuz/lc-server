@@ -1,6 +1,8 @@
 import SalaryTransaction from "../../../models/salaryTransaction.model.js";
 import TeacherSalary from "../../../models/teacherSalary.model.js";
+import Group from "../../../models/group.model.js";
 import ApiError from "../../../utils/ApiError.js";
+import { assertGroupActive } from "../../../helpers/group.helper.js";
 import { parseLocalDay, localTodayMidnight } from "../../../helpers/attendance.helper.js";
 import * as teacherSalaryService from "./teacherSalary.service.js";
 
@@ -10,6 +12,11 @@ import * as teacherSalaryService from "./teacherSalary.service.js";
 export const create = async ({ salaryId, amount, method, paidAt, note }, currentUser) => {
   const salary = await TeacherSalary.findById(salaryId);
   if (!salary) throw new ApiError(404, "Maosh topilmadi");
+
+  // Arxivlangan guruh maoshiga to'lov yozilmaydi (avval arxivdan chiqarish kerak).
+  assertGroupActive(
+    await Group.findById(salary.group, { isActive: 1, isDeleted: 1 }),
+  );
 
   const day = paidAt ? parseLocalDay(paidAt) : localTodayMidnight();
   if (!day) throw new ApiError(400, "Noto'g'ri to'lov sanasi");

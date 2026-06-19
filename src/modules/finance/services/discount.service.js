@@ -4,6 +4,7 @@ import User from "../../../models/user.model.js";
 import Group from "../../../models/group.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import logger from "../../../config/logger.js";
+import { assertGroupActive } from "../../../helpers/group.helper.js";
 import { ROLES } from "../../../constants/roles.js";
 import * as studentPaymentService from "./studentPayment.service.js";
 import * as teacherSalaryService from "../../teacherSalary/services/teacherSalary.service.js";
@@ -61,7 +62,7 @@ const ensureStudentAndGroup = async (studentId, groupId) => {
     Group.findOne({ _id: groupId, isDeleted: { $ne: true } }),
   ]);
   if (!student) throw new ApiError(400, "O'quvchi topilmadi");
-  if (!group) throw new ApiError(400, "Guruh topilmadi");
+  assertGroupActive(group);
 };
 
 export const create = async (body, currentUser) => {

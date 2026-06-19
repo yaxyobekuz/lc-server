@@ -25,6 +25,7 @@ import {
 } from "../../../helpers/attendance.helper.js";
 import { holidayKeySetForRange } from "../../holidays/services/holidays.service.js";
 import { listForTeacher } from "../../groups/services/groups.service.js";
+import { assertGroupActive } from "../../../helpers/group.helper.js";
 import logger from "../../../config/logger.js";
 import { correlationCacheInvalidate } from "../../../helpers/correlationCache.js";
 
@@ -210,6 +211,8 @@ export const bulkRecord = async (
   slot = "",
 ) => {
   const group = await ensureGroup(groupId);
+  // Arxivlangan guruhda davomat belgilanmaydi.
+  assertGroupActive(group);
 
   // TEACHER bo'lsa, group.teachers ichida bo'lishi shart
   if (currentUser.role === ROLES.TEACHER) {
