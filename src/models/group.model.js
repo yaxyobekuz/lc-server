@@ -41,6 +41,12 @@ const groupSchema = new mongoose.Schema(
     status: { type: String, enum: ["active", "finished"], default: "active", index: true },
     finishedAt: { type: Date, default: null },
     isActive: { type: Boolean, default: true, index: true },
+    // Arxivlash (isActive=false) sanasi - ko'rsatish + o'qituvchi davrini yopish uchun.
+    archivedAt: { type: Date, default: null },
+    // Arxivlash yopgan o'qituvchi davrlari - restore aynan shularni qayta ochadi.
+    archivedClosedPeriods: [
+      { type: mongoose.Schema.Types.ObjectId, ref: "TeacherGroupPeriod" },
+    ],
   },
   { timestamps: true },
 );

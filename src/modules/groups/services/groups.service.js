@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import Group from "../../../models/group.model.js";
 import GroupMembership from "../../../models/groupMembership.model.js";
+import StudentPayment from "../../../models/studentPayment.model.js";
 import User from "../../../models/user.model.js";
 import BotUser from "../../../models/botUser.model.js";
 import ArchiveReason from "../../../models/archiveReason.model.js";
@@ -41,10 +42,14 @@ const toObjectId = (id) => {
   return new mongoose.Types.ObjectId(String(id));
 };
 
+// Yozuv amallari uchun: guruh mavjud + aktiv bo'lishi shart. Arxivlangan bo'lsa
+// aniq xabar beradi (avval read-only edi - chalg'ituvchi 404). Read yo'llari
+// (getById/list/restore) Group.findById ni TO'G'RIDAN-TO'G'RI ishlatadi.
 const ensureGroup = async (groupId) => {
   const group = await Group.findById(groupId);
-  if (!group || !group.isActive || group.isDeleted) {
-    throw new ApiError(404, "Guruh topilmadi");
+  if (!group || group.isDeleted) throw new ApiError(404, "Guruh topilmadi");
+  if (!group.isActive) {
+    throw new ApiError(400, "Guruh arxivlangan. Avval arxivdan chiqaring.");
   }
   return group;
 };
@@ -411,37 +416,63 @@ export const update = async (id, body) => {
   return Group.findById(group._id);
 };
 
-// Guruh tugaganda aktiv o'qituvchilarning dars berish davrini yopadi (tugash
-// sanasida). endDate EXCLUSIVE → `end` inclusive oxirgi ish kuni bo'lib qoladi.
-// Maosh shu oyda davrdan derived proratsiya bilan hisoblanadi.
+// Guruh tugaganda/arxivlanganda aktiv o'qituvchilarning dars berish davrini yopadi
+// (tugash sanasida). endDate EXCLUSIVE → `end` inclusive oxirgi ish kuni bo'lib
+// qoladi. Maosh shu oyda davrdan derived proratsiya bilan hisoblanadi. Yopilgan
+// davrlarning id'larini qaytaradi (arxivdan chiqarishda aynan shular qayta ochiladi).
 const prorateTeachersOnEnd = async (group, end) => {
   const endExclusive = new Date(toUtcMidnight(end).getTime() + 24 * 60 * 60 * 1000);
   const activeIds = await teacherGroupPeriodService.activeTeacherIdsForGroup(group._id, end);
+  const closedIds = [];
   for (const teacherId of activeIds) {
     try {
-      await teacherGroupPeriodService.unassignTeacher(group._id, teacherId, { endDate: endExclusive });
+      const closed = await teacherGroupPeriodService.unassignTeacher(
+        group._id,
+        teacherId,
+        { endDate: endExclusive },
+      );
+      if (closed?._id) closedIds.push(closed._id);
     } catch (err) {
       logger.warn({ err }, "Guruh tugashida o'qituvchi davri yopilmadi");
     }
   }
+  return closedIds;
 };
 
-export const remove = async (id) => {
+// Arxivlash (soft, isActive=false) - berilgan sanada (max bugun). O'sha kunda aktiv
+// o'qituvchi ish davri avtomatik yopiladi. O'quvchi a'zoliklari TEGILMAYDI (restore
+// mumkin). status/finishedAt tegilmaydi - arxiv alohida o'lcham.
+export const remove = async (id, { archivedAt } = {}) => {
   const group = await ensureGroup(id);
+  const today = localTodayMidnight();
+  const date = archivedAt ? toUtcMidnight(archivedAt) : today;
+  if (date.getTime() > today.getTime()) {
+    throw new ApiError(400, "Arxivlash sanasi kelajakda bo'lishi mumkin emas");
+  }
   group.isActive = false;
-  // Arxivlangach davomat to'xtashi uchun tugash sanasini belgilaymiz
-  if (!group.finishedAt) group.finishedAt = toUtcMidnight(new Date());
+  group.archivedAt = date;
   await group.save();
-  await prorateTeachersOnEnd(group, group.finishedAt);
+  const closedIds = await prorateTeachersOnEnd(group, date);
+  group.archivedClosedPeriods = closedIds;
+  await group.save();
   return group;
 };
 
+// Arxivdan chiqarish - to'liq undo. Arxiv yopgan o'qituvchi davrlari qayta ochiladi
+// (endDate=null) va maosh qayta hisoblanadi.
 export const restore = async (id) => {
   const group = await Group.findById(id);
   if (!group) throw new ApiError(404, "Guruh topilmadi");
+  for (const periodId of group.archivedClosedPeriods || []) {
+    try {
+      await teacherGroupPeriodService.reopenPeriod(periodId);
+    } catch (err) {
+      logger.warn({ err }, "Arxivdan chiqarishda o'qituvchi davri qayta ochilmadi");
+    }
+  }
   group.isActive = true;
-  group.status = "active";
-  group.finishedAt = null;
+  group.archivedAt = null;
+  group.archivedClosedPeriods = [];
   await group.save();
   return group;
 };
@@ -568,23 +599,11 @@ export const addStudent = async (
 // Qulf: joinedAt'ni OLDINGA (kechroq sanaga) surishda, oradagi davrda biror oy
 // to'langan bo'lsa (paidAmount > 0) - rad etiladi. Ya'ni qarz yozilib to'langach,
 // "men keyinroq qo'shilganman" deb o'sha to'langan oyni o'chirib bo'lmaydi.
-export const updateMembership = async (
-  groupId,
-  studentId,
-  { joinedAt, leftAt } = {},
-) => {
-  const group = await ensureGroup(groupId);
-  await ensureStudent(studentId);
-
-  const membership = await GroupMembership.findOne({
-    group: groupId,
-    student: studentId,
-    leftAt: null,
-    isDeleted: { $ne: true },
-  });
-  if (!membership) {
-    throw new ApiError(404, "O'quvchining ushbu guruhda faol a'zoligi topilmadi");
-  }
+// Bitta a'zolik davri (GroupMembership) sanalarini o'zgartirish + moliya kaskadi.
+// Faol davr ham, tarixiy davr ham (id bo'yicha) shu yadrodan o'tadi.
+const applyMembershipDates = async (membership, { joinedAt, leftAt } = {}) => {
+  const groupId = membership.group;
+  const studentId = membership.student;
 
   const oldJoin = toUtcMidnight(membership.joinedAt);
   const newJoin =
@@ -649,6 +668,107 @@ export const updateMembership = async (
   return membership;
 };
 
+export const updateMembership = async (
+  groupId,
+  studentId,
+  { joinedAt, leftAt } = {},
+) => {
+  await ensureGroup(groupId);
+  await ensureStudent(studentId);
+
+  const membership = await GroupMembership.findOne({
+    group: groupId,
+    student: studentId,
+    leftAt: null,
+    isDeleted: { $ne: true },
+  });
+  if (!membership) {
+    throw new ApiError(404, "O'quvchining ushbu guruhda faol a'zoligi topilmadi");
+  }
+  return applyMembershipDates(membership, { joinedAt, leftAt });
+};
+
+// O'quvchining guruhdagi BARCHA o'qish davrlari (yopiq + ochiq), eng yangisi yuqorida.
+export const listMemberships = async (groupId, studentId) =>
+  GroupMembership.find({
+    group: groupId,
+    student: studentId,
+    isDeleted: { $ne: true },
+  })
+    .sort({ joinedAt: -1 })
+    .lean();
+
+// O'qish davrini ID bo'yicha tahrirlash (tarixiy davr ham) - "O'qish davrlari" UI.
+export const updateMembershipById = async (
+  groupId,
+  membershipId,
+  { joinedAt, leftAt } = {},
+) => {
+  await ensureGroup(groupId);
+  const membership = await GroupMembership.findOne({
+    _id: membershipId,
+    group: groupId,
+    isDeleted: { $ne: true },
+  });
+  if (!membership) throw new ApiError(404, "O'qish davri topilmadi");
+  return applyMembershipDates(membership, { joinedAt, leftAt });
+};
+
+// O'qish davri qamragan oylar (year/month), oxiri joriy oygacha. leftAt EXCLUSIVE.
+const membershipMonths = (joinedAt, leftAt) => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const today = localTodayMidnight();
+  const curIdx = today.getUTCFullYear() * 12 + today.getUTCMonth();
+  const s = new Date(joinedAt);
+  const startIdx = s.getUTCFullYear() * 12 + s.getUTCMonth();
+  let endIdx = curIdx;
+  if (leftAt) {
+    const e = new Date(new Date(leftAt).getTime() - DAY);
+    endIdx = e.getUTCFullYear() * 12 + e.getUTCMonth();
+  }
+  endIdx = Math.min(endIdx, curIdx);
+  const out = [];
+  for (let i = startIdx; i <= endIdx; i += 1) {
+    out.push({ year: Math.floor(i / 12), month: (i % 12) + 1 });
+  }
+  return out;
+};
+
+// O'qish davrini o'chirish - to'lov qo'riqlovchisi bilan (o'qituvchi davri patterni).
+export const removeMembershipById = async (groupId, membershipId) => {
+  await ensureGroup(groupId);
+  const membership = await GroupMembership.findOne({
+    _id: membershipId,
+    group: groupId,
+    isDeleted: { $ne: true },
+  });
+  if (!membership) throw new ApiError(404, "O'qish davri topilmadi");
+
+  const months = membershipMonths(membership.joinedAt, membership.leftAt);
+  if (months.length) {
+    const paid = await StudentPayment.findOne({
+      student: membership.student,
+      group: groupId,
+      paidAmount: { $gt: 0 },
+      $or: months,
+    });
+    if (paid) {
+      throw new ApiError(
+        400,
+        "Bu davrga oid to'lov mavjud. Avval to'lovlarni o'chiring.",
+      );
+    }
+  }
+
+  await membership.softDelete();
+  try {
+    await financePaymentService.recalcForStudentScope(membership.student, groupId, {});
+  } catch (err) {
+    logger.warn({ err }, "O'qish davri o'chirilganda to'lovlar qayta hisoblanmadi");
+  }
+  return { _id: membership._id };
+};
+
 // A'zolik yopilganda (chiqarish/ko'chirish) o'quvchining shu guruhdagi BARCHA oylik
 // to'lovlarini (avans bilan yaratilgan kelgusi oylar ham) leftAt bo'yicha qayta
 // proratsiya qiladi, so'ng o'qituvchi foiz maoshini yangilaydi (best-effort).
@@ -667,6 +787,7 @@ const recalcFinanceOnLeave = async (groupId, studentId) => {
 };
 
 export const removeStudent = async (groupId, studentId, { reasonId } = {}) => {
+  await ensureGroup(groupId);
   const leftAt = toUtcMidnight(new Date());
 
   // Dinamik chiqish sababi (ixtiyoriy) - snapshot title bilan birga yozamiz,

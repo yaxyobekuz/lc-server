@@ -9,6 +9,7 @@ import logger from "../../../config/logger.js";
 import { ROLES } from "../../../constants/roles.js";
 import { toUtcMidnight, localTodayMidnight } from "../../../helpers/attendance.helper.js";
 import { assertPeriodInvariants } from "../../../helpers/period.helper.js";
+import { assertGroupActive } from "../../../helpers/group.helper.js";
 
 // Maosh stavkasini turiga qarab normallashtiradi (fixed→foiz 0, percent→fiksa 0).
 const normalizeRate = (salaryType, fixedAmount, percentRate) => ({
@@ -176,7 +177,7 @@ export const create = async (
 ) => {
   await assertTeacher(teacher);
   const grp = await Group.findById(group);
-  if (!grp) throw new ApiError(404, "Guruh topilmadi");
+  assertGroupActive(grp);
 
   const candidate = {
     startDate: toUtcMidnight(startDate),
@@ -202,6 +203,7 @@ export const create = async (
 export const update = async (id, patch, currentUser) => {
   const doc = await TeacherGroupPeriod.findById(id);
   if (!doc || doc.isDeleted) throw new ApiError(404, "Dars berish davri topilmadi");
+  assertGroupActive(await Group.findById(doc.group));
 
   const next = {
     startDate: patch.startDate ? toUtcMidnight(patch.startDate) : doc.startDate,
@@ -238,6 +240,7 @@ export const update = async (id, patch, currentUser) => {
 export const remove = async (id) => {
   const doc = await TeacherGroupPeriod.findById(id);
   if (!doc || doc.isDeleted) throw new ApiError(404, "Dars berish davri topilmadi");
+  assertGroupActive(await Group.findById(doc.group));
 
   // To'lov qo'riqlovchisi: davr qamragan oylarda maosh to'lovi (tranzaktsiya)
   // bo'lsa - o'chirib bo'lmaydi (avval to'lovlar o'chirilishi kerak).
@@ -281,6 +284,26 @@ export const assignTeacher = async (group, teacher, { startDate } = {}, currentU
       ? toUtcMidnight(grp.startDate)
       : localTodayMidnight();
   return create({ group, teacher, startDate: start }, currentUser);
+};
+
+// Arxivdan chiqarishda: arxiv yopgan davrni qayta ochadi (endDate=null), agar shu
+// scope'da boshqa ochiq davr bo'lmasa (single-open invariant). Maoshni qayta hisoblaydi.
+export const reopenPeriod = async (id, currentUser) => {
+  const doc = await TeacherGroupPeriod.findById(id);
+  if (!doc || doc.isDeleted || doc.endDate === null) return doc || null;
+  const open = await TeacherGroupPeriod.findOne({
+    teacher: doc.teacher,
+    group: doc.group,
+    endDate: null,
+    isDeleted: { $ne: true },
+  });
+  if (open) return doc; // boshqa ochiq davr bor - invariant buzilmasin
+  doc.endDate = null;
+  doc.updatedBy = currentUser?._id || null;
+  await doc.save();
+  await syncGroupTeachersCache(doc.group);
+  await recomputeForRange(doc.teacher, doc.group, doc.startDate, null);
+  return doc;
 };
 
 // O'qituvchini guruhdan chiqaradi (ochiq davrni endDate da yopadi). EXCLUSIVE.

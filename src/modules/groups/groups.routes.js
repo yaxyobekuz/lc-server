@@ -14,6 +14,10 @@ import {
   idParamSchema,
   studentParamsSchema,
   historyQuerySchema,
+  archiveSchema,
+  membershipListSchema,
+  membershipByIdSchema,
+  membershipUpdateSchema,
 } from "./validators/misc.validator.js";
 import {
   listSchema as teacherPeriodListSchema,
@@ -35,6 +39,9 @@ import addStudent from "./handlers/addStudent.handler.js";
 import updateMembership from "./handlers/updateMembership.handler.js";
 import removeStudent from "./handlers/removeStudent.handler.js";
 import transferStudent from "./handlers/transferStudent.handler.js";
+import membershipList from "./handlers/membership.list.handler.js";
+import membershipUpdate from "./handlers/membership.update.handler.js";
+import membershipRemove from "./handlers/membership.remove.handler.js";
 import history from "./handlers/history.handler.js";
 import myActive from "./handlers/myActive.handler.js";
 import myTeach from "./handlers/myTeach.handler.js";
@@ -83,7 +90,7 @@ router.delete(
   "/:id",
   requireAuth,
   requirePermission(PERMISSIONS.GROUPS_DELETE),
-  validate(idParamSchema),
+  validate(archiveSchema),
   remove,
 );
 router.post(
@@ -142,6 +149,29 @@ router.post(
   requirePermission(PERMISSIONS.GROUPS_MANAGE_STUDENTS),
   validate(transferSchema),
   transferStudent,
+);
+
+// O'quvchining o'qish davrlari (membership) - ro'yxat + id bo'yicha tahrir/o'chir.
+router.get(
+  "/:id/students/:studentId/memberships",
+  requireAuth,
+  requirePermission(PERMISSIONS.GROUPS_READ),
+  validate(membershipListSchema),
+  membershipList,
+);
+router.patch(
+  "/:id/memberships/:membershipId",
+  requireAuth,
+  requirePermission(PERMISSIONS.GROUPS_MANAGE_STUDENTS),
+  validate(membershipUpdateSchema),
+  membershipUpdate,
+);
+router.delete(
+  "/:id/memberships/:membershipId",
+  requireAuth,
+  requirePermission(PERMISSIONS.GROUPS_MANAGE_STUDENTS),
+  validate(membershipByIdSchema),
+  membershipRemove,
 );
 
 router.get(

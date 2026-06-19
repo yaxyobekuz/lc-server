@@ -45,3 +45,7 @@ export const idStudentParams = z.object({
   id: z.string().min(1),
   studentId: z.string().min(1),
 });
+export const idMembershipParams = z.object({
+  id: z.string().min(1),
+  membershipId: z.string().min(1),
+});
