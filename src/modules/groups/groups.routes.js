@@ -10,7 +10,6 @@ import { updateSchema } from "./validators/update.validator.js";
 import { addStudentSchema } from "./validators/addStudent.validator.js";
 import { updateMembershipSchema } from "./validators/updateMembership.validator.js";
 import { transferSchema } from "./validators/transfer.validator.js";
-import { replaceTeacherSchema } from "./validators/replaceTeacher.validator.js";
 import {
   idParamSchema,
   studentParamsSchema,
@@ -36,7 +35,6 @@ import addStudent from "./handlers/addStudent.handler.js";
 import updateMembership from "./handlers/updateMembership.handler.js";
 import removeStudent from "./handlers/removeStudent.handler.js";
 import transferStudent from "./handlers/transferStudent.handler.js";
-import replaceTeacher from "./handlers/replaceTeacher.handler.js";
 import history from "./handlers/history.handler.js";
 import myActive from "./handlers/myActive.handler.js";
 import myTeach from "./handlers/myTeach.handler.js";
@@ -144,14 +142,6 @@ router.post(
   requirePermission(PERMISSIONS.GROUPS_MANAGE_STUDENTS),
   validate(transferSchema),
   transferStudent,
-);
-
-router.post(
-  "/:id/replace-teacher",
-  requireAuth,
-  requirePermission(PERMISSIONS.GROUPS_UPDATE),
-  validate(replaceTeacherSchema),
-  replaceTeacher,
 );
 
 router.get(

@@ -351,9 +351,9 @@ export const update = async (id, body) => {
   let teacherDiff = null;
   if (body.teachers !== undefined) {
     await ensureTeachers(body.teachers);
-    // Almashtirilgan o'qituvchilarni aniqlaymiz - replaceTeacher'dagi kabi
-    // maosh proratsiyasi shu yerda ham ishlashi shart (H5): aks holda eskisiga
-    // butun oy maoshi yozilgancha qolib, yangisi hisobsiz ishlardi.
+    // O'zgartirilgan o'qituvchilarni aniqlaymiz - davr (TeacherGroupPeriod) bilan
+    // maosh proratsiyasi shu yerda ishlashi shart (H5): aks holda eskisiga butun
+    // oy maoshi yozilgancha qolib, yangisi hisobsiz ishlardi.
     const oldIds = (group.teachers || []).map(String);
     const newIds = (body.teachers || []).map(String);
     teacherDiff = {
