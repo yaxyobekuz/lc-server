@@ -44,7 +44,6 @@ export const computePeriodsSnapshot = ({
       joinedAt: p.startDate || null,
       leftAt: p.endDate || null,
       leftExclusive: true,
-      freezes: [],
     });
 
     const useFixed = p.salaryType === "fixed" || p.salaryType === "mixed";

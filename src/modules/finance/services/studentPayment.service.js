@@ -222,7 +222,7 @@ export const earliestPaidMonthBefore = async (student, group, { year, month }) =
   return best;
 };
 
-// O'quvchi muzlatilganda tegishli barcha guruh/oy to'lovlarini qayta hisoblaydi.
+// O'quvchining tegishli barcha guruh/oy to'lovlarini qayta hisoblaydi.
 export const recalcForStudent = async (student) => {
   const payments = await StudentPayment.find({ student }, { _id: 1 });
   for (const p of payments) {

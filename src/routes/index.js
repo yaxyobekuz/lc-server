@@ -8,7 +8,6 @@ import groupsRouter from "../modules/groups/groups.routes.js";
 import attendanceRouter from "../modules/attendance/attendance.routes.js";
 import teacherAttendanceRouter from "../modules/teacherAttendance/teacherAttendance.routes.js";
 import attendanceExemptionsRouter from "../modules/attendanceExemptions/attendanceExemptions.routes.js";
-import studentFreezesRouter from "../modules/studentFreezes/studentFreezes.routes.js";
 import attendanceSettingsRouter from "../modules/attendanceSettings/attendanceSettings.routes.js";
 import gradesRouter from "../modules/grades/grades.routes.js";
 import notificationsRouter from "../modules/notifications/notifications.routes.js";
@@ -42,7 +41,6 @@ router.use("/groups", groupsRouter);
 router.use("/attendance", attendanceRouter);
 router.use("/teacher-attendance", teacherAttendanceRouter);
 router.use("/attendance-exemptions", attendanceExemptionsRouter);
-router.use("/student-freezes", studentFreezesRouter);
 router.use("/attendance-settings", attendanceSettingsRouter);
 
 // Grading subsystem

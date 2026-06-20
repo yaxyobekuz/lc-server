@@ -218,14 +218,3 @@ export const withinCourseBounds = (group, date) => {
 // Berilgan sana bayram kunimi (dateKey holidaySet ichida bormi)
 export const isHolidayOn = (holidaySet, date) =>
   !!holidaySet && holidaySet.has(dateKeyOf(date));
-
-// O'quvchi shu sanada muzlatilganmi (freeze oralig'ida). endDate=null → ochiq.
-export const isFrozenOn = (freezes, date) => {
-  const target = toUtcMidnight(date).getTime();
-  return (freezes || []).some((f) => {
-    if (f.isActive === false) return false;
-    if (target < toUtcMidnight(f.startDate).getTime()) return false;
-    if (f.endDate && target > toUtcMidnight(f.endDate).getTime()) return false;
-    return true;
-  });
-};
