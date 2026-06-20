@@ -207,11 +207,11 @@ export const isExemptOn = (exemptions, date, dayOfWeek) => {
 export const defaultStatusFor = (exemptions, date, dayOfWeek) =>
   isExemptOn(exemptions, date, dayOfWeek) ? "exempt" : null;
 
-// Sana kurs oralig'ida (startDate..finishedAt, ikkalasi inclusive) ekanligini tekshiradi
+// Sana kurs oralig'ida (startDate..endDate, ikkalasi inclusive) ekanligini tekshiradi
 export const withinCourseBounds = (group, date) => {
   const t = toUtcMidnight(date).getTime();
   if (group?.startDate && t < toUtcMidnight(group.startDate).getTime()) return false;
-  if (group?.finishedAt && t > toUtcMidnight(group.finishedAt).getTime()) return false;
+  if (group?.endDate && t > toUtcMidnight(group.endDate).getTime()) return false;
   return true;
 };
 

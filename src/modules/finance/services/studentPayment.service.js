@@ -297,7 +297,7 @@ export const ensurePaymentForMembership = async (membership, year, month, { sess
 // Berilgan oy uchun barcha faol a'zoliklarga to'lov yaratadi (job + regenerate).
 export const generateMonth = async (year, month) => {
   const activeGroupIds = await Group.find(
-    { isActive: true, status: "active", isDeleted: { $ne: true } },
+    { isActive: true, isDeleted: { $ne: true } },
     { _id: 1 },
   );
   const ids = activeGroupIds.map((g) => g._id);

@@ -23,7 +23,11 @@ import defineGenerateMonthlyFinance, {
 import defineGenerateMonthlySalary, {
   JOB_NAME as MONTHLY_SALARY_JOB,
 } from "./generateMonthlySalary.job.js";
+import defineAutoEndGroups, {
+  JOB_NAME as AUTO_END_GROUPS_JOB,
+} from "./autoEndGroups.job.js";
 import { catchUpMonthlyGeneration } from "./catchUpMonthly.js";
+import * as groupsService from "../modules/groups/services/groups.service.js";
 
 // Barcha cron jadvallari mahalliy (Asia/Tashkent) vaqt bo'yicha ishlaydi -
 // server qaysi TZ da bo'lishidan qat'i nazar. Aks holda UTC serverда "20:00"
@@ -42,6 +46,7 @@ export const startJobs = async () => {
   defineLeadFollowupReminders(agenda);
   defineGenerateMonthlyFinance(agenda);
   defineGenerateMonthlySalary(agenda);
+  defineAutoEndGroups(agenda);
 
   await agenda.start();
 
@@ -64,11 +69,19 @@ export const startJobs = async () => {
   // Oylik maosh generatsiyasi - har oy 1-sanasi 00:06 da (moliyadan keyin)
   await every("6 0 1 * *", MONTHLY_SALARY_JOB);
 
+  // Tugash sanasi yetgan kurslarni avto-arxivlash - har kuni 00:10 da
+  await every("10 0 * * *", AUTO_END_GROUPS_JOB);
+
   logger.info({ timezone: TZ }, "Agenda ishga tushirildi");
 
   // Server o'chiq paytda (1-sanada) o'tkazib yuborilgan oylik generatsiyani fonда to'ldiradi.
   // Await qilinmaydi - startup'ni bloklamaslik uchun; o'zi xatolarni ushlaydi.
   catchUpMonthlyGeneration();
+
+  // Boot catch-up: server o'chiq paytda tugash sanasi yetgan kurslarni arxivlaydi.
+  groupsService.processDueGroupEnds().catch((err) => {
+    logger.warn({ err }, "Boot: tugagan kurslar avto-arxivlanmadi");
+  });
 };
 
 export const stopJobs = async () => {

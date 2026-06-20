@@ -525,9 +525,9 @@ const buildStudentClassDays = async (
     // leftAt EXCLUSIVE - oxirgi faol kun leftAt'dan oldingi kun
     const leftBound = m.leftAt ? lastActiveDayBefore(m.leftAt) : null;
     let effTo = leftBound && leftBound < rangeEnd ? leftBound : rangeEnd;
-    // Guruh yakunlangan bo'lsa - finishedAt'dan keyin dars kuni yo'q
-    if (m.group.finishedAt) {
-      const fin = toUtcMidnight(m.group.finishedAt);
+    // Kurs tugagan bo'lsa - endDate'dan keyin dars kuni yo'q
+    if (m.group.endDate) {
+      const fin = toUtcMidnight(m.group.endDate);
       if (fin < effTo) effTo = fin;
     }
 
@@ -860,8 +860,8 @@ const computeClassDays = ({
     // leftAt EXCLUSIVE - oxirgi faol kun leftAt'dan oldingi kun (lastActiveDayBefore)
     const leftBound = m.leftAt ? lastActiveDayBefore(m.leftAt) : null;
     let effTo = leftBound && leftBound < to ? leftBound : to;
-    if (m.group.finishedAt) {
-      const fin = toUtcMidnight(m.group.finishedAt);
+    if (m.group.endDate) {
+      const fin = toUtcMidnight(m.group.endDate);
       if (fin < effTo) effTo = fin;
     }
     const classDays = getClassDaysInRange(m.group, effFrom, effTo, holidaySet);

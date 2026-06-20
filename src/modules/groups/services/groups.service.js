@@ -2,6 +2,8 @@ import mongoose from "mongoose";
 import Group from "../../../models/group.model.js";
 import GroupMembership from "../../../models/groupMembership.model.js";
 import StudentPayment from "../../../models/studentPayment.model.js";
+import PaymentTransaction from "../../../models/paymentTransaction.model.js";
+import SalaryTransaction from "../../../models/salaryTransaction.model.js";
 import User from "../../../models/user.model.js";
 import BotUser from "../../../models/botUser.model.js";
 import ArchiveReason from "../../../models/archiveReason.model.js";
@@ -48,8 +50,15 @@ const toObjectId = (id) => {
 const ensureGroup = async (groupId) => {
   const group = await Group.findById(groupId);
   if (!group || group.isDeleted) throw new ApiError(404, "Guruh topilmadi");
-  if (!group.isActive) {
-    throw new ApiError(400, "Guruh arxivlangan. Avval arxivdan chiqaring.");
+  // Tugagan kurs (isActive=false yoki endDate o'tgan - kunlik job-gacha oyna).
+  const ended =
+    group.endDate &&
+    toUtcMidnight(group.endDate).getTime() <= localTodayMidnight().getTime();
+  if (!group.isActive || ended) {
+    throw new ApiError(
+      400,
+      "Kurs tugagan. Davom ettirish uchun tugash sanasini o'zgartiring.",
+    );
   }
   return group;
 };
@@ -304,6 +313,7 @@ export const create = async (body) => {
     // teachers[] - davrlardan HOSILA kesh; assignTeacher syncGroupTeachersCache qiladi.
     teachers: [],
     startDate: body.startDate ? toUtcMidnight(body.startDate) : null,
+    endDate: body.endDate ? toUtcMidnight(body.endDate) : null,
     durationMonths: body.durationMonths ?? null,
   });
 
@@ -347,27 +357,21 @@ export const create = async (body) => {
     }
   }
 
+  // endDate berilgan bo'lsa hayot-tsiklni moslaymiz (o'tgan sana → darhol arxiv).
+  if (group.endDate) {
+    await reconcileGroupEnd(await Group.findById(group._id));
+  }
+
   return Group.findById(group._id);
 };
 
 export const update = async (id, body) => {
-  const group = await ensureGroup(id);
+  // Arxivlangan guruhni ham yuklaymiz - endDate'ni tahrirlab REACTIVATE qilish
+  // (kelajakka uzaytirish) shu yo'l orqali bo'ladi.
+  const group = await Group.findById(id);
+  if (!group || group.isDeleted) throw new ApiError(404, "Guruh topilmadi");
 
-  let teacherDiff = null;
-  if (body.teachers !== undefined) {
-    await ensureTeachers(body.teachers);
-    // O'zgartirilgan o'qituvchilarni aniqlaymiz - davr (TeacherGroupPeriod) bilan
-    // maosh proratsiyasi shu yerda ishlashi shart (H5): aks holda eskisiga butun
-    // oy maoshi yozilgancha qolib, yangisi hisobsiz ishlardi.
-    const oldIds = (group.teachers || []).map(String);
-    const newIds = (body.teachers || []).map(String);
-    teacherDiff = {
-      removed: oldIds.filter((t) => !newIds.includes(t)),
-      added: newIds.filter((t) => !oldIds.includes(t)),
-    };
-    // teachers[] keshi to'g'ridan-to'g'ri o'rnatilmaydi - assign/unassign davr
-    // amallari syncGroupTeachersCache orqali yangilaydi.
-  }
+  if (body.teachers !== undefined) await ensureTeachers(body.teachers);
   if (body.name !== undefined) group.name = body.name.trim();
   // Versiyalash: client HOZIRGI versiya qatorlarini + bitta "amal qilish sanasi"
   // (scheduleEffectiveFrom) yuboradi. Yangi jadval joriy amaldagi versiyadan farq
@@ -387,23 +391,41 @@ export const update = async (id, body) => {
   if (body.durationMonths !== undefined) {
     group.durationMonths = body.durationMonths ?? null;
   }
+  if (body.endDate !== undefined) {
+    const newEnd = body.endDate ? toUtcMidnight(body.endDate) : null;
+    if (newEnd && group.startDate && newEnd.getTime() < toUtcMidnight(group.startDate).getTime()) {
+      throw new ApiError(400, "Kurs tugash sanasi boshlanish sanasidan oldin bo'lmasin");
+    }
+    group.endDate = newEnd;
+  }
 
   await group.save();
 
-  // O'qituvchi o'zgarishi - dars berish davrlari orqali (maosh proratsiyasi
-  // davrlardan derived). unassign endDate=bugun (EXCLUSIVE) → oxirgi ish kuni kecha.
-  if (teacherDiff && (teacherDiff.removed.length || teacherDiff.added.length)) {
+  // endDate berilgan bo'lsa hayot-tsiklni moslaymiz (arxiv / reactivate +
+  // o'qituvchi davri va o'quvchi a'zoliklari avto yopiladi / ochiladi).
+  if (body.endDate !== undefined) {
+    await reconcileGroupEnd(group);
+  }
+
+  // O'qituvchi o'zgarishi - faqat AKTIV guruhda (davrlardan derived maosh).
+  // reconcile'dan KEYIN, group.teachers keshi yangilangach hisoblanadi.
+  if (body.teachers !== undefined && group.isActive) {
+    const fresh = await Group.findById(group._id);
+    const oldIds = (fresh.teachers || []).map(String);
+    const newIds = (body.teachers || []).map(String);
+    const removed = oldIds.filter((t) => !newIds.includes(t));
+    const added = newIds.filter((t) => !oldIds.includes(t));
     const today = localTodayMidnight();
     const year = today.getUTCFullYear();
     const month = today.getUTCMonth() + 1;
-    for (const teacherId of teacherDiff.removed) {
+    for (const teacherId of removed) {
       try {
         await teacherGroupPeriodService.unassignTeacher(group._id, teacherId, { endDate: today });
       } catch (err) {
         logger.warn({ err }, "Chiqarilgan o'qituvchi davri yopilmadi");
       }
     }
-    for (const teacherId of teacherDiff.added) {
+    for (const teacherId of added) {
       try {
         await teacherGroupPeriodService.assignTeacher(group._id, teacherId, { startDate: today });
         await teacherSalaryService.ensureSalaryForTeacherGroup(teacherId, group._id, year, month);
@@ -439,48 +461,132 @@ const prorateTeachersOnEnd = async (group, end) => {
   return closedIds;
 };
 
-// Arxivlash (soft, isActive=false) - berilgan sanada (max bugun). O'sha kunda aktiv
-// o'qituvchi ish davri avtomatik yopiladi. O'quvchi a'zoliklari TEGILMAYDI (restore
-// mumkin). status/finishedAt tegilmaydi - arxiv alohida o'lcham.
-export const remove = async (id, { archivedAt } = {}) => {
-  const group = await ensureGroup(id);
-  const today = localTodayMidnight();
-  const date = archivedAt ? toUtcMidnight(archivedAt) : today;
-  if (date.getTime() > today.getTime()) {
-    throw new ApiError(400, "Arxivlash sanasi kelajakda bo'lishi mumkin emas");
-  }
-  group.isActive = false;
-  group.archivedAt = date;
-  await group.save();
-  const closedIds = await prorateTeachersOnEnd(group, date);
-  group.archivedClosedPeriods = closedIds;
-  await group.save();
-  return group;
-};
-
-// Arxivdan chiqarish - to'liq undo. Arxiv yopgan o'qituvchi davrlari qayta ochiladi
-// (endDate=null) va maosh qayta hisoblanadi.
-export const restore = async (id) => {
-  const group = await Group.findById(id);
-  if (!group) throw new ApiError(404, "Guruh topilmadi");
-  for (const periodId of group.archivedClosedPeriods || []) {
+// Kurs tugaganda ochiq o'quvchi a'zoliklarini tugash sanasida yopadi (leftAt
+// EXCLUSIVE → endExclusive=end+1kun, oxirgi aktiv kun = end). Reactivate uchun
+// yopilgan a'zolik id'larini qaytaradi.
+const closeMembershipsOnEnd = async (group, end) => {
+  const endExclusive = new Date(toUtcMidnight(end).getTime() + 24 * 60 * 60 * 1000);
+  const open = await GroupMembership.find(
+    { group: group._id, leftAt: null, isDeleted: { $ne: true } },
+    { _id: 1, student: 1 },
+  ).lean();
+  const closedIds = [];
+  for (const m of open) {
     try {
-      await teacherGroupPeriodService.reopenPeriod(periodId);
+      await GroupMembership.updateOne(
+        { _id: m._id },
+        { $set: { leftAt: endExclusive, leftReason: "graduated" } },
+      );
+      await recalcFinanceOnLeave(group._id, m.student);
+      closedIds.push(m._id);
     } catch (err) {
-      logger.warn({ err }, "Arxivdan chiqarishda o'qituvchi davri qayta ochilmadi");
+      logger.warn({ err }, "Kurs tugashida o'quvchi a'zoligi yopilmadi");
     }
   }
-  group.isActive = true;
-  group.archivedAt = null;
-  group.archivedClosedPeriods = [];
+  return closedIds;
+};
+
+// Kurs qayta aktivlashganda yopilgan a'zolikni qayta ochadi (leftAt=null), agar
+// shu o'quvchi+guruhda boshqa ochiq a'zolik bo'lmasa (single-open invariant).
+const reopenMembership = async (membershipId) => {
+  const m = await GroupMembership.findById(membershipId);
+  if (!m || m.isDeleted || m.leftAt === null) return;
+  const openExists = await GroupMembership.findOne({
+    group: m.group,
+    student: m.student,
+    leftAt: null,
+    isDeleted: { $ne: true },
+  });
+  if (openExists) return;
+  m.leftAt = null;
+  m.leftReason = null;
+  m.transferredTo = null;
+  await m.save();
+  await ensureFinanceForMembershipRange(m.group, m);
+};
+
+// Guruh hayot-tsiklini endDate'ga moslaydi (idempotent). Yagona manba: endDate.
+// Avval kurs-tugashi yopgan davr/a'zoliklarni qayta ochadi (endDate o'zgarishi
+// uchun toza qayta yopish), so'ng endDate o'tgan bo'lsa o'sha kunda yopadi.
+// create/update (endDate o'zgarsa) va kunlik job chaqiradi.
+export const reconcileGroupEnd = async (group) => {
+  const today = localTodayMidnight();
+  const end = group.endDate ? toUtcMidnight(group.endDate) : null;
+  const ended = !!end && end.getTime() <= today.getTime();
+
+  const hadClosed =
+    (group.archivedClosedPeriods?.length || 0) +
+      (group.archivedClosedMemberships?.length || 0) >
+    0;
+  if (hadClosed) {
+    for (const pid of group.archivedClosedPeriods || []) {
+      try {
+        await teacherGroupPeriodService.reopenPeriod(pid);
+      } catch (err) {
+        logger.warn({ err }, "Reactivate: o'qituvchi davri qayta ochilmadi");
+      }
+    }
+    for (const mid of group.archivedClosedMemberships || []) {
+      try {
+        await reopenMembership(mid);
+      } catch (err) {
+        logger.warn({ err }, "Reactivate: o'quvchi a'zoligi qayta ochilmadi");
+      }
+    }
+    group.archivedClosedPeriods = [];
+    group.archivedClosedMemberships = [];
+  }
+
+  if (ended) {
+    group.archivedClosedPeriods = await prorateTeachersOnEnd(group, end);
+    group.archivedClosedMemberships = await closeMembershipsOnEnd(group, end);
+    group.isActive = false;
+  } else {
+    group.isActive = true;
+  }
   await group.save();
   return group;
 };
 
-// Butunlay o'chirish (soft) - guruh + a'zolik/davomat isDeleted=true
+// Tugash sanasi YETIB KELGAN, lekin hali aktiv guruhlarni avto arxivlaydi (kunlik
+// job + boot catch-up chaqiradi). Idempotent.
+export const processDueGroupEnds = async () => {
+  const today = localTodayMidnight();
+  const due = await Group.find({
+    isActive: true,
+    isDeleted: { $ne: true },
+    endDate: { $ne: null, $lte: today },
+  });
+  let archived = 0;
+  for (const group of due) {
+    try {
+      await reconcileGroupEnd(group);
+      archived += 1;
+    } catch (err) {
+      logger.warn({ err, group: group._id }, "Guruh avto-arxivlanmadi");
+    }
+  }
+  return { processed: due.length, archived };
+};
+
+// Butunlay o'chirish (soft cascade) - FAQAT bo'sh guruh (o'quvchisiz, pulsiz).
+// Adashib yaratilgan guruhni tozalash uchun. Tarixi bor guruhni o'chirib bo'lmaydi.
 export const permanentRemove = async (id, currentUser) => {
   const group = await Group.findById(id);
   if (!group) throw new ApiError(404, "Guruh topilmadi");
+
+  const [hasMembers, hasPayments, hasPayouts] = await Promise.all([
+    GroupMembership.exists({ group: id, isDeleted: { $ne: true } }),
+    PaymentTransaction.exists({ group: id, isDeleted: { $ne: true } }),
+    SalaryTransaction.exists({ group: id, isDeleted: { $ne: true } }),
+  ]);
+  if (hasMembers || hasPayments || hasPayouts) {
+    throw new ApiError(
+      400,
+      "Faqat bo'sh guruhni o'chirish mumkin (o'quvchi yoki to'lov mavjud).",
+    );
+  }
+
   await cascadeDeleteGroup(id, currentUser?._id);
   return { _id: id };
 };
@@ -491,17 +597,6 @@ export const restoreDeleted = async (id) => {
   if (!group) throw new ApiError(404, "Guruh topilmadi");
   await cascadeRestoreGroup(id);
   return Group.findById(id);
-};
-
-// Kursni yakunlash - status=finished + finishedAt (undan keyin davomat to'xtaydi).
-export const finish = async (id, { finishedAt } = {}) => {
-  const group = await ensureGroup(id);
-  const end = toUtcMidnight(finishedAt || new Date());
-  group.status = "finished";
-  group.finishedAt = end;
-  await group.save();
-  await prorateTeachersOnEnd(group, end);
-  return group;
 };
 
 // Membershipning joinedAt oyidan tugash oyigacha (leftAt yoki bugun) har bir oy
@@ -544,9 +639,6 @@ export const addStudent = async (
   { joinedAt, leftAt } = {},
 ) => {
   const group = await ensureGroup(groupId);
-  if (group.status === "finished") {
-    throw new ApiError(400, "Yakunlangan guruhga o'quvchi qo'shib bo'lmaydi");
-  }
   await ensureStudent(studentId);
 
   const existing = await GroupMembership.findOne({

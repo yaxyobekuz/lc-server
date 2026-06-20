@@ -22,7 +22,6 @@ export default function defineAttendanceReminders(agenda) {
 
     const groups = await Group.find({
       isActive: true,
-      status: { $ne: "finished" },
       isDeleted: { $ne: true },
       "schedule.day": dow,
     });

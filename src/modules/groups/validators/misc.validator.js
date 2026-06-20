@@ -12,12 +12,6 @@ export const studentParamsSchema = z.object({
     .optional(),
 });
 
-// Arxivlash: ixtiyoriy sana (max bugun - servis tekshiradi).
-export const archiveSchema = z.object({
-  params: idParam,
-  body: z.object({ archivedAt: z.coerce.date().optional() }).optional(),
-});
-
 // O'qish davrlari (membership): ro'yxat + id bo'yicha tahrir/o'chir.
 export const membershipListSchema = z.object({ params: idStudentParams });
 export const membershipByIdSchema = z.object({ params: idMembershipParams });

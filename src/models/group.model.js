@@ -35,17 +35,21 @@ const groupSchema = new mongoose.Schema(
     ],
     // Dars boshlanish sanasi - undan oldin davomat hisoblanmaydi.
     startDate: { type: Date, default: null },
+    // Kurs tugash sanasi (inklyuziv oxirgi aktiv kun). Bo'sh/kelajak → aktiv;
+    // o'tgan/bugun → kurs avtomatik arxivlangan, davr/membershiplar yopiladi.
+    endDate: { type: Date, default: null, index: true },
     // Kurs davomiyligi (oy) - ma'lumot uchun (mas. 10 oylik / 12 oylik).
     durationMonths: { type: Number, default: null, min: 0 },
-    // Kurs holati. "finished" → davomat to'xtaydi (finishedAt'dan keyin).
-    status: { type: String, enum: ["active", "finished"], default: "active", index: true },
-    finishedAt: { type: Date, default: null },
+    // endDate'dan keltirib chiqarilgan hosila kesh: kurs hali tugamaganmi.
+    // Guard/filtr/joblar shunga tayanadi; reconcileGroupEnd yangilab turadi.
     isActive: { type: Boolean, default: true, index: true },
-    // Arxivlash (isActive=false) sanasi - ko'rsatish + o'qituvchi davrini yopish uchun.
-    archivedAt: { type: Date, default: null },
-    // Arxivlash yopgan o'qituvchi davrlari - restore aynan shularni qayta ochadi.
+    // Kurs tugashi yopgan o'qituvchi davrlari - reactivate aynan shularni ochadi.
     archivedClosedPeriods: [
       { type: mongoose.Schema.Types.ObjectId, ref: "TeacherGroupPeriod" },
+    ],
+    // Kurs tugashi yopgan o'quvchi a'zoliklari - reactivate aynan shularni ochadi.
+    archivedClosedMemberships: [
+      { type: mongoose.Schema.Types.ObjectId, ref: "GroupMembership" },
     ],
   },
   { timestamps: true },

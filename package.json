@@ -20,6 +20,7 @@
     "migrate:botuser-index": "node src/seeds/migrateBotUserIndex.seed.js",
     "migrate:finance-periods": "node src/seeds/migrateFinancePeriods.seed.js",
     "migrate:teacher-periods": "node src/seeds/migrateTeacherGroupPeriods.seed.js",
+    "migrate:group-enddate": "node src/seeds/migrateGroupEndDate.seed.js",
     "seed:all": "npm run seed:permissions && npm run seed:owner && npm run seed:communication && npm run seed:fake-data && npm run seed:fake-extras && npm run seed:fake-extras2"
   },
   "dependencies": {

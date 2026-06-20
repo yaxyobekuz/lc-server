@@ -90,7 +90,7 @@ export const ensureGroupFeeBackfill = async (group, year, month) => {
 
 // Tanlangan oy uchun barcha faol guruhlar + o'sha oy to'lovi (jadval uchun).
 export const list = async ({ year, month, search }) => {
-  const match = { isActive: true, status: "active", isDeleted: { $ne: true } };
+  const match = { isActive: true, isDeleted: { $ne: true } };
   if (search && search.trim()) {
     match.name = { $regex: search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" };
   }
@@ -156,7 +156,7 @@ export const upsert = async ({ groupId, year, month, amount }, currentUser) => {
 // Berilgan oy uchun barcha faol guruhlarga to'lov yozuvini ta'minlaydi (carry-forward).
 export const generateMonth = async (year, month) => {
   const groups = await Group.find(
-    { isActive: true, status: "active", isDeleted: { $ne: true } },
+    { isActive: true, isDeleted: { $ne: true } },
     { _id: 1 },
   );
   let created = 0;

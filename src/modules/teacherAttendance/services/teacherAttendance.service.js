@@ -48,7 +48,6 @@ const syncTeacherGroupAbsences = async (teacherId, date, isAbsent, currentUser) 
   const groups = await Group.find({
     teachers: teacherId,
     isActive: true,
-    status: { $ne: "finished" },
   }).select("schedule teachers");
   for (const g of groups) {
     if (isAbsent) {

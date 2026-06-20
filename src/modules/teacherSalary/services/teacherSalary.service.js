@@ -204,7 +204,7 @@ export const ensureSalaryForTeacherGroup = async (teacher, group, year, month) =
 // Berilgan oy uchun barcha faol guruh o'qituvchilariga maosh yaratadi.
 export const generateMonth = async (year, month) => {
   const groups = await Group.find(
-    { isActive: true, status: "active", isDeleted: { $ne: true } },
+    { isActive: true, isDeleted: { $ne: true } },
     { _id: 1 },
   );
   let created = 0;

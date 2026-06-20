@@ -14,7 +14,6 @@ import {
   idParamSchema,
   studentParamsSchema,
   historyQuerySchema,
-  archiveSchema,
   membershipListSchema,
   membershipByIdSchema,
   membershipUpdateSchema,
@@ -30,9 +29,6 @@ import list from "./handlers/list.handler.js";
 import getById from "./handlers/getById.handler.js";
 import create from "./handlers/create.handler.js";
 import update from "./handlers/update.handler.js";
-import remove from "./handlers/remove.handler.js";
-import restore from "./handlers/restore.handler.js";
-import finish from "./handlers/finish.handler.js";
 import permanentRemove from "./handlers/permanentRemove.handler.js";
 import undelete from "./handlers/undelete.handler.js";
 import addStudent from "./handlers/addStudent.handler.js";
@@ -85,27 +81,6 @@ router.patch(
   requirePermission(PERMISSIONS.GROUPS_UPDATE),
   validate(updateSchema),
   update,
-);
-router.delete(
-  "/:id",
-  requireAuth,
-  requirePermission(PERMISSIONS.GROUPS_DELETE),
-  validate(archiveSchema),
-  remove,
-);
-router.post(
-  "/:id/restore",
-  requireAuth,
-  requirePermission(PERMISSIONS.GROUPS_DELETE),
-  validate(idParamSchema),
-  restore,
-);
-router.post(
-  "/:id/finish",
-  requireAuth,
-  requirePermission(PERMISSIONS.GROUPS_UPDATE),
-  validate(idParamSchema),
-  finish,
 );
 router.delete(
   "/:id/permanent",

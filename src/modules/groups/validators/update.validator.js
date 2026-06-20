@@ -21,6 +21,7 @@ export const updateSchema = z.object({
         .max(1, "Guruhda faqat bitta o'qituvchi bo'lishi mumkin")
         .optional(),
       startDate: z.coerce.date().nullable().optional(),
+      endDate: z.coerce.date().nullable().optional(),
       durationMonths: z.coerce.number().min(0).nullable().optional(),
     })
     .refine((b) => Object.keys(b).length > 0, {

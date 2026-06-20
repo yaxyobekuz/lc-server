@@ -14,6 +14,8 @@ export const createSchema = z.object({
       .max(1, "Guruhda faqat bitta o'qituvchi bo'lishi mumkin")
       .default([]),
     startDate: z.coerce.date().nullable().optional(),
+    // Kurs tugash sanasi - belgilansa shu kun bo'yicha kurs avtomatik tugaydi.
+    endDate: z.coerce.date().nullable().optional(),
     durationMonths: z.coerce.number().min(0).nullable().optional(),
     // Joriy oy uchun guruh oylik to'lovi (ixtiyoriy). Berilsa - GroupFee shu
     // summa bilan yaratiladi; berilmasa 0 (keyin Moliyadan belgilanadi).
