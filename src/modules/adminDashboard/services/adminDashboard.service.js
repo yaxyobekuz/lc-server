@@ -118,7 +118,7 @@ const computeRecentPayments = async () => {
     studentName: r.student
       ? `${r.student.firstName} ${r.student.lastName || ""}`.trim()
       : "Noma'lum",
-    groupName: r.group?.name || "—",
+    groupName: r.group?.name || "-",
     amount: r.amount,
     method: r.method,
     paidAt: r.paidAt,
