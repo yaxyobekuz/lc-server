@@ -1,8 +1,9 @@
-import mongoose from "mongoose";
 import User from "../../../models/user.model.js";
 import Group from "../../../models/group.model.js";
 import GroupMembership from "../../../models/groupMembership.model.js";
 import Attendance from "../../../models/attendance.model.js";
+import PaymentTransaction from "../../../models/paymentTransaction.model.js";
+import Lead from "../../../models/lead.model.js";
 import { ROLES } from "../../../constants/roles.js";
 
 // === Sana yordamchilari (UTC) ===
@@ -43,31 +44,31 @@ const previousMonths = (count) => {
   return arr;
 };
 
-// === Atomic helpers ===
-const computeTodayAttendanceRate = async () => {
+// === Bugungi davomat taqsimoti (gauge uchun) ===
+const computeAttendanceGauge = async () => {
   const { start, end } = todayRange();
   const result = await Attendance.aggregate([
     { $match: { date: { $gte: start, $lte: end }, isDeleted: { $ne: true } } },
-    {
-      $group: {
-        _id: "$status",
-        count: { $sum: 1 },
-      },
-    },
+    { $group: { _id: "$status", count: { $sum: 1 } } },
   ]);
   const counts = { present: 0, late: 0, excused: 0, absent: 0, exempt: 0 };
-  for (const r of result) {
-    counts[r._id] = r.count || 0;
-  }
+  for (const r of result) counts[r._id] = r.count || 0;
+
   // Yagona ta'rif: maxraj = present + absent + late (exempt va excused tashqarida)
   const denom = counts.present + counts.late + counts.absent;
-  if (denom === 0) return null;
-  const numerator = counts.present + counts.late;
-  return Math.round((numerator / denom) * 100);
+  const rate = denom === 0 ? null : Math.round(((counts.present + counts.late) / denom) * 100);
+  return {
+    rate,
+    present: counts.present,
+    late: counts.late,
+    absent: counts.absent,
+    total: denom,
+  };
 };
 
 const DAY_LABELS = ["Yak", "Du", "Se", "Ch", "Pa", "Ju", "Sh"];
 
+// So'nggi 30 kun ichida har hafta kunidagi dars (davomat yozuvi) soni - bar chart.
 const computeWeekdayActivity = async () => {
   const now = new Date();
   const start = new Date(
@@ -84,25 +85,96 @@ const computeWeekdayActivity = async () => {
 
   const result = await Attendance.aggregate([
     { $match: { date: { $gte: start }, isDeleted: { $ne: true } } },
+    { $group: { _id: { $dayOfWeek: "$date" }, count: { $sum: 1 } } },
+  ]);
+
+  const counts = new Array(7).fill(0);
+  for (const r of result) counts[(r._id - 1) % 7] = r.count;
+  // Du-Yak tartibida qaytaramiz
+  const order = [1, 2, 3, 4, 5, 6, 0];
+  return order.map((idx) => ({ day: DAY_LABELS[idx], lessonsCount: counts[idx] }));
+};
+
+// Oylik kirim (to'lov tranzaksiyalari yig'indisi)
+const computeRevenue = async (start, end) => {
+  const [row] = await PaymentTransaction.aggregate([
+    { $match: { paidAt: { $gte: start, $lte: end }, isDeleted: { $ne: true } } },
+    { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } },
+  ]);
+  return { total: row?.total || 0, count: row?.count || 0 };
+};
+
+// So'nggi to'lovlar ro'yxati (reference: "Project" ro'yxati)
+const computeRecentPayments = async () => {
+  const rows = await PaymentTransaction.find({ isDeleted: { $ne: true } })
+    .sort({ paidAt: -1 })
+    .limit(5)
+    .populate("student", "firstName lastName")
+    .populate("group", "name")
+    .lean();
+  return rows.map((r) => ({
+    id: String(r._id),
+    studentName: r.student
+      ? `${r.student.firstName} ${r.student.lastName || ""}`.trim()
+      : "Noma'lum",
+    groupName: r.group?.name || "—",
+    amount: r.amount,
+    method: r.method,
+    paidAt: r.paidAt,
+  }));
+};
+
+// Eng faol o'qituvchilar - faol guruhlardagi o'quvchilar soni bo'yicha (reference: "Team Collaboration")
+const computeTopTeachers = async () => {
+  const rows = await Group.aggregate([
+    { $match: { isActive: true, isDeleted: { $ne: true } } },
+    { $unwind: "$teachers" },
+    {
+      $lookup: {
+        from: "groupmemberships",
+        let: { gid: "$_id" },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ["$group", "$$gid"] },
+              leftAt: null,
+              isDeleted: { $ne: true },
+            },
+          },
+          { $count: "n" },
+        ],
+        as: "members",
+      },
+    },
     {
       $group: {
-        _id: { $dayOfWeek: "$date" }, // 1=Yak, 2=Du, ... 7=Sh (Mongo)
-        count: { $sum: 1 },
+        _id: "$teachers",
+        groupsCount: { $sum: 1 },
+        studentsCount: { $sum: { $ifNull: [{ $arrayElemAt: ["$members.n", 0] }, 0] } },
+      },
+    },
+    { $sort: { studentsCount: -1, groupsCount: -1 } },
+    { $limit: 4 },
+    {
+      $lookup: {
+        from: "users",
+        localField: "_id",
+        foreignField: "_id",
+        as: "teacher",
+      },
+    },
+    { $unwind: "$teacher" },
+    {
+      $project: {
+        _id: 0,
+        id: { $toString: "$_id" },
+        name: { $trim: { input: { $concat: ["$teacher.firstName", " ", { $ifNull: ["$teacher.lastName", ""] }] } } },
+        groupsCount: 1,
+        studentsCount: 1,
       },
     },
   ]);
-
-  // Mongo dayOfWeek 1-7 (Sunday=1) → JS 0-6 (Sunday=0)
-  const counts = new Array(7).fill(0);
-  for (const r of result) {
-    counts[(r._id - 1) % 7] = r.count;
-  }
-  // Du-Ya tartibida qaytaramiz
-  const order = [1, 2, 3, 4, 5, 6, 0]; // Du, Se, ..., Yak
-  return order.map((idx) => ({
-    day: DAY_LABELS[idx],
-    lessonsCount: counts[idx],
-  }));
+  return rows;
 };
 
 // === Asosiy: getOverview ===
@@ -111,66 +183,77 @@ export const getOverview = async ({ year, month } = {}) => {
   const y = year ? Number(year) : now.getUTCFullYear();
   const m = month ? Number(month) : now.getUTCMonth() + 1;
   const { start, end } = monthRange(y, m);
+  const prev = monthRange(m === 1 ? y - 1 : y, m === 1 ? 12 : m - 1);
 
   const [
     studentsCount,
     teachersCount,
     activeGroupsCount,
-    todayAttendanceRate,
     newStudentsThisMonth,
     lostStudentsThisMonth,
+    newLeadsThisMonth,
+    pendingLeads,
+    revenueThisMonth,
+    revenueLastMonth,
+    attendanceGauge,
     weekdayActivity,
+    recentPayments,
+    topTeachers,
   ] = await Promise.all([
     User.countDocuments({ role: ROLES.STUDENT, isActive: true, isDeleted: { $ne: true } }),
     User.countDocuments({ role: ROLES.TEACHER, isActive: true, isDeleted: { $ne: true } }),
     Group.countDocuments({ isActive: true, isDeleted: { $ne: true } }),
-    computeTodayAttendanceRate(),
-    GroupMembership.countDocuments({
-      joinedAt: { $gte: start, $lte: end },
-      isDeleted: { $ne: true },
-    }),
-    GroupMembership.countDocuments({
-      leftAt: { $gte: start, $lte: end },
-      isDeleted: { $ne: true },
-    }),
+    GroupMembership.countDocuments({ joinedAt: { $gte: start, $lte: end }, isDeleted: { $ne: true } }),
+    GroupMembership.countDocuments({ leftAt: { $gte: start, $lte: end }, isDeleted: { $ne: true } }),
+    Lead.countDocuments({ createdAt: { $gte: start, $lte: end } }),
+    Lead.countDocuments({ status: { $in: ["new", "info_given", "trial"] } }),
+    computeRevenue(start, end),
+    computeRevenue(prev.start, prev.end),
+    computeAttendanceGauge(),
     computeWeekdayActivity(),
+    computeRecentPayments(),
+    computeTopTeachers(),
   ]);
+
+  // O'zgarish foizi (o'tgan oyga nisbatan kirim)
+  const revenueDelta =
+    revenueLastMonth.total > 0
+      ? Math.round(((revenueThisMonth.total - revenueLastMonth.total) / revenueLastMonth.total) * 100)
+      : null;
 
   return {
     period: { year: y, month: m },
     studentsCount,
     teachersCount,
     activeGroupsCount,
-    todayAttendanceRate,
     newStudentsThisMonth,
     lostStudentsThisMonth,
+    netGrowth: newStudentsThisMonth - lostStudentsThisMonth,
+    newLeadsThisMonth,
+    pendingLeads,
+    revenueThisMonth: revenueThisMonth.total,
+    revenueLastMonth: revenueLastMonth.total,
+    paymentsCount: revenueThisMonth.count,
+    revenueDelta,
+    attendanceGauge,
+    todayAttendanceRate: attendanceGauge.rate,
     weekdayActivity,
+    recentPayments,
+    topTeachers,
   };
 };
 
-// === getStudentFlow ===
+// === getStudentFlow (o'quvchilar oqimi - oylik) ===
 export const getStudentFlow = async ({ months = 6 } = {}) => {
   const periods = previousMonths(months);
   const result = [];
   for (const p of periods) {
     const { start, end } = monthRange(p.year, p.month);
     const [joined, left] = await Promise.all([
-      GroupMembership.countDocuments({
-        joinedAt: { $gte: start, $lte: end },
-        isDeleted: { $ne: true },
-      }),
-      GroupMembership.countDocuments({
-        leftAt: { $gte: start, $lte: end },
-        isDeleted: { $ne: true },
-      }),
+      GroupMembership.countDocuments({ joinedAt: { $gte: start, $lte: end }, isDeleted: { $ne: true } }),
+      GroupMembership.countDocuments({ leftAt: { $gte: start, $lte: end }, isDeleted: { $ne: true } }),
     ]);
-    result.push({
-      year: p.year,
-      month: p.month,
-      joined,
-      left,
-      netGrowth: joined - left,
-    });
+    result.push({ year: p.year, month: p.month, joined, left, netGrowth: joined - left });
   }
   return result;
 };
