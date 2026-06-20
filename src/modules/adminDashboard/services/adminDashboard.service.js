@@ -3,6 +3,7 @@ import Group from "../../../models/group.model.js";
 import GroupMembership from "../../../models/groupMembership.model.js";
 import Attendance from "../../../models/attendance.model.js";
 import PaymentTransaction from "../../../models/paymentTransaction.model.js";
+import SalaryTransaction from "../../../models/salaryTransaction.model.js";
 import Lead from "../../../models/lead.model.js";
 import { ROLES } from "../../../constants/roles.js";
 
@@ -256,4 +257,95 @@ export const getStudentFlow = async ({ months = 6 } = {}) => {
     result.push({ year: p.year, month: p.month, joined, left, netGrowth: joined - left });
   }
   return result;
+};
+
+// === getCashflow (moliyaviy kirim/chiqim bar chart) ===
+// range: "week" | "month" -> kunlik buckets, "year" -> oylik buckets.
+// Kirim = PaymentTransaction (o'quvchi to'lovlari), Chiqim = SalaryTransaction (maoshlar).
+const sumByDay = async (Model, start, end) => {
+  const rows = await Model.aggregate([
+    { $match: { paidAt: { $gte: start, $lte: end }, isDeleted: { $ne: true } } },
+    {
+      $group: {
+        _id: { $dateToString: { format: "%Y-%m-%d", date: "$paidAt", timezone: "UTC" } },
+        total: { $sum: "$amount" },
+      },
+    },
+  ]);
+  const map = new Map();
+  for (const r of rows) map.set(r._id, r.total);
+  return map;
+};
+
+const sumByMonth = async (Model, start, end) => {
+  const rows = await Model.aggregate([
+    { $match: { paidAt: { $gte: start, $lte: end }, isDeleted: { $ne: true } } },
+    { $group: { _id: { $month: { date: "$paidAt", timezone: "UTC" } }, total: { $sum: "$amount" } } },
+  ]);
+  const map = new Map();
+  for (const r of rows) map.set(r._id, r.total);
+  return map;
+};
+
+const DAY_SHORT = ["Yak", "Du", "Se", "Ch", "Pa", "Ju", "Sh"];
+const MONTH_SHORT = ["Yan", "Fev", "Mar", "Apr", "May", "Iyn", "Iyl", "Avg", "Sen", "Okt", "Noy", "Dek"];
+
+export const getCashflow = async ({ range = "month" } = {}) => {
+  const now = new Date();
+  const y = now.getUTCFullYear();
+
+  if (range === "year") {
+    const start = new Date(Date.UTC(y, 0, 1, 0, 0, 0, 0));
+    const end = new Date(Date.UTC(y, 11, 31, 23, 59, 59, 999));
+    const [income, expense] = await Promise.all([
+      sumByMonth(PaymentTransaction, start, end),
+      sumByMonth(SalaryTransaction, start, end),
+    ]);
+    const buckets = [];
+    for (let m = 1; m <= 12; m += 1) {
+      buckets.push({
+        label: MONTH_SHORT[m - 1],
+        income: income.get(m) || 0,
+        expense: expense.get(m) || 0,
+      });
+    }
+    return { range, buckets };
+  }
+
+  // week | month -> kunlik buckets
+  let start;
+  let end;
+  if (range === "week") {
+    // Joriy hafta (Dushanba -> Yakshanba)
+    const dow = now.getUTCDay() || 7; // Yak=7
+    start = new Date(Date.UTC(y, now.getUTCMonth(), now.getUTCDate() - (dow - 1), 0, 0, 0, 0));
+    end = new Date(Date.UTC(y, now.getUTCMonth(), now.getUTCDate() - (dow - 1) + 6, 23, 59, 59, 999));
+  } else {
+    // Joriy oy
+    start = new Date(Date.UTC(y, now.getUTCMonth(), 1, 0, 0, 0, 0));
+    end = new Date(Date.UTC(y, now.getUTCMonth() + 1, 0, 23, 59, 59, 999));
+  }
+
+  const [income, expense] = await Promise.all([
+    sumByDay(PaymentTransaction, start, end),
+    sumByDay(SalaryTransaction, start, end),
+  ]);
+
+  const buckets = [];
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    const key = cursor.toISOString().slice(0, 10);
+    const label =
+      range === "week"
+        ? DAY_SHORT[cursor.getUTCDay()]
+        : String(cursor.getUTCDate());
+    buckets.push({
+      label,
+      income: income.get(key) || 0,
+      expense: expense.get(key) || 0,
+    });
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  return { range, buckets };
 };
