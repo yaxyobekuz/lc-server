@@ -1,7 +1,6 @@
 import mongoose from "mongoose";
 import Attendance from "../../../models/attendance.model.js";
 import AttendanceExemption from "../../../models/attendanceExemption.model.js";
-import StudentFreeze from "../../../models/studentFreeze.model.js";
 import AttendanceSettings from "../../../models/attendanceSettings.model.js";
 import Group from "../../../models/group.model.js";
 import GroupMembership from "../../../models/groupMembership.model.js";
@@ -21,7 +20,6 @@ import {
   localTodayKey,
   parseLocalDay,
   isHolidayOn,
-  isFrozenOn,
 } from "../../../helpers/attendance.helper.js";
 import { holidayKeySetForRange } from "../../holidays/services/holidays.service.js";
 import { listForTeacher } from "../../groups/services/groups.service.js";
@@ -97,7 +95,7 @@ export const listForGroupOnDate = async (groupId, dateInput, slotInput = null) =
     .map((m) => m.student._id);
 
   const dKey = dateKeyOf(date);
-  const [attendances, exemptions, freezes] = await Promise.all([
+  const [attendances, exemptions] = await Promise.all([
     Attendance.find({
       group: groupId,
       student: { $in: studentIds },
@@ -109,11 +107,6 @@ export const listForGroupOnDate = async (groupId, dateInput, slotInput = null) =
       student: { $in: studentIds },
       isActive: true,
     }),
-    StudentFreeze.find({
-      student: { $in: studentIds },
-      isActive: true,
-      isDeleted: { $ne: true },
-    }),
   ]);
 
   const attMap = new Map();
@@ -123,12 +116,6 @@ export const listForGroupOnDate = async (groupId, dateInput, slotInput = null) =
     const key = String(ex.student);
     if (!exempMap.has(key)) exempMap.set(key, []);
     exempMap.get(key).push(ex);
-  }
-  const freezeMap = new Map();
-  for (const f of freezes) {
-    const key = String(f.student);
-    if (!freezeMap.has(key)) freezeMap.set(key, []);
-    freezeMap.get(key).push(f);
   }
 
   const rows = memberships
@@ -142,7 +129,6 @@ export const listForGroupOnDate = async (groupId, dateInput, slotInput = null) =
         student: m.student.toJSON(),
         attendance: attendance ? attendance.toJSON() : null,
         defaultStatus: def,
-        frozen: isFrozenOn(freezeMap.get(sid) || [], date),
       };
     });
 
@@ -309,24 +295,6 @@ export const bulkRecord = async (
         400,
         "O'quvchi bu sanada guruhning aktiv a'zosi emas",
       );
-    }
-  }
-
-  // Muzlatilgan o'quvchiga shu sanada davomat belgilanmaydi
-  const freezes = await StudentFreeze.find({
-    student: { $in: studentIds },
-    isActive: true,
-    isDeleted: { $ne: true },
-  });
-  const freezeByStudent = new Map();
-  for (const f of freezes) {
-    const k = String(f.student);
-    if (!freezeByStudent.has(k)) freezeByStudent.set(k, []);
-    freezeByStudent.get(k).push(f);
-  }
-  for (const item of items) {
-    if (isFrozenOn(freezeByStudent.get(String(item.studentId)) || [], date)) {
-      throw new ApiError(400, "O'quvchi bu sanada muzlatilgan");
     }
   }
 
@@ -538,13 +506,12 @@ const buildStudentClassDays = async (
     "group",
   );
 
-  const [exemptions, holidaySet, freezes] = await Promise.all([
+  const [exemptions, holidaySet] = await Promise.all([
     AttendanceExemption.find({
       student: studentId,
       isActive: true,
     }),
     holidayKeySetForRange(rangeStart, rangeEnd),
-    StudentFreeze.find({ student: studentId, isActive: true, isDeleted: { $ne: true } }),
   ]);
 
   const groups = [];
@@ -566,8 +533,6 @@ const buildStudentClassDays = async (
 
     const classDays = getClassDaysInRange(m.group, effFrom, effTo, holidaySet);
     const days = classDays
-      // Muzlatilgan kunlar dars kuni hisoblanmaydi (heatmap'da ko'rinmaydi)
-      .filter((cd) => !isFrozenOn(freezes, cd.date))
       .map((cd) => {
         const def = defaultStatusFor(exemptions, cd.date, cd.dayOfWeek);
         dKeys.add(cd.dateKey);
@@ -713,7 +678,7 @@ export const getGroupMonthly = async (groupId, { year, month }) => {
   const activeMemberships = memberships.filter((m) => m.student);
   const studentIds = activeMemberships.map((m) => m.student._id);
 
-  const [attendances, exemptions, freezes] = await Promise.all([
+  const [attendances, exemptions] = await Promise.all([
     Attendance.find({
       group: groupId,
       student: { $in: studentIds },
@@ -723,11 +688,6 @@ export const getGroupMonthly = async (groupId, { year, month }) => {
     AttendanceExemption.find({
       student: { $in: studentIds },
       isActive: true,
-    }),
-    StudentFreeze.find({
-      student: { $in: studentIds },
-      isActive: true,
-      isDeleted: { $ne: true },
     }),
   ]);
 
@@ -743,12 +703,6 @@ export const getGroupMonthly = async (groupId, { year, month }) => {
     const key = String(ex.student);
     if (!exempMap.has(key)) exempMap.set(key, []);
     exempMap.get(key).push(ex);
-  }
-  const freezeMap = new Map();
-  for (const f of freezes) {
-    const key = String(f.student);
-    if (!freezeMap.has(key)) freezeMap.set(key, []);
-    freezeMap.get(key).push(f);
   }
 
   // Bir o'quvchining bir oy ichida bir nechta a'zoligi bo'lishi mumkin
@@ -771,7 +725,6 @@ export const getGroupMonthly = async (groupId, { year, month }) => {
   const students = Array.from(byStudent.values()).map(({ student, intervals }) => {
     const sid = String(student._id);
     const stuExemptions = exempMap.get(sid) || [];
-    const stuFreezes = freezeMap.get(sid) || [];
     // Katak (sana) o'quvchining a'zolik oraliqlaridan biriga tushadimi?
     // leftTs EXCLUSIVE (ts < leftTs): chiqilgan kun yarim tuni endi a'zolik emas -
     // belgilash yo'li (`leftAt > date`) va computeClassDays bilan bir xil chegara.
@@ -791,11 +744,6 @@ export const getGroupMonthly = async (groupId, { year, month }) => {
         continue;
       }
       if (!isMemberOn(ts)) {
-        cells[key] = null;
-        continue;
-      }
-      // Muzlatilgan kun - dars kuni hisoblanmaydi
-      if (isFrozenOn(stuFreezes, d.date)) {
         cells[key] = null;
         continue;
       }
@@ -897,7 +845,6 @@ const computeClassDays = ({
   from,
   to,
   holidaySet = null,
-  freezes = null,
 }) => {
   let total = 0;
   let exemptDefault = 0;
@@ -919,8 +866,6 @@ const computeClassDays = ({
     }
     const classDays = getClassDaysInRange(m.group, effFrom, effTo, holidaySet);
     for (const cd of classDays) {
-      // Muzlatilgan kunlar umuman hisobga olinmaydi (bayram kabi)
-      if (freezes && isFrozenOn(freezes, cd.date)) continue;
       const cellKey = `${String(m.group._id)}|${cd.dateKey}|${cd.slot || ""}`;
       if (seenCells.has(cellKey)) continue;
       seenCells.add(cellKey);
@@ -1059,11 +1004,10 @@ export const getStudentSummary = async (
   };
   if (scopeGroupIds) membershipFilter.group = { $in: scopeGroupIds };
 
-  const [memberships, exemptions, holidaySet, freezes] = await Promise.all([
+  const [memberships, exemptions, holidaySet] = await Promise.all([
     GroupMembership.find(membershipFilter).populate("group"),
     AttendanceExemption.find({ student: studentId, isActive: true }),
     holidayKeySetForRange(from, to),
-    StudentFreeze.find({ student: studentId, isActive: true, isDeleted: { $ne: true } }),
   ]);
 
   const { total, exemptDefault, cells } = computeClassDays({
@@ -1072,7 +1016,6 @@ export const getStudentSummary = async (
     from,
     to,
     holidaySet,
-    freezes,
   });
 
   if (total === 0) {
@@ -1104,29 +1047,18 @@ export const getGroupSummary = async (groupId, { fromDate, toDate }) => {
   }).populate("student", STUDENT_PROJECTION);
 
   const studentIds = memberships.filter((m) => m.student).map((m) => m.student._id);
-  const [exemptions, holidaySet, allFreezes] = await Promise.all([
+  const [exemptions, holidaySet] = await Promise.all([
     AttendanceExemption.find({
       student: { $in: studentIds },
       isActive: true,
     }),
     holidayKeySetForRange(from, to),
-    StudentFreeze.find({
-      student: { $in: studentIds },
-      isActive: true,
-      isDeleted: { $ne: true },
-    }),
   ]);
   const exempByStudent = new Map();
   for (const ex of exemptions) {
     const k = String(ex.student);
     if (!exempByStudent.has(k)) exempByStudent.set(k, []);
     exempByStudent.get(k).push(ex);
-  }
-  const freezeByStudent = new Map();
-  for (const f of allFreezes) {
-    const k = String(f.student);
-    if (!freezeByStudent.has(k)) freezeByStudent.set(k, []);
-    freezeByStudent.get(k).push(f);
   }
 
   // Bir o'quvchining bir nechta a'zoligini (chiqarilib, qayta qabul qilingan)
@@ -1156,7 +1088,6 @@ export const getGroupSummary = async (groupId, { fromDate, toDate }) => {
       from,
       to,
       holidaySet,
-      freezes: freezeByStudent.get(sid) || [],
     });
     perStudentCells.set(sid, { total, cells });
     for (const c of cells) allDKeys.add(c.dateKey);
@@ -1264,7 +1195,7 @@ export const getDashboardStats = async ({ fromDate, toDate, page = 1, limit = 20
   // guruhlar) - aks holda aggregate nofaol/o'chirilgan guruhlardan dars kunlarini
   // qo'shib, groupBreakdown (faqat aktiv guruhlarni ko'rsatadi) bilan ziddiyatga
   // kelardi: aggregate.totalClasses ≠ Σ groupBreakdown.totalClasses.
-  const [allMemberships, exemptions, attendances, holidaySet, allFreezes] =
+  const [allMemberships, exemptions, attendances, holidaySet] =
     await Promise.all([
       GroupMembership.find({
         student: { $in: studentIds },
@@ -1284,11 +1215,6 @@ export const getDashboardStats = async ({ fromDate, toDate, page = 1, limit = 20
         isDeleted: { $ne: true },
       }).lean(),
       holidayKeySetForRange(from, to),
-      StudentFreeze.find({
-        student: { $in: studentIds },
-        isActive: true,
-        isDeleted: { $ne: true },
-      }),
     ]);
 
   const groupBy = (docs, keyOf) => {
@@ -1303,7 +1229,6 @@ export const getDashboardStats = async ({ fromDate, toDate, page = 1, limit = 20
   const membershipsByStudent = groupBy(allMemberships, (m) => String(m.student));
   const exemptionsByStudent = groupBy(exemptions, (ex) => String(ex.student));
   const attendancesByStudent = groupBy(attendances, (a) => String(a.student));
-  const freezesByStudent = groupBy(allFreezes, (f) => String(f.student));
 
   const studentDocById = new Map();
   for (const m of groupMemberships) {
@@ -1330,7 +1255,6 @@ export const getDashboardStats = async ({ fromDate, toDate, page = 1, limit = 20
       from,
       to,
       holidaySet,
-      freezes: freezesByStudent.get(sid) || [],
     });
     const s = summarizeCells({
       total,
@@ -1387,7 +1311,6 @@ export const getDashboardStats = async ({ fromDate, toDate, page = 1, limit = 20
         from,
         to,
         holidaySet,
-        freezes: freezesByStudent.get(sid) || [],
       });
       // cells faqat shu guruh|dateKey larni o'z ichiga oladi → summarizeCells
       // o'quvchining boshqa guruh yozuvlarini e'tiborsiz qoldiradi

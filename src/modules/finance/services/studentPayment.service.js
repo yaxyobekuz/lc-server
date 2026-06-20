@@ -3,7 +3,6 @@ import StudentPayment from "../../../models/studentPayment.model.js";
 import PaymentTransaction from "../../../models/paymentTransaction.model.js";
 import GroupFee from "../../../models/groupFee.model.js";
 import Discount from "../../../models/discount.model.js";
-import StudentFreeze from "../../../models/studentFreeze.model.js";
 import GroupMembership from "../../../models/groupMembership.model.js";
 import Group from "../../../models/group.model.js";
 import User from "../../../models/user.model.js";
@@ -45,7 +44,7 @@ const loadMembershipPeriods = async (student, group, year, month) => {
 // Bir o'quvchi+guruh+oy uchun snapshot maydonlarini hisoblaydi (DB dan yuklab).
 // periods berilmasa, bitta {joinedAt, leftAt} davr ishlatiladi.
 const buildSnapshot = async ({ student, group, year, month, joinedAt, leftAt = null, periods = null }) => {
-  const [feeDoc, discounts, freezes] = await Promise.all([
+  const [feeDoc, discounts] = await Promise.all([
     GroupFee.findOne({ group, year, month }),
     Discount.find({
       student,
@@ -54,7 +53,6 @@ const buildSnapshot = async ({ student, group, year, month, joinedAt, leftAt = n
       isDeleted: { $ne: true },
       $or: [{ scope: "permanent" }, { scope: "monthly", year, month }],
     }),
-    StudentFreeze.find({ student, isActive: true, isDeleted: { $ne: true } }),
   ]);
 
   return computePaymentSnapshot({
@@ -64,7 +62,6 @@ const buildSnapshot = async ({ student, group, year, month, joinedAt, leftAt = n
     joinedAt,
     leftAt,
     periods,
-    freezes,
     discounts,
   });
 };

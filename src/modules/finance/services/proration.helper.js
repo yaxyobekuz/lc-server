@@ -1,4 +1,4 @@
-import { toUtcMidnight, isFrozenOn } from "../../../helpers/attendance.helper.js";
+import { toUtcMidnight } from "../../../helpers/attendance.helper.js";
 
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 
@@ -20,7 +20,6 @@ export const computeProration = ({
   joinedAt,
   leftAt = null,
   leftExclusive = false,
-  freezes = [],
 }) => {
   const totalDays = daysInMonth(year, month);
   const monthStart = new Date(Date.UTC(year, month - 1, 1));
@@ -51,11 +50,7 @@ export const computeProration = ({
     endDay = left.getTime() >= monthEnd.getTime() ? totalDays : left.getUTCDate();
   }
 
-  let payable = 0;
-  for (let d = startDay; d <= endDay; d += 1) {
-    const day = new Date(Date.UTC(year, month - 1, d));
-    if (!isFrozenOn(freezes, day)) payable += 1;
-  }
+  const payable = Math.max(0, endDay - startDay + 1);
 
   return {
     factor: clamp(payable / totalDays, 0, 1),
@@ -82,7 +77,7 @@ export const resolveDiscountAmount = (discounts, proratedFee) => {
 // davr alohida proratsiya qilinib, kunlar QO'SHILADI (bir kun ikki marta
 // sanalmaydi: davrlar a'zolik bo'yicha kesishmaydi). periods bo'sh bo'lsa
 // bitta {joinedAt, leftAt} davr sifatida qaraladi.
-const sumPayableDays = ({ year, month, periods, freezes }) => {
+const sumPayableDays = ({ year, month, periods }) => {
   let payableDays = 0;
   let totalDays = 0;
   for (const p of periods) {
@@ -92,7 +87,6 @@ const sumPayableDays = ({ year, month, periods, freezes }) => {
       joinedAt: p.joinedAt,
       leftAt: p.leftAt || null,
       leftExclusive: true,
-      freezes,
     });
     totalDays = r.totalDays;
     payableDays += r.payableDays;
@@ -111,13 +105,12 @@ export const computePaymentSnapshot = ({
   joinedAt,
   leftAt = null,
   periods = null,
-  freezes = [],
   discounts = [],
 }) => {
   const effPeriods =
     periods && periods.length ? periods : [{ joinedAt, leftAt }];
 
-  const main = sumPayableDays({ year, month, periods: effPeriods, freezes });
+  const main = sumPayableDays({ year, month, periods: effPeriods });
   const totalDays = main.totalDays || daysInMonth(year, month);
 
   const proratedFee = Math.round(
