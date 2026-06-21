@@ -43,31 +43,29 @@ export const ensureGroupFee = async (group, year, month, { session } = {}) => {
 };
 
 // Guruhning eng yaqin mavjud fee summasini topadi (berilgan oyga nisbatan).
-// Avval o'sha oydan KEYINGI eng yaqin oy (joriy/joriyga yaqin tarif),
-// topilmasa OLDINGI eng yaqin oy. Hech narsa bo'lmasa 0.
+// O'sha oyda yoki undan OLDINGI eng yaqin tarif (o'sha vaqtda amalda bo'lgan narx);
+// topilmasa eng erta mavjud tarif. Hech narsa bo'lmasa 0.
 // Eski o'quvchilarni qo'shganda o'tgan oylarda GroupFee bo'lmasa, qarz 0 chiqmasligi
-// uchun shu summa backfill qilinadi.
+// uchun shu summa backfill qilinadi. Kelajakdagi (oshirilgan) tarif o'tmishga
+// tatbiq qilinmaydi - aks holda o'quvchi o'sha vaqtdagidan ortiq qarzdor bo'lardi.
 const nearestFeeAmount = async (group, year, month) => {
   const idx = year * 12 + (month - 1);
-  // Keyingi (>=) eng yaqin oy - joriy tarifni o'tmishga tarqatamiz.
-  const after = await GroupFee.find({ group })
+  const fees = await GroupFee.find({ group })
     .select({ year: 1, month: 1, amount: 1 })
     .lean();
-  if (!after.length) return 0;
-  let best = null;
-  let bestDist = Infinity;
-  for (const f of after) {
+  if (!fees.length) return 0;
+  let priorBest = null; // <= idx ichida eng yaqin (o'sha vaqtdagi tarif)
+  let earliest = null; // hammasi kelajakda bo'lsa - eng erta tarif
+  for (const f of fees) {
     const fIdx = f.year * 12 + (f.month - 1);
-    // Keyingi oylarni afzal ko'ramiz (joriy tarif), shu sababli teng masofada
-    // keyingisi yutadi.
-    const isAfter = fIdx >= idx;
-    const dist = Math.abs(fIdx - idx) * 2 + (isAfter ? 0 : 1);
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = f;
+    if (fIdx <= idx) {
+      if (!priorBest || fIdx > priorBest.idx) priorBest = { idx: fIdx, amount: f.amount };
+    } else if (!earliest || fIdx < earliest.idx) {
+      earliest = { idx: fIdx, amount: f.amount };
     }
   }
-  return best ? best.amount : 0;
+  if (priorBest) return priorBest.amount;
+  return earliest ? earliest.amount : 0;
 };
 
 // Berilgan oy uchun GroupFee mavjudligini ta'minlaydi; bo'lmasa eng yaqin mavjud
