@@ -21,7 +21,9 @@ import activityLogsRouter from "../modules/activityLogs/activityLogs.routes.js";
 import adminDashboardRouter from "../modules/adminDashboard/adminDashboard.routes.js";
 import searchRouter from "../modules/search/search.routes.js";
 import financeRouter from "../modules/finance/finance.routes.js";
+import depositsRouter from "../modules/deposits/deposits.routes.js";
 import teacherSalaryRouter from "../modules/teacherSalary/teacherSalary.routes.js";
+import financeReportRouter from "../modules/financeReport/financeReport.routes.js";
 
 const router = Router();
 
@@ -63,6 +65,8 @@ router.use("/admin-dashboard", adminDashboardRouter);
 
 // Finance subsystem (Moliya)
 router.use("/finance", financeRouter);
+router.use("/deposits", depositsRouter);
 router.use("/teacher-salary", teacherSalaryRouter);
+router.use("/finance-report", financeReportRouter);
 
 export default router;
