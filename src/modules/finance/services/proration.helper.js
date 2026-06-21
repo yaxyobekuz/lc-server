@@ -98,6 +98,9 @@ const sumPayableDays = ({ year, month, periods }) => {
 // periods: o'quvchining shu oydagi a'zolik davrlari [{joinedAt, leftAt(EXCLUSIVE)}].
 // Bir nechta davr (rejoin) bo'lsa kunlar qo'shiladi. Orqaga-moslik uchun
 // joinedAt/leftAt to'g'ridan-to'g'ri ham qabul qilinadi (bitta davr).
+// MUHIM: periods === null → bitta {joinedAt, leftAt} davr (eski yo'l).
+// periods === [] (bo'sh massiv) → o'quvchi shu oyda guruhda BO'LMAGAN → 0 kun
+// (to'liq oyga default qilmaymiz - ketgan o'quvchiga qarz tiklanmasin).
 export const computePaymentSnapshot = ({
   baseFee = 0,
   year,
@@ -107,8 +110,7 @@ export const computePaymentSnapshot = ({
   periods = null,
   discounts = [],
 }) => {
-  const effPeriods =
-    periods && periods.length ? periods : [{ joinedAt, leftAt }];
+  const effPeriods = periods === null ? [{ joinedAt, leftAt }] : periods;
 
   const main = sumPayableDays({ year, month, periods: effPeriods });
   const totalDays = main.totalDays || daysInMonth(year, month);

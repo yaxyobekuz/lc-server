@@ -144,10 +144,9 @@ export const recalc = async (paymentId, { session } = {}) => {
     group: payment.group,
     year: payment.year,
     month: payment.month,
-    periods: periods.length ? periods : null,
-    // periods bo'sh bo'lsa (membership topilmadi) - eski membership ref bo'yicha
-    joinedAt: null,
-    leftAt: null,
+    // Har doim haqiqiy davrlar massivini uzatamiz: bo'sh bo'lsa (o'quvchi shu oyda
+    // guruhda yo'q) expected=0 bo'ladi - to'liq oy billing'iga default qilmaymiz.
+    periods,
   });
 
   const paidExpr = { $ifNull: ["$paidAmount", 0] };
