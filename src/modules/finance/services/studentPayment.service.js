@@ -7,6 +7,7 @@ import GroupMembership from "../../../models/groupMembership.model.js";
 import Group from "../../../models/group.model.js";
 import User from "../../../models/user.model.js";
 import ApiError from "../../../utils/ApiError.js";
+import logger from "../../../config/logger.js";
 import { computePaymentSnapshot, deriveStatus } from "./proration.helper.js";
 
 const safeStudentProjection = {
@@ -150,7 +151,7 @@ export const recalc = async (paymentId, { session } = {}) => {
   });
 
   const paidExpr = { $ifNull: ["$paidAmount", 0] };
-  return StudentPayment.findByIdAndUpdate(
+  const updated = await StudentPayment.findByIdAndUpdate(
     paymentId,
     [
       {
@@ -174,6 +175,19 @@ export const recalc = async (paymentId, { session } = {}) => {
     ],
     { new: true, session: session || undefined },
   );
+
+  // Plan kamayib paidAmount > expected bo'lsa, ortiqcha DEPOZIT-qoplama depozitga
+  // qaytariladi. Faqat sessiyasiz (recompute kaskadi) - yaratish (session) oqimida emas.
+  // Dinamik import: deposit.service → studentPayment.service siklini oldini oladi.
+  if (!session && updated && (updated.paidAmount || 0) > (updated.expectedAmount || 0)) {
+    try {
+      const depositService = await import("../../deposits/services/deposit.service.js");
+      await depositService.reconcileDepositOverpay(updated._id);
+    } catch (err) {
+      logger.warn({ err }, "Depozit ortiqcha qoplama qayta hisoblanmadi");
+    }
+  }
+  return updated;
 };
 
 // Guruh+oy bo'yicha barcha to'lovlarni qayta hisoblaydi (fee o'zgarganda).

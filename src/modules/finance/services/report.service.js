@@ -1,5 +1,6 @@
 import * as groupFeeService from "./groupFee.service.js";
 import * as studentPaymentService from "./studentPayment.service.js";
+import * as depositService from "../../deposits/services/deposit.service.js";
 import * as systemNotificationsService from "../../systemNotifications/services/systemNotifications.service.js";
 import logger from "../../../config/logger.js";
 
@@ -7,6 +8,13 @@ import logger from "../../../config/logger.js";
 export const regenerate = async (year, month) => {
   const feeResult = await groupFeeService.generateMonth(year, month);
   const paymentResult = await studentPaymentService.generateMonth(year, month);
+
+  // Yangi oy planlari yaratilgach - depoziti bor o'quvchilarning qarzini avto qoplaymiz.
+  try {
+    await depositService.autoApplyForMonth(year, month);
+  } catch (err) {
+    logger.warn({ err }, "Oylik depozit avto-qoplash xatosi");
+  }
 
   // Bildirishnoma faqat real yangi yozuv yaratilganda - qayta ishga tushishdagi spam'ning oldini olish.
   if (feeResult.created > 0 || paymentResult.created > 0) {

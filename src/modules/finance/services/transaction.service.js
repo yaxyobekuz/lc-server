@@ -5,6 +5,7 @@ import ApiError from "../../../utils/ApiError.js";
 import { assertGroupActive } from "../../../helpers/group.helper.js";
 import { parseLocalDay, localTodayMidnight } from "../../../helpers/attendance.helper.js";
 import * as studentPaymentService from "./studentPayment.service.js";
+import * as depositService from "../../deposits/services/deposit.service.js";
 import { runFinanceTxn } from "./financeTxn.helper.js";
 
 // Idempotentlik dublikati - takror so'rovni "yangi pul emas" deb qaytaradi.
@@ -112,6 +113,10 @@ export const remove = async (id, currentUser) => {
       t.deletedBy = currentUser?._id || null;
       await t.save({ session: session || undefined });
       await studentPaymentService.applyPaidDelta(t.payment, -t.amount, { session });
+      // Depozitdan qoplangan to'lov bekor qilinsa - pul DEPOZITGA qaytadi (naqdga emas).
+      if (t.source === "deposit") {
+        await depositService.refundToDeposit(t.student, t.amount);
+      }
       removed.push(t._id);
     }
     return { _id: id, removed };
