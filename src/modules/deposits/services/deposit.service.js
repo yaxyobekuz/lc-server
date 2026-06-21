@@ -29,14 +29,20 @@ const ensureStudent = async (studentId) => {
 };
 
 // O'quvchining depozit hisobi (yo'q bo'lsa yaratiladi).
-export const getOrCreate = async (student) => {
+// session berilsa, ochiq MongoDB tranzaksiyasi ichida o'qib-yozadi.
+export const getOrCreate = async (student, { session } = {}) => {
   const sid = toObjectId(student);
-  const existing = await StudentDeposit.findOne({ student: sid });
+  const existing = await StudentDeposit.findOne({ student: sid }).session(session || null);
   if (existing) return existing;
   try {
-    return await StudentDeposit.create({ student: sid, balance: 0 });
+    const docs = await StudentDeposit.create([{ student: sid, balance: 0 }], {
+      session: session || undefined,
+    });
+    return docs[0];
   } catch (err) {
-    if (err?.code === 11000) return StudentDeposit.findOne({ student: sid });
+    if (err?.code === 11000) {
+      return StudentDeposit.findOne({ student: sid }).session(session || null);
+    }
     throw err;
   }
 };
@@ -48,10 +54,15 @@ export const balanceFor = async (student) => {
 
 // Balansni atomik o'zgartiradi. delta<0 (yechish) bo'lsa balance yetarli bo'lishi
 // shart - aks holda hujjat yangilanmaydi (null) → chaqiruvchi xato beradi.
-const applyBalanceDelta = async (depositId, delta) => {
+// session berilsa, ochiq MongoDB tranzaksiyasi ichida yoziladi.
+const applyBalanceDelta = async (depositId, delta, { session } = {}) => {
   const filter = { _id: depositId };
   if (delta < 0) filter.balance = { $gte: -delta };
-  return StudentDeposit.findOneAndUpdate(filter, { $inc: { balance: delta } }, { new: true });
+  return StudentDeposit.findOneAndUpdate(
+    filter,
+    { $inc: { balance: delta } },
+    { new: true, session: session || undefined },
+  );
 };
 
 // --- DEPOZIT QO'SHISH / YECHISH ---
@@ -202,66 +213,99 @@ export const autoApplyForMonth = async (year, month) => {
   return { students: studentIds.length, applied };
 };
 
-// Plan kamayganda (expected<paid) ortiqcha DEPOZIT-qoplamani depozitga qaytaradi.
+// Bir refund yozuvi: plan.paidAmount -= take, balans += take, refund ledger yozuvi.
+const refundOverpayChunk = async (deposit, planId, take, note) => {
+  await studentPaymentService.applyPaidDelta(planId, -take);
+  const balUpd = await applyBalanceDelta(deposit._id, take);
+  if (!balUpd) throw new ApiError(500, "Depozitga qaytarib bo'lmadi");
+  await DepositTransaction.create({
+    student: deposit.student,
+    deposit: deposit._id,
+    type: "refund",
+    amount: take,
+    balanceAfter: balUpd.balance,
+    note,
+    paidAt: localTodayMidnight(),
+  });
+};
+
+// Plan kamayganda (expected<paid) ortiqcha to'lovni depozitga qaytaradi.
 // recalc'dan KEYIN best-effort chaqiriladi (atomik pipeline'dan tashqarida).
+// Avval DEPOZIT-qoplama tranzaksiyalari (faqat kerakli ulush - qisman reverse,
+// fantom pul yaratmaymiz), yetmasa qolgan ortiqcha to'g'ridan-to'g'ri to'lov ham
+// depozitga qaytadi (memory qoidasi: "overpay depozitga qaytadi").
 export const reconcileDepositOverpay = async (paymentId) => {
   const plan = await StudentPayment.findById(paymentId);
   if (!plan) return;
   let excess = (plan.paidAmount || 0) - (plan.expectedAmount || 0);
   if (excess <= 0) return;
 
+  const deposit = await getOrCreate(plan.student);
+  let reversed = 0;
+
+  // 1) Depozit-qoplama tranzaksiyalarini qisman reverse qilamiz (eng yangidan).
   const depositTxns = await PaymentTransaction.find({
     payment: plan._id,
     source: "deposit",
     isDeleted: { $ne: true },
-  }).sort({ createdAt: -1 }); // eng yangidan
-  if (!depositTxns.length) return;
+  }).sort({ createdAt: -1 });
 
-  const deposit = await getOrCreate(plan.student);
-  let reversed = 0;
   for (const txn of depositTxns) {
     if (reversed >= excess) break;
-    // Butun tranzaksiyani reverse qilamiz (qisman emas), keyin kerak bo'lsa qayta qoplaymiz.
-    txn.isDeleted = true;
-    txn.deletedAt = new Date();
-    await txn.save();
-    await studentPaymentService.applyPaidDelta(plan._id, -txn.amount);
-    const balUpd = await applyBalanceDelta(deposit._id, txn.amount);
-    await DepositTransaction.create({
-      student: deposit.student,
-      deposit: deposit._id,
-      type: "refund",
-      amount: txn.amount,
-      balanceAfter: balUpd.balance,
-      note: "Oylik to'lov kamayishi - depozitga qaytarildi",
-      paidAt: localTodayMidnight(),
-    });
-    reversed += txn.amount;
+    const take = Math.min(txn.amount, excess - reversed);
+    if (take >= txn.amount) {
+      // Butun tranzaksiya - o'chiramiz.
+      txn.isDeleted = true;
+      txn.deletedAt = new Date();
+      await txn.save();
+    } else {
+      // Qisman - faqat ortiqcha ulushni yechamiz, qolgani qoplama bo'lib qoladi.
+      txn.amount -= take;
+      await txn.save();
+    }
+    await refundOverpayChunk(
+      deposit,
+      plan._id,
+      take,
+      "Oylik to'lov kamayishi - depozitga qaytarildi",
+    );
+    reversed += take;
   }
 
-  // Haddan ortiq reverse qilingan bo'lsa (butun tranzaksiyalar) - farqni qayta qoplaymiz.
-  const over = reversed - excess;
-  if (over > 0) {
-    const freshPlan = await StudentPayment.findById(plan._id);
-    const freshDep = await StudentDeposit.findById(deposit._id);
-    await applyToPayment(freshDep, freshPlan, over);
+  // 2) Qolgan ortiqcha to'g'ridan-to'g'ri (cash) to'lov - uni ham depozitga qaytaramiz.
+  const directExcess = excess - reversed;
+  if (directExcess > 0) {
+    await refundOverpayChunk(
+      deposit,
+      plan._id,
+      directExcess,
+      "Ortiqcha to'lov - depozitga qaytarildi",
+    );
   }
 };
 
 // Depozit-qoplama PaymentTransaction o'chirilganda pul NAQDGA emas, DEPOZITGA
 // qaytadi (transaction.service.remove chaqiradi). Balans += + refund yozuvi.
-export const refundToDeposit = async (studentId, amount) => {
-  const deposit = await getOrCreate(studentId);
-  const upd = await applyBalanceDelta(deposit._id, amount);
-  await DepositTransaction.create({
-    student: deposit.student,
-    deposit: deposit._id,
-    type: "refund",
-    amount,
-    balanceAfter: upd.balance,
-    note: "To'lov bekor qilindi - depozitga qaytarildi",
-    paidAt: localTodayMidnight(),
-  });
+// session berilsa, qoplamani bekor qilgan MongoDB tranzaksiyasi ichida atomik
+// bajariladi - aks holda tashqi abort/retry'da depozit ikki marta kreditlanardi.
+export const refundToDeposit = async (studentId, amount, { session } = {}) => {
+  const deposit = await getOrCreate(studentId, { session });
+  const upd = await applyBalanceDelta(deposit._id, amount, { session });
+  if (!upd) throw new ApiError(500, "Depozitga qaytarib bo'lmadi");
+  await DepositTransaction.create(
+    [
+      {
+        student: deposit.student,
+        deposit: deposit._id,
+        type: "refund",
+        amount,
+        balanceAfter: upd.balance,
+        note: "To'lov bekor qilindi - depozitga qaytarildi",
+        paidAt: localTodayMidnight(),
+      },
+    ],
+    { session: session || undefined },
+  );
 };
 
 // --- DEPOZIT TRANZAKSIYASINI BEKOR QILISH (topup/withdraw) ---

@@ -114,8 +114,9 @@ export const remove = async (id, currentUser) => {
       await t.save({ session: session || undefined });
       await studentPaymentService.applyPaidDelta(t.payment, -t.amount, { session });
       // Depozitdan qoplangan to'lov bekor qilinsa - pul DEPOZITGA qaytadi (naqdga emas).
+      // Refund void bilan bir xil tranzaksiyada - tashqi abort'da double-credit bo'lmasin.
       if (t.source === "deposit") {
-        await depositService.refundToDeposit(t.student, t.amount);
+        await depositService.refundToDeposit(t.student, t.amount, { session });
       }
       removed.push(t._id);
     }
