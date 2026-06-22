@@ -9,8 +9,7 @@ import logger from "../../../config/logger.js";
 // MUHIM: MongoDB tranzaksiyasi faqat replica set / mongos'da ishlaydi. Standalone
 // Mongo'da (replica set yo'q) startSession().withTransaction() xato beradi -
 // shu holatda session=null bilan ketma-ket bajaramiz (atomiklik kafolati yo'q,
-// lekin ishlash to'xtamaydi). groups.service.js transferStudent bilan bir xil
-// yondashuv - kod bazada o'rnatilgan pattern.
+// lekin ishlash to'xtamaydi) - kod bazada o'rnatilgan pattern.
 //
 // work(session) - berilgan session bilan barcha yozuvlarni bajaradigan funksiya.
 // Session berilgan barcha .create/.save/.findByIdAndUpdate'ga { session } sifatida

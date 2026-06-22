@@ -9,7 +9,6 @@ import { createSchema } from "./validators/create.validator.js";
 import { updateSchema } from "./validators/update.validator.js";
 import { addStudentSchema } from "./validators/addStudent.validator.js";
 import { updateMembershipSchema } from "./validators/updateMembership.validator.js";
-import { transferSchema } from "./validators/transfer.validator.js";
 import {
   idParamSchema,
   studentParamsSchema,
@@ -34,7 +33,6 @@ import undelete from "./handlers/undelete.handler.js";
 import addStudent from "./handlers/addStudent.handler.js";
 import updateMembership from "./handlers/updateMembership.handler.js";
 import removeStudent from "./handlers/removeStudent.handler.js";
-import transferStudent from "./handlers/transferStudent.handler.js";
 import membershipList from "./handlers/membership.list.handler.js";
 import membershipUpdate from "./handlers/membership.update.handler.js";
 import membershipRemove from "./handlers/membership.remove.handler.js";
@@ -117,13 +115,6 @@ router.delete(
   requirePermission(PERMISSIONS.GROUPS_MANAGE_STUDENTS),
   validate(studentParamsSchema),
   removeStudent,
-);
-router.post(
-  "/:id/students/:studentId/transfer",
-  requireAuth,
-  requirePermission(PERMISSIONS.GROUPS_MANAGE_STUDENTS),
-  validate(transferSchema),
-  transferStudent,
 );
 
 // O'quvchining o'qish davrlari (membership) - ro'yxat + id bo'yicha tahrir/o'chir.
