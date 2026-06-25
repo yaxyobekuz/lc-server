@@ -15,7 +15,6 @@ import update from "./handlers/update.handler.js";
 import remove from "./handlers/remove.handler.js";
 import restore from "./handlers/restore.handler.js";
 import permanentRemove from "./handlers/permanentRemove.handler.js";
-import undelete from "./handlers/undelete.handler.js";
 import groupHistory from "./handlers/groupHistory.handler.js";
 import getPassword from "./handlers/getPassword.handler.js";
 import setPassword from "./handlers/setPassword.handler.js";
@@ -84,13 +83,6 @@ router.delete(
   requireRole(ROLES.OWNER),
   validate(idSchema),
   permanentRemove,
-);
-router.post(
-  "/:id/undelete",
-  requireAuth,
-  requireRole(ROLES.OWNER),
-  validate(idSchema),
-  undelete,
 );
 
 export default router;

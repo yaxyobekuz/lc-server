@@ -8,7 +8,10 @@ import { normalizePhone } from "../../../utils/phone.js";
 import { hashPassword } from "../../../helpers/password.helper.js";
 import { buildUserProfile } from "../../../helpers/userProfile.helper.js";
 import { toUtcMidnight } from "../../../helpers/attendance.helper.js";
-import { deleteUser, restoreUser } from "../../../helpers/cascadeDelete.helper.js";
+import {
+  findUserBlockingRelations,
+  purgeUserResidualData,
+} from "../../../helpers/userRelations.helper.js";
 import { logAction as logArchiveAction } from "../../archiveReasons/services/archiveReasons.service.js";
 import * as financePaymentService from "../../finance/services/studentPayment.service.js";
 import logger from "../../../config/logger.js";
@@ -280,18 +283,29 @@ export const restore = async (id, { reasonId, by } = {}) => {
   return user;
 };
 
-// Butunlay o'chirish (soft) - foydalanuvchi + bog'liq hamma narsa isDeleted=true (UI'dan yo'qoladi, hisobdan chiqadi)
+// Butunlay (hard) o'chirish - hujjat 100% drop qilinadi, TIKLAB BO'LMAYDI.
+// Faqat foydalanuvchi hech qanday domen/moliya ma'lumotiga bog'liq bo'lmaganda
+// ruxsat etiladi; aks holda hisob-kitoblar buzilmasligi uchun xatolik beriladi.
 export const permanentRemove = async (id, currentUser) => {
   const user = await getById(id);
-  await deleteUser(user, currentUser?._id);
-  return { _id: user._id };
-};
+  if (user.role === ROLES.OWNER) {
+    throw new ApiError(403, "Owner foydalanuvchini o'chirib bo'lmaydi");
+  }
 
-// O'chirilganni qaytarish
-export const restoreDeleted = async (id) => {
-  const user = await getById(id);
-  await restoreUser(user);
-  return user;
+  const blockers = await findUserBlockingRelations(user._id);
+  if (blockers.length > 0) {
+    const detail = blockers.map((b) => `${b.label} (${b.count})`).join(", ");
+    throw new ApiError(
+      409,
+      `Bu foydalanuvchini butunlay o'chirib bo'lmaydi: u quyidagi ma'lumotlarga bog'liq — ${detail}. Avval bu yozuvlarni o'chiring yoki foydalanuvchini arxivlang.`,
+      { code: "USER_HAS_RELATIONS", details: blockers },
+    );
+  }
+
+  // Bog'liqlik yo'q - qoldiq sessiya/audit ma'lumotini tozalab, hujjatni o'chiramiz.
+  await purgeUserResidualData(user._id);
+  await User.deleteOne({ _id: user._id });
+  return { _id: user._id };
 };
 
 export const studentHistory = async (
