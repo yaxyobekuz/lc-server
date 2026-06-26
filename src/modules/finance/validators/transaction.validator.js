@@ -7,7 +7,7 @@ export const createSchema = z.object({
       .number()
       .int()
       .positive("Summa musbat bo'lishi kerak")
-      .max(10_000_000, "Summa 10 000 000 dan oshmasligi kerak"),
+      .max(50_000_000, "Summa 50 000 000 dan oshmasligi kerak"),
     method: z.enum(["cash", "card"], { required_error: "To'lov turini tanlang" }),
     paidAt: z.string().optional(),
     note: z.string().trim().max(300).optional(),

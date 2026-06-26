@@ -25,7 +25,7 @@ const depositTransactionSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-    amount: { type: Number, required: true, min: 1, max: 10_000_000 },
+    amount: { type: Number, required: true, min: 1, max: 50_000_000 },
     // Naqd/karta - topup/withdraw uchun. refund (plan→depozit) uchun ahamiyatsiz.
     method: { type: String, enum: ["cash", "card"], default: "cash" },
     // Amaldan keyingi balans (audit/ko'rsatish uchun snapshot).

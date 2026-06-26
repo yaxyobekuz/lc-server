@@ -26,7 +26,7 @@ const paymentTransactionSchema = new mongoose.Schema(
     year: { type: Number, required: true },
     month: { type: Number, required: true, min: 1, max: 12 },
 
-    amount: { type: Number, required: true, min: 1, max: 10_000_000 },
+    amount: { type: Number, required: true, min: 1, max: 50_000_000 },
     // To'g'ridan-to'g'ri (naqd/karta) yoki o'quvchi depozitidan qoplama.
     // "deposit" → bu PaymentTransaction depozit balansidan yechilgan (depozit
     // qaytarilsa shu yozuv reverse qilinadi). Daromad ikkalasida ham sanaladi.

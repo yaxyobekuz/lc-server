@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const money = z.coerce.number().int().min(1).max(10_000_000);
+const money = z.coerce.number().int().min(1).max(50_000_000);
 const method = z.enum(["cash", "card"]).optional();
 
 export const topupSchema = z.object({
