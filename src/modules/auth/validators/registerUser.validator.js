@@ -10,7 +10,11 @@ export const registerUserSchema = z.object({
       firstName: z.string().min(1, "Ism kerak").max(60),
       lastName: z.string().min(1, "Familiya kerak").max(60),
       username: z.string().min(3, "Username kamida 3 belgidan iborat").max(40),
-      phone: z.string().min(9, "Telefon noto'g'ri").optional(),
+      // Telefon ixtiyoriy: bo'sh string ("") "kiritilmagan" deb qabul qilinadi.
+      phone: z.preprocess(
+        (v) => (v === "" || v == null ? undefined : v),
+        z.string().min(9, "Telefon noto'g'ri").optional(),
+      ),
       password: z.string().min(6, "Parol kamida 6 belgidan iborat"),
       role: z.enum([ROLES.TEACHER, ROLES.STUDENT]),
 
