@@ -24,6 +24,7 @@ import * as financePaymentService from "../../finance/services/studentPayment.se
 import * as teacherSalaryService from "../../teacherSalary/services/teacherSalary.service.js";
 import * as teacherGroupPeriodService from "./teacherGroupPeriod.service.js";
 import { assertPeriodInvariants } from "../../../helpers/period.helper.js";
+import { safeRecomputeStudentCompletion } from "../../../helpers/studentCompletion.helper.js";
 
 export const safeUserProjection = {
   firstName: 1,
@@ -478,6 +479,7 @@ const closeMembershipsOnEnd = async (group, end) => {
         { $set: { leftAt: endExclusive, leftReason: "graduated" } },
       );
       await recalcFinanceOnLeave(group._id, m.student);
+      await safeRecomputeStudentCompletion(m.student);
       closedIds.push(m._id);
     } catch (err) {
       logger.warn({ err }, "Kurs tugashida o'quvchi a'zoligi yopilmadi");
@@ -503,6 +505,7 @@ const reopenMembership = async (membershipId) => {
   m.transferredTo = null;
   await m.save();
   await ensureFinanceForMembershipRange(m.group, m);
+  await safeRecomputeStudentCompletion(m.student);
 };
 
 // Guruh hayot-tsiklini endDate'ga moslaydi (idempotent). Yagona manba: endDate.
@@ -684,6 +687,8 @@ export const addStudent = async (
   // joinedAt oyidan tugash oyigacha barcha oylar uchun qarz yoziladi.
   await ensureFinanceForMembershipRange(groupId, membership);
 
+  await safeRecomputeStudentCompletion(studentId);
+
   return membership;
 };
 
@@ -756,6 +761,8 @@ const applyMembershipDates = async (membership, { joinedAt, leftAt } = {}) => {
     logger.warn({ err }, "A'zolik tahrirlanganda eski to'lovlar qayta hisoblanmadi");
   }
   await ensureFinanceForMembershipRange(groupId, membership);
+
+  await safeRecomputeStudentCompletion(studentId);
 
   return membership;
 };
@@ -858,6 +865,7 @@ export const removeMembershipById = async (groupId, membershipId) => {
   } catch (err) {
     logger.warn({ err }, "O'qish davri o'chirilganda to'lovlar qayta hisoblanmadi");
   }
+  await safeRecomputeStudentCompletion(membership.student);
   return { _id: membership._id };
 };
 
@@ -903,6 +911,8 @@ export const removeStudent = async (groupId, studentId, { reasonId } = {}) => {
 
   // Ketgan o'quvchi endi to'liq oy uchun hisoblanmasin (C1 tuzatish)
   await recalcFinanceOnLeave(groupId, studentId);
+
+  await safeRecomputeStudentCompletion(studentId);
 
   return membership;
 };

@@ -6,6 +6,8 @@ export const archiveActionSchema = z.object({
   body: z
     .object({
       reasonId: z.string().min(1).optional(),
+      // Arxivlash sanasi (ixtiyoriy). Berilmasa - bugun.
+      archiveDate: z.union([z.coerce.date(), z.null()]).optional(),
     })
     .default({}),
 });

@@ -14,6 +14,8 @@ export const updateSchema = z.object({
 
       // Student-only
       enrolledAt: z.union([z.coerce.date(), z.null()]).optional(),
+      // Student-only: o'qishni yakunlagan sana (qo'lda override). null = avtoga qaytarish.
+      completedAt: z.union([z.coerce.date(), z.null()]).optional(),
 
       // Teacher-only
       hiredAt: z.union([z.coerce.date(), z.null()]).optional(),

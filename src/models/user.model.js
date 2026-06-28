@@ -24,6 +24,10 @@ const userSchema = new mongoose.Schema(
 
     // Faqat student rolidagi maydon
     enrolledAt: { type: Date, default: null },
+    // O'qishni yakunlagan sana (avtomatik yoki qo'lda). null = hali yakunlamagan.
+    completedAt: { type: Date, default: null },
+    // completedAt owner tomonidan qo'lda o'rnatilganmi - avto-recompute uni bosib o'tmaydi.
+    completedAtManual: { type: Boolean, default: false },
 
     // Faqat teacher rolidagi maydon
     hiredAt: { type: Date, default: null },

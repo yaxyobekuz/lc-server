@@ -7,7 +7,9 @@ import { ROLES } from "../../../constants/roles.js";
 import { normalizePhone } from "../../../utils/phone.js";
 import { hashPassword } from "../../../helpers/password.helper.js";
 import { buildUserProfile } from "../../../helpers/userProfile.helper.js";
-import { toUtcMidnight } from "../../../helpers/attendance.helper.js";
+import { toUtcMidnight, localTodayMidnight } from "../../../helpers/attendance.helper.js";
+import { assertPeriodInvariants } from "../../../helpers/period.helper.js";
+import { safeRecomputeStudentCompletion } from "../../../helpers/studentCompletion.helper.js";
 import {
   findUserBlockingRelations,
   purgeUserResidualData,
@@ -16,7 +18,7 @@ import { logAction as logArchiveAction } from "../../archiveReasons/services/arc
 import * as financePaymentService from "../../finance/services/studentPayment.service.js";
 import logger from "../../../config/logger.js";
 
-const STUDENT_ONLY_FIELDS = ["enrolledAt"];
+const STUDENT_ONLY_FIELDS = ["enrolledAt", "completedAt"];
 const TEACHER_ONLY_FIELDS = ["hiredAt"];
 
 // Ro'yxatda saralash mumkin bo'lgan maydonlar (xavfsiz oq ro'yxat).
@@ -149,6 +151,7 @@ export const update = async (id, body) => {
   }
 
   // Student-specific
+  let recomputeCompletion = false;
   if (user.role === ROLES.STUDENT) {
     if (body.enrolledAt !== undefined) {
       const d = body.enrolledAt ? new Date(body.enrolledAt) : null;
@@ -156,6 +159,25 @@ export const update = async (id, body) => {
         throw new ApiError(400, "Ro'yxatga olingan sana kelajakda bo'lmasin");
       }
       user.enrolledAt = d;
+    }
+
+    // Yakunlash sanasi: bo'sh → avtoga qaytarish, sana → qo'lda override.
+    if (body.completedAt !== undefined) {
+      const d = body.completedAt ? toUtcMidnight(body.completedAt) : null;
+      if (d) {
+        if (d.getTime() > Date.now()) {
+          throw new ApiError(400, "Yakunlash sanasi kelajakda bo'lmasin");
+        }
+        if (user.enrolledAt && d.getTime() < toUtcMidnight(user.enrolledAt).getTime()) {
+          throw new ApiError(400, "Yakunlash sanasi ro'yxatga olingan sanadan oldin bo'lmasin");
+        }
+        user.completedAt = d;
+        user.completedAtManual = true;
+      } else {
+        user.completedAt = null;
+        user.completedAtManual = false;
+        recomputeCompletion = true;
+      }
     }
   }
 
@@ -171,6 +193,11 @@ export const update = async (id, body) => {
   }
 
   await user.save();
+  // Override bo'shatilgan bo'lsa - avtomatik qiymatni qayta hisoblaymiz.
+  if (recomputeCompletion) {
+    await safeRecomputeStudentCompletion(user._id);
+    return getById(id);
+  }
   return user;
 };
 
@@ -203,18 +230,55 @@ export const setPassword = async (id, newPassword) => {
   return { username: user.username, password: newPassword };
 };
 
-export const softRemove = async (id, { reasonId, by } = {}) => {
+export const softRemove = async (id, { reasonId, archiveDate, by } = {}) => {
   const user = await getById(id);
   if (user.role === ROLES.OWNER) {
     throw new ApiError(403, "Owner foydalanuvchini o'chirib bo'lmaydi");
   }
-  user.isActive = false;
-  user.archivedAt = new Date();
-  await user.save();
 
-  // O'quvchi arxivlansa - faol a'zoliklarni yopamiz va sababni logga yozamiz.
+  // Arxiv sanasi - berilsa o'sha kun (UTC midnight), aks holda mahalliy "bugun".
+  const archivedAt = archiveDate
+    ? toUtcMidnight(archiveDate)
+    : localTodayMidnight();
+  if (archivedAt.getTime() > localTodayMidnight().getTime()) {
+    throw new ApiError(400, "Arxiv sanasi kelajakda bo'lishi mumkin emas");
+  }
+
+  // O'quvchi arxivlansa - faol a'zoliklarni arxiv sanasida yopamiz.
   if (user.role === ROLES.STUDENT) {
-    const today = toUtcMidnight(new Date());
+    if (user.enrolledAt && archivedAt.getTime() < toUtcMidnight(user.enrolledAt).getTime()) {
+      throw new ApiError(400, "Arxiv sanasi ro'yxatga olingan sanadan oldin bo'lishi mumkin emas");
+    }
+
+    const memberships = await GroupMembership.find({
+      student: user._id,
+      leftAt: null,
+      isDeleted: { $ne: true },
+    });
+
+    // Avval arxiv sanasi har bir faol davr bilan to'qnashmasligini tekshiramiz -
+    // hech narsa saqlamasdan (atomik: bittasi xato bo'lsa umuman arxivlanmaydi).
+    for (const m of memberships) {
+      if (archivedAt.getTime() < toUtcMidnight(m.joinedAt).getTime()) {
+        throw new ApiError(
+          400,
+          "Arxiv sanasi o'quvchining guruhga qo'shilgan sanasidan oldin bo'lishi mumkin emas",
+        );
+      }
+      const otherMems = await GroupMembership.find(
+        { group: m.group, student: user._id, _id: { $ne: m._id }, isDeleted: { $ne: true } },
+        { joinedAt: 1, leftAt: 1 },
+      ).lean();
+      assertPeriodInvariants(
+        { startDate: toUtcMidnight(m.joinedAt), endDate: archivedAt },
+        otherMems.map((o) => ({ startDate: o.joinedAt, endDate: o.leftAt })),
+        "date",
+      );
+    }
+
+    user.isActive = false;
+    user.archivedAt = archivedAt;
+    await user.save();
 
     // Chiqish sababini a'zolikka ham snapshot bilan yozamiz, shunda retention
     // ("Chiqib ketish tahlili") hisoboti shu o'quvchini to'g'ri sabab bo'yicha
@@ -229,12 +293,8 @@ export const softRemove = async (id, { reasonId, by } = {}) => {
       }
     }
 
-    const memberships = await GroupMembership.find({
-      student: user._id,
-      leftAt: null,
-    });
     for (const m of memberships) {
-      m.leftAt = today;
+      m.leftAt = archivedAt;
       m.leftReason = "removed";
       m.leftReasonDetail = leftReasonDetail;
       m.leftReasonTitle = leftReasonTitle;
@@ -246,6 +306,8 @@ export const softRemove = async (id, { reasonId, by } = {}) => {
     } catch (err) {
       logger.warn({ err }, "Arxivlashda o'quvchi to'lovlari qayta hisoblanmadi");
     }
+    // Yakunlash sanasi arxiv sanasiga ko'ra avto-belgilanadi (manual override bo'lmasa).
+    await safeRecomputeStudentCompletion(user._id);
     try {
       await logArchiveAction({
         user: user._id,
@@ -256,6 +318,10 @@ export const softRemove = async (id, { reasonId, by } = {}) => {
     } catch {
       // log yozilmasa ham arxivlash buzilmasin
     }
+  } else {
+    user.isActive = false;
+    user.archivedAt = archivedAt;
+    await user.save();
   }
 
   return user;
@@ -268,6 +334,9 @@ export const restore = async (id, { reasonId, by } = {}) => {
   await user.save();
 
   if (user.role === ROLES.STUDENT) {
+    // archivedAt olib tashlangach yakunlash sanasi a'zolik tarixiga ko'ra qayta
+    // hisoblanadi (faol a'zolik yo'q bo'lsa max leftAt'da qoladi).
+    await safeRecomputeStudentCompletion(user._id);
     try {
       await logArchiveAction({
         user: user._id,
