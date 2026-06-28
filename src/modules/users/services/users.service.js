@@ -13,9 +13,13 @@ import { safeRecomputeStudentCompletion } from "../../../helpers/studentCompleti
 import {
   findUserBlockingRelations,
   purgeUserResidualData,
+  hardDeleteStudentData,
 } from "../../../helpers/userRelations.helper.js";
 import { logAction as logArchiveAction } from "../../archiveReasons/services/archiveReasons.service.js";
 import * as financePaymentService from "../../finance/services/studentPayment.service.js";
+import * as teacherSalaryService from "../../teacherSalary/services/teacherSalary.service.js";
+import * as systemNotificationsService from "../../systemNotifications/services/systemNotifications.service.js";
+import { runFinanceTxn } from "../../finance/services/financeTxn.helper.js";
 import logger from "../../../config/logger.js";
 
 const STUDENT_ONLY_FIELDS = ["enrolledAt", "completedAt"];
@@ -352,15 +356,66 @@ export const restore = async (id, { reasonId, by } = {}) => {
   return user;
 };
 
-// Butunlay (hard) o'chirish - hujjat 100% drop qilinadi, TIKLAB BO'LMAYDI.
-// Faqat foydalanuvchi hech qanday domen/moliya ma'lumotiga bog'liq bo'lmaganda
-// ruxsat etiladi; aks holda hisob-kitoblar buzilmasligi uchun xatolik beriladi.
-export const permanentRemove = async (id, currentUser) => {
+// Butunlay (hard) o'chirish - hujjat va bog'liq ma'lumotlar TIKLAB BO'LMAYDIGAN
+// tarzda drop qilinadi.
+//  - O'QUVCHI: barcha yozuvlari (to'lov, depozit, a'zolik, davomat, baho...) bilan
+//    cascade hard-delete qilinadi; tasdiqlash uchun to'liq ism ({confirmName})
+//    talab etiladi; so'ng ta'sirlangan guruh o'qituvchilari maoshi qayta hisoblanadi
+//    (moliyaviy izchillik buzilmasligi uchun).
+//  - TEACHER/boshqa: faqat hech qanday domen/moliya ma'lumotiga bog'liq bo'lmaganda
+//    ruxsat etiladi (mavjud xatti-harakat).
+export const permanentRemove = async (id, currentUser, { confirmName } = {}) => {
   const user = await getById(id);
   if (user.role === ROLES.OWNER) {
     throw new ApiError(403, "Owner foydalanuvchini o'chirib bo'lmaydi");
   }
 
+  if (user.role === ROLES.STUDENT) {
+    const fullName = `${user.firstName} ${user.lastName}`.trim();
+    if (!confirmName || confirmName.trim() !== fullName) {
+      throw new ApiError(
+        400,
+        "Tasdiqlash uchun o'quvchining to'liq ismini to'g'ri kiriting",
+      );
+    }
+
+    // Barcha o'chirishlarni bitta tranzaksiyada (replica set yo'q bo'lsa - sessiyasiz).
+    const groupIds = await runFinanceTxn(async (session) => {
+      const gids = await hardDeleteStudentData(user._id, { session });
+      await purgeUserResidualData(user._id, { session });
+      await User.deleteOne(
+        { _id: user._id },
+        session ? { session } : undefined,
+      );
+      return gids;
+    });
+
+    // Moliyaviy izchillik: ta'sirlangan guruhlar o'qituvchi maoshini BARCHA oylar
+    // uchun qayta hisoblaymiz - groupRevenue endi bu o'quvchini hisoblamaydi.
+    for (const groupId of groupIds) {
+      try {
+        await teacherSalaryService.recalcForGroup(groupId);
+      } catch (err) {
+        logger.warn(
+          { err, groupId },
+          "O'quvchi o'chirilgach o'qituvchi maoshi qayta hisoblanmadi",
+        );
+      }
+    }
+
+    // Owner uchun tizim bildirishnomasi (best-effort).
+    try {
+      await systemNotificationsService.create({
+        message: `${fullName} (o'quvchi) tizimdan butunlay o'chirildi`,
+      });
+    } catch {
+      // bildirishnoma yozilmasa ham o'chirish buzilmasin
+    }
+
+    return { _id: user._id };
+  }
+
+  // Boshqa rollar (teacher/...): bog'liqlik bo'lsa o'chirib bo'lmaydi.
   const blockers = await findUserBlockingRelations(user._id);
   if (blockers.length > 0) {
     const detail = blockers.map((b) => `${b.label} (${b.count})`).join(", ");

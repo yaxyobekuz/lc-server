@@ -28,3 +28,13 @@ export const updateSchema = z.object({
 export const idSchema = z.object({
   params: z.object({ id: z.string().min(1) }),
 });
+
+// Butunlay o'chirish: o'quvchi uchun to'liq ismni tasdiq sifatida yuboriladi.
+export const permanentDeleteSchema = z.object({
+  params: z.object({ id: z.string().min(1) }),
+  body: z
+    .object({
+      confirmName: z.string().optional(),
+    })
+    .default({}),
+});

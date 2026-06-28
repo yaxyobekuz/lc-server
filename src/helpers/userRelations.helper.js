@@ -67,14 +67,53 @@ export const findUserBlockingRelations = async (userId) => {
 
 // Bloklamaydigan qoldiq ma'lumot (sessiya/audit/yetkazish) - hard o'chirishda
 // birga drop qilinadi. Bular hisob-kitobga ta'sir qilmaydi.
-export const purgeUserResidualData = async (userId) => {
+// session berilsa - bitta tranzaksiyada ketma-ket (parallel emas) bajariladi.
+export const purgeUserResidualData = async (userId, { session } = {}) => {
   const id = new mongoose.Types.ObjectId(userId);
-  await Promise.all([
-    RefreshToken.deleteMany({ user: id }),
-    ActivityLog.deleteMany({ user: id }),
-    NotificationRecipient.deleteMany({ user: id }),
-    ArchiveLog.deleteMany({ user: id }),
-    // Telegram ulanishini uzamiz (botUser hujjati telegramId bo'yicha qoladi).
-    BotUser.updateMany({ user: id }, { $set: { user: null, flowState: null } }),
-  ]);
+  const opt = session ? { session } : {};
+  await RefreshToken.deleteMany({ user: id }, opt);
+  await ActivityLog.deleteMany({ user: id }, opt);
+  await NotificationRecipient.deleteMany({ user: id }, opt);
+  await ArchiveLog.deleteMany({ user: id }, opt);
+  // Telegram ulanishini uzamiz (botUser hujjati telegramId bo'yicha qoladi).
+  await BotUser.updateMany(
+    { user: id },
+    { $set: { user: null, flowState: null } },
+    opt,
+  );
+};
+
+// O'quvchiga oid BARCHA yozuvlarni FIZIK o'chiradi (cascade hard-delete). Lead
+// (lid) yozuvi saqlanadi - faqat bog'lanish uziladi (studentId=null), shunda
+// sotuv konversiya statistikasi buzilmaydi. Moliyaviy recalc uchun ta'sirlangan
+// guruh id'lari qaytariladi (o'chirishdan OLDIN yig'iladi). MUHIM: bitta
+// tranzaksiya session'ida operatsiyalar ketma-ket bajariladi (parallel emas).
+export const hardDeleteStudentData = async (studentId, { session } = {}) => {
+  const id = new mongoose.Types.ObjectId(studentId);
+  const opt = session ? { session } : {};
+
+  // Recalc uchun ta'sirlangan guruhlar - to'lov va a'zoliklardan (o'chirishdan oldin).
+  const payGroups = await StudentPayment.distinct("group", {
+    student: id,
+  }).session(session || null);
+  const memGroups = await GroupMembership.distinct("group", {
+    student: id,
+  }).session(session || null);
+  const groupIds = [
+    ...new Set([...payGroups, ...memGroups].filter(Boolean).map(String)),
+  ];
+
+  await GroupMembership.deleteMany({ student: id }, opt);
+  await Attendance.deleteMany({ student: id }, opt);
+  await AttendanceExemption.deleteMany({ student: id }, opt);
+  await Grade.deleteMany({ student: id }, opt);
+  await StudentPayment.deleteMany({ student: id }, opt);
+  await PaymentTransaction.deleteMany({ student: id }, opt);
+  await StudentDeposit.deleteMany({ student: id }, opt);
+  await DepositTransaction.deleteMany({ student: id }, opt);
+  await Discount.deleteMany({ student: id }, opt);
+  await Feedback.deleteMany({ author: id }, opt);
+  await Lead.updateMany({ studentId: id }, { $set: { studentId: null } }, opt);
+
+  return groupIds;
 };
