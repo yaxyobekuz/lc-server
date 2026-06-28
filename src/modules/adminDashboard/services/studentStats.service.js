@@ -16,12 +16,30 @@ const previousMonths = (count) => {
 const monthStart = (year, month) =>
   new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
 
-// Faol o'quvchilar uchun asosiy filtr (yagona joyda).
-const ACTIVE_STUDENT_FILTER = {
+// O'quvchi uchun umumiy bazaviy filtr.
+const BASE_STUDENT_FILTER = {
   role: ROLES.STUDENT,
-  isActive: true,
   isDeleted: { $ne: true },
   enrolledAt: { $ne: null },
+};
+
+// Hozir o'qiyotganlar: faol + hali yakunlamagan (muddat enrolledAt → bugun).
+const ONGOING_FILTER = {
+  ...BASE_STUDENT_FILTER,
+  isActive: true,
+  completedAt: null,
+};
+
+// Yakunlaganlar: yakunlash sanasi belgilangan (muddat enrolledAt → completedAt).
+const FINISHED_FILTER = {
+  ...BASE_STUDENT_FILTER,
+  completedAt: { $ne: null },
+};
+
+// Faol o'quvchilar (trend/so'nggi ro'yxat/jami soni uchun) - eski semantika.
+const ACTIVE_STUDENT_FILTER = {
+  ...BASE_STUDENT_FILTER,
+  isActive: true,
 };
 
 // Ro'yxatga olinish davomiyligiga ko'ra guruhlash chegaralari (oyda).
@@ -66,16 +84,17 @@ const computeEnrollmentTrend = async (months) => {
 };
 
 // Davomiylik (oyda) bo'yicha kohortalar + o'rtacha davomiylik.
-// $dateDiff bilan oylardagi farqni serverda hisoblaymiz (joriy sana - enrolledAt).
-const computeDurationStats = async () => {
+// $dateDiff bilan oylardagi farqni serverda hisoblaymiz. endExpr rejimga qarab:
+// hozir o'qiyotganlar uchun "$$NOW", yakunlaganlar uchun "$completedAt".
+const computeDurationStats = async (filter, endExpr) => {
   const rows = await User.aggregate([
-    { $match: ACTIVE_STUDENT_FILTER },
+    { $match: filter },
     {
       $project: {
         months: {
           $dateDiff: {
             startDate: "$enrolledAt",
-            endDate: "$$NOW",
+            endDate: endExpr,
             unit: "month",
           },
         },
@@ -117,18 +136,19 @@ const computeRecentEnrollments = async (limit) => {
 
 // === Asosiy: getStudentStats ===
 export const getStudentStats = async ({ months = 12, recentLimit = 8 } = {}) => {
-  const [activeCount, durationStats, enrollmentTrend, recentEnrollments] =
+  const [activeCount, ongoing, finished, enrollmentTrend, recentEnrollments] =
     await Promise.all([
       User.countDocuments(ACTIVE_STUDENT_FILTER),
-      computeDurationStats(),
+      computeDurationStats(ONGOING_FILTER, "$$NOW"),
+      computeDurationStats(FINISHED_FILTER, "$completedAt"),
       computeEnrollmentTrend(months),
       computeRecentEnrollments(recentLimit),
     ]);
 
   return {
     activeCount,
-    avgDurationMonths: durationStats.avgDurationMonths,
-    cohorts: durationStats.cohorts,
+    ongoing,
+    finished,
     enrollmentTrend,
     recentEnrollments,
   };
