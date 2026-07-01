@@ -117,3 +117,43 @@ export const hardDeleteStudentData = async (studentId, { session } = {}) => {
 
   return groupIds;
 };
+
+// O'qituvchiga oid BARCHA yozuvlarni FIZIK o'chiradi (cascade hard-delete).
+// Moliyaviy izchillik nozikligi (o'quvchidan FARQLI): o'qituvchi maoshlari o'zaro
+// BOG'LIQ EMAS - har biri o'z davri stavkasi + guruh kirimidan (o'quvchi to'lovlari)
+// hisoblanadi. Shu sababli bu o'qituvchini o'chirish boshqa o'qituvchilar maoshini
+// O'ZGARTIRMAYDI; guruh kirimi ham o'zgarmaydi. Yagona kesh tuzatuvi - Group.teachers[]
+// dan bu o'qituvchini olib tashlash (dangling ref qolmasin). Chiqim hisobotlari
+// allaqachon isDeleted'ni filtrlaydi, shuning uchun maosh to'lovlarini fizik o'chirish
+// ularni o'tgan oylar chiqimidan chiqaradi (yakka to'lovni o'chirish bilan bir xil
+// samara). MUHIM: bitta tranzaksiya session'ida operatsiyalar ketma-ket bajariladi.
+export const hardDeleteTeacherData = async (teacherId, { session } = {}) => {
+  const id = new mongoose.Types.ObjectId(teacherId);
+  const opt = session ? { session } : {};
+
+  // Ta'sirlangan guruhlar (recalc/log uchun) - davrlar va guruh keshidan, o'chirishdan OLDIN.
+  const periodGroups = await TeacherGroupPeriod.distinct("group", {
+    teacher: id,
+  }).session(session || null);
+  const cacheGroups = await Group.distinct("_id", {
+    teachers: id,
+  }).session(session || null);
+  const groupIds = [
+    ...new Set([...periodGroups, ...cacheGroups].filter(Boolean).map(String)),
+  ];
+
+  // Moliya (chiqim tomoni): maosh hisoblari + maosh to'lovlari.
+  await TeacherGroupPeriod.deleteMany({ teacher: id }, opt);
+  await TeacherSalary.deleteMany({ teacher: id }, opt);
+  await SalaryTransaction.deleteMany({ teacher: id }, opt);
+  // HR/domen: davomat, yo'qliklar, o'qituvchi yozgan fikr-mulohazalar.
+  await TeacherAttendance.deleteMany({ teacher: id }, opt);
+  await TeacherAbsence.deleteMany({ teacher: id }, opt);
+  await Feedback.deleteMany({ author: id }, opt);
+
+  // Group.teachers[] keshidan bu o'qituvchini atomik olib tashlaymiz (davrlar
+  // o'chgani uchun kesh aynan qolgan aktiv o'qituvchilarni ko'rsatib turadi).
+  await Group.updateMany({ teachers: id }, { $pull: { teachers: id } }, opt);
+
+  return groupIds;
+};

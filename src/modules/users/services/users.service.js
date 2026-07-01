@@ -14,6 +14,7 @@ import {
   findUserBlockingRelations,
   purgeUserResidualData,
   hardDeleteStudentData,
+  hardDeleteTeacherData,
 } from "../../../helpers/userRelations.helper.js";
 import { logAction as logArchiveAction } from "../../archiveReasons/services/archiveReasons.service.js";
 import * as financePaymentService from "../../finance/services/studentPayment.service.js";
@@ -357,31 +358,36 @@ export const restore = async (id, { reasonId, by } = {}) => {
 };
 
 // Butunlay (hard) o'chirish - hujjat va bog'liq ma'lumotlar TIKLAB BO'LMAYDIGAN
-// tarzda drop qilinadi.
-//  - O'QUVCHI: barcha yozuvlari (to'lov, depozit, a'zolik, davomat, baho...) bilan
-//    cascade hard-delete qilinadi; tasdiqlash uchun to'liq ism ({confirmName})
-//    talab etiladi; so'ng ta'sirlangan guruh o'qituvchilari maoshi qayta hisoblanadi
-//    (moliyaviy izchillik buzilmasligi uchun).
-//  - TEACHER/boshqa: faqat hech qanday domen/moliya ma'lumotiga bog'liq bo'lmaganda
-//    ruxsat etiladi (mavjud xatti-harakat).
+// tarzda drop qilinadi. O'QUVCHI ham, O'QITUVCHI ham cascade hard-delete qilinadi:
+//  - O'quvchi: to'lov, depozit, a'zolik, davomat, baho... o'chadi.
+//  - O'qituvchi: maosh hisoblari, maosh to'lovlari (chiqim), dars davrlari, HR
+//    davomat/yo'qliklar o'chadi; guruhlar va ular ichidagi o'quvchilar saqlanadi
+//    (bu o'qituvchi Group.teachers keshidan olib tashlanadi).
+// Ikkalasi uchun ham tasdiqlash uchun to'liq ism ({confirmName}) talab etiladi;
+// so'ng ta'sirlangan guruh maoshlari qayta hisoblanadi. Owner o'chirilmaydi.
 export const permanentRemove = async (id, currentUser, { confirmName } = {}) => {
   const user = await getById(id);
   if (user.role === ROLES.OWNER) {
     throw new ApiError(403, "Owner foydalanuvchini o'chirib bo'lmaydi");
   }
 
-  if (user.role === ROLES.STUDENT) {
+  const isStudent = user.role === ROLES.STUDENT;
+  const isTeacher = user.role === ROLES.TEACHER;
+
+  if (isStudent || isTeacher) {
     const fullName = `${user.firstName} ${user.lastName}`.trim();
     if (!confirmName || confirmName.trim() !== fullName) {
       throw new ApiError(
         400,
-        "Tasdiqlash uchun o'quvchining to'liq ismini to'g'ri kiriting",
+        "Tasdiqlash uchun foydalanuvchining to'liq ismini to'g'ri kiriting",
       );
     }
 
     // Barcha o'chirishlarni bitta tranzaksiyada (replica set yo'q bo'lsa - sessiyasiz).
     const groupIds = await runFinanceTxn(async (session) => {
-      const gids = await hardDeleteStudentData(user._id, { session });
+      const gids = isStudent
+        ? await hardDeleteStudentData(user._id, { session })
+        : await hardDeleteTeacherData(user._id, { session });
       await purgeUserResidualData(user._id, { session });
       await User.deleteOne(
         { _id: user._id },
@@ -390,23 +396,27 @@ export const permanentRemove = async (id, currentUser, { confirmName } = {}) => 
       return gids;
     });
 
-    // Moliyaviy izchillik: ta'sirlangan guruhlar o'qituvchi maoshini BARCHA oylar
-    // uchun qayta hisoblaymiz - groupRevenue endi bu o'quvchini hisoblamaydi.
+    // Moliyaviy izchillik uchun ta'sirlangan guruh maoshlarini qayta hisoblaymiz:
+    //  - O'quvchi o'chsa: guruh kirimi (groupRevenue) kamayadi → o'qituvchi
+    //    maoshlari qayta hisoblanishi SHART (aks holda maosh bazasi xato qoladi).
+    //  - O'qituvchi o'chsa: qolgan o'qituvchilar maoshi o'zaro bog'liq emas, shu
+    //    sababli bu recalc amalda no-op - lekin xavfsizlik uchun (self-healing) qoldiriladi.
     for (const groupId of groupIds) {
       try {
         await teacherSalaryService.recalcForGroup(groupId);
       } catch (err) {
         logger.warn(
           { err, groupId },
-          "O'quvchi o'chirilgach o'qituvchi maoshi qayta hisoblanmadi",
+          "Foydalanuvchi o'chirilgach guruh maoshlari qayta hisoblanmadi",
         );
       }
     }
 
     // Owner uchun tizim bildirishnomasi (best-effort).
+    const roleLabel = isStudent ? "o'quvchi" : "o'qituvchi";
     try {
       await systemNotificationsService.create({
-        message: `${fullName} (o'quvchi) tizimdan butunlay o'chirildi`,
+        message: `${fullName} (${roleLabel}) tizimdan butunlay o'chirildi`,
       });
     } catch {
       // bildirishnoma yozilmasa ham o'chirish buzilmasin
@@ -415,7 +425,7 @@ export const permanentRemove = async (id, currentUser, { confirmName } = {}) => 
     return { _id: user._id };
   }
 
-  // Boshqa rollar (teacher/...): bog'liqlik bo'lsa o'chirib bo'lmaydi.
+  // Kutilmagan rollar (himoya): bog'liqlik bo'lsa o'chirib bo'lmaydi.
   const blockers = await findUserBlockingRelations(user._id);
   if (blockers.length > 0) {
     const detail = blockers.map((b) => `${b.label} (${b.count})`).join(", ");
