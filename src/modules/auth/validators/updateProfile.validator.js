@@ -9,7 +9,7 @@ export const updateProfileSchema = z.object({
       (v) => (v === "" || v == null ? undefined : v),
       z.string().min(9, "Telefon noto'g'ri").optional(),
     ),
-    birthDate: z.union([z.coerce.date(), z.null()]).optional(),
+    birthDate: z.coerce.date().nullable().optional(),
     gender: z.enum(["male", "female"]).nullable().optional(),
   }),
 });

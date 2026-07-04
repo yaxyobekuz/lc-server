@@ -13,16 +13,16 @@ export const updateSchema = z.object({
       ),
       isActive: z.boolean().optional(),
 
-      birthDate: z.union([z.coerce.date(), z.null()]).optional(),
+      birthDate: z.coerce.date().nullable().optional(),
       gender: z.enum(["male", "female"]).nullable().optional(),
 
       // Student-only
-      enrolledAt: z.union([z.coerce.date(), z.null()]).optional(),
+      enrolledAt: z.coerce.date().nullable().optional(),
       // Student-only: o'qishni yakunlagan sana (qo'lda override). null = avtoga qaytarish.
-      completedAt: z.union([z.coerce.date(), z.null()]).optional(),
+      completedAt: z.coerce.date().nullable().optional(),
 
       // Teacher-only
-      hiredAt: z.union([z.coerce.date(), z.null()]).optional(),
+      hiredAt: z.coerce.date().nullable().optional(),
     })
     .refine((b) => Object.keys(b).length > 0, {
       message: "Hech bo'lmaganda bitta maydon kerak",

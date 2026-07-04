@@ -37,7 +37,7 @@ const leadFields = {
   directionId: z.string().nullable().optional(),
   rejectionReasonId: z.string().nullable().optional(),
   status: statusEnum.optional(),
-  trialDate: z.union([z.coerce.date(), z.null()]).optional(),
+  trialDate: z.coerce.date().nullable().optional(),
   notes: z.string().max(2000).optional(),
 };
 
@@ -61,7 +61,7 @@ export const updateSchema = z.object({
 export const reminderSchema = z.object({
   params: z.object({ id: z.string().min(1) }),
   body: z.object({
-    followUpAt: z.union([z.coerce.date(), z.null()]).optional(),
+    followUpAt: z.coerce.date().nullable().optional(),
     followUpNote: z.string().max(500).optional(),
   }),
 });
@@ -75,6 +75,6 @@ export const convertSchema = z.object({
     phone: z.string().min(9, "Telefon kerak"),
     password: z.string().min(6, "Parol kamida 6 belgidan iborat"),
     gender: z.enum(["male", "female"]).nullable().optional(),
-    enrolledAt: z.union([z.coerce.date(), z.null()]).optional(),
+    enrolledAt: z.coerce.date().nullable().optional(),
   }),
 });
