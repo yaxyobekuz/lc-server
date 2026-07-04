@@ -38,6 +38,14 @@ const intervalsOverlap = (a, b, granularity) => {
   return a.start < b.end && b.start < a.end;
 };
 
+// UTC timestampni "dd.mm.yyyy" ko'rinishida (sanalar UTC yarim tunda saqlanadi).
+const formatDateUTC = (t) => {
+  const d = new Date(t);
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  return `${dd}.${mm}.${d.getUTCFullYear()}`;
+};
+
 // Davrning o'zini tekshiradi (start mavjud, end >= start).
 export const assertValidPeriod = (period, granularity) => {
   const iv = toInterval(period, granularity);
@@ -60,6 +68,16 @@ export const assertPeriodInvariants = (candidate, existing, granularity) => {
     const iv = toInterval(e, granularity);
     if (iv.end === Infinity) openCount += 1;
     if (intervalsOverlap(cand, iv, granularity)) {
+      // "date" (a'zolik/biriktirish) uchun qaysi mavjud davr kesishayotganini
+      // ko'rsatamiz - aks holda foydalanuvchi sababini bilmay chalkashadi.
+      if (granularity === "date") {
+        const end =
+          iv.end === Infinity ? "hozircha ochiq" : formatDateUTC(iv.end);
+        throw new ApiError(
+          400,
+          `Davrlar bir-biri bilan kesishmasligi kerak. Mavjud davr: ${formatDateUTC(iv.start)} – ${end}. Yangi sanani shu davr bilan kesishmaydigan qilib tanlang.`,
+        );
+      }
       throw new ApiError(400, "Davrlar bir-biri bilan kesishmasligi kerak");
     }
   }
