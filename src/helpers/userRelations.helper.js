@@ -15,6 +15,7 @@ import Discount from "../models/discount.model.js";
 import Feedback from "../models/feedback.model.js";
 import Lead from "../models/lead.model.js";
 import Group from "../models/group.model.js";
+import GroupFee from "../models/groupFee.model.js";
 import TeacherAttendance from "../models/teacherAttendance.model.js";
 import TeacherAbsence from "../models/teacherAbsence.model.js";
 import TeacherSalary from "../models/teacherSalary.model.js";
@@ -156,4 +157,37 @@ export const hardDeleteTeacherData = async (teacherId, { session } = {}) => {
   await Group.updateMany({ teachers: id }, { $pull: { teachers: id } }, opt);
 
   return groupIds;
+};
+
+// Guruhga oid BARCHA yozuvlarni FIZIK o'chiradi (cascade hard-delete). Bu funksiya
+// FAQAT domen/moliya yozuvlarini o'chiradi - MUHIM: depozit-qoplama (source:"deposit"
+// PaymentTransaction) o'quvchi depozitiga QAYTARILISHI kerak (aks holda garov buziladi),
+// bu esa chaqiruvchida (groups.service.permanentRemove) o'chirishdan OLDIN bajariladi.
+// Ta'sirlangan o'quvchilar (completedAt qayta hisoblash uchun) o'chirishdan OLDIN
+// yig'iladi. MUHIM: bitta tranzaksiya session'ida operatsiyalar ketma-ket bajariladi.
+export const hardDeleteGroupData = async (groupId, { session } = {}) => {
+  const id = new mongoose.Types.ObjectId(groupId);
+  const opt = session ? { session } : {};
+
+  const studentIds = await GroupMembership.distinct("student", {
+    group: id,
+  }).session(session || null);
+
+  // Domen: a'zoliklar, davomat, baholar, guruh yo'qliklari, fikr-mulohazalar.
+  await GroupMembership.deleteMany({ group: id }, opt);
+  await Attendance.deleteMany({ group: id }, opt);
+  await Grade.deleteMany({ group: id }, opt);
+  await TeacherAbsence.deleteMany({ group: id }, opt);
+  await Feedback.deleteMany({ group: id }, opt);
+  // Moliya (kirim): oylik narx, to'lov hisoblari, to'lov tranzaksiyalari, chegirmalar.
+  await GroupFee.deleteMany({ group: id }, opt);
+  await StudentPayment.deleteMany({ group: id }, opt);
+  await PaymentTransaction.deleteMany({ group: id }, opt);
+  await Discount.deleteMany({ group: id }, opt);
+  // Moliya (chiqim): dars davrlari, maosh hisoblari, maosh to'lovlari.
+  await TeacherGroupPeriod.deleteMany({ group: id }, opt);
+  await TeacherSalary.deleteMany({ group: id }, opt);
+  await SalaryTransaction.deleteMany({ group: id }, opt);
+
+  return studentIds.map(String);
 };

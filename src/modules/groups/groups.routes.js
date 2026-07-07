@@ -11,6 +11,7 @@ import { addStudentSchema } from "./validators/addStudent.validator.js";
 import { updateMembershipSchema } from "./validators/updateMembership.validator.js";
 import {
   idParamSchema,
+  permanentDeleteSchema,
   studentParamsSchema,
   historyQuerySchema,
   membershipListSchema,
@@ -84,7 +85,7 @@ router.delete(
   "/:id/permanent",
   requireAuth,
   requirePermission(PERMISSIONS.GROUPS_DELETE),
-  validate(idParamSchema),
+  validate(permanentDeleteSchema),
   permanentRemove,
 );
 router.post(

@@ -2,6 +2,12 @@ import { z } from "zod";
 import { idParam, idStudentParams, idMembershipParams } from "./common.js";
 
 export const idParamSchema = z.object({ params: idParam });
+
+// Guruhni butunlay o'chirish: tasdiq uchun guruh nomi body'da yuboriladi.
+export const permanentDeleteSchema = z.object({
+  params: idParam,
+  body: z.object({ confirmName: z.string().optional() }).default({}),
+});
 export const studentParamsSchema = z.object({
   params: idStudentParams,
   // Guruhdan chiqarishda ixtiyoriy dinamik sabab (ArchiveReason id).

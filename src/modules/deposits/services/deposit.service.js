@@ -288,7 +288,11 @@ export const reconcileDepositOverpay = async (paymentId) => {
 // qaytadi (transaction.service.remove chaqiradi). Balans += + refund yozuvi.
 // session berilsa, qoplamani bekor qilgan MongoDB tranzaksiyasi ichida atomik
 // bajariladi - aks holda tashqi abort/retry'da depozit ikki marta kreditlanardi.
-export const refundToDeposit = async (studentId, amount, { session } = {}) => {
+export const refundToDeposit = async (
+  studentId,
+  amount,
+  { session, note } = {},
+) => {
   const deposit = await getOrCreate(studentId, { session });
   const upd = await applyBalanceDelta(deposit._id, amount, { session });
   if (!upd) throw new ApiError(500, "Depozitga qaytarib bo'lmadi");
@@ -300,7 +304,7 @@ export const refundToDeposit = async (studentId, amount, { session } = {}) => {
         type: "refund",
         amount,
         balanceAfter: upd.balance,
-        note: "To'lov bekor qilindi - depozitga qaytarildi",
+        note: note || "To'lov bekor qilindi - depozitga qaytarildi",
         paidAt: localTodayMidnight(),
       },
     ],

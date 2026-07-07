@@ -3,7 +3,6 @@ import Group from "../../../models/group.model.js";
 import GroupMembership from "../../../models/groupMembership.model.js";
 import StudentPayment from "../../../models/studentPayment.model.js";
 import PaymentTransaction from "../../../models/paymentTransaction.model.js";
-import SalaryTransaction from "../../../models/salaryTransaction.model.js";
 import User from "../../../models/user.model.js";
 import BotUser from "../../../models/botUser.model.js";
 import ArchiveReason from "../../../models/archiveReason.model.js";
@@ -14,15 +13,16 @@ import {
   localTodayMidnight,
   scheduleActiveOn,
 } from "../../../helpers/attendance.helper.js";
-import {
-  deleteGroup as cascadeDeleteGroup,
-  restoreGroup as cascadeRestoreGroup,
-} from "../../../helpers/cascadeDelete.helper.js";
+import { restoreGroup as cascadeRestoreGroup } from "../../../helpers/cascadeDelete.helper.js";
+import { hardDeleteGroupData } from "../../../helpers/userRelations.helper.js";
+import { runFinanceTxn } from "../../finance/services/financeTxn.helper.js";
 import logger from "../../../config/logger.js";
 import * as financeGroupFeeService from "../../finance/services/groupFee.service.js";
 import * as financePaymentService from "../../finance/services/studentPayment.service.js";
 import * as teacherSalaryService from "../../teacherSalary/services/teacherSalary.service.js";
 import * as teacherGroupPeriodService from "./teacherGroupPeriod.service.js";
+import * as depositService from "../../deposits/services/deposit.service.js";
+import * as systemNotificationsService from "../../systemNotifications/services/systemNotifications.service.js";
 import { assertPeriodInvariants } from "../../../helpers/period.helper.js";
 import { safeRecomputeStudentCompletion } from "../../../helpers/studentCompletion.helper.js";
 
@@ -574,23 +574,64 @@ export const processDueGroupEnds = async () => {
 
 // Butunlay o'chirish (soft cascade) - FAQAT bo'sh guruh (o'quvchisiz, pulsiz).
 // Adashib yaratilgan guruhni tozalash uchun. Tarixi bor guruhni o'chirib bo'lmaydi.
-export const permanentRemove = async (id, currentUser) => {
+// Guruhni BUTUNLAY (hard) o'chirish - guruh va unga bog'liq BARCHA yozuvlar
+// (a'zolik, davomat, baho, to'lov, maosh, narx, dars davri...) fizik o'chadi.
+// Tasdiqlash uchun guruh nomini to'g'ri yozish shart (qaytarib bo'lmaydi).
+// MOLIYAVIY IZCHILLIK: o'quvchi/o'qituvchi hard-delete kabi, kirim/chiqim yozuvlari
+// hisobotlardan toza chiqadi (so'rovda agregatlanadi). YAGONA majburiy tuzatuv -
+// depozitdan qoplangan (source:"deposit") to'lovlarni o'quvchi depozitiga qaytarish
+// (aks holda garov izsiz yo'qolardi). Boshqa guruhlar/o'qituvchilar moliyasi o'zaro
+// bog'liq emas, shu sababli qo'shimcha recalc kerak emas.
+export const permanentRemove = async (id, currentUser, { confirmName } = {}) => {
   const group = await Group.findById(id);
   if (!group) throw new ApiError(404, "Guruh topilmadi");
 
-  const [hasMembers, hasPayments, hasPayouts] = await Promise.all([
-    GroupMembership.exists({ group: id, isDeleted: { $ne: true } }),
-    PaymentTransaction.exists({ group: id, isDeleted: { $ne: true } }),
-    SalaryTransaction.exists({ group: id, isDeleted: { $ne: true } }),
-  ]);
-  if (hasMembers || hasPayments || hasPayouts) {
-    throw new ApiError(
-      400,
-      "Faqat bo'sh guruhni o'chirish mumkin (o'quvchi yoki to'lov mavjud).",
-    );
+  const name = (group.name || "").trim();
+  if (!confirmName || confirmName.trim() !== name) {
+    throw new ApiError(400, "Tasdiqlash uchun guruh nomini to'g'ri kiriting");
   }
 
-  await cascadeDeleteGroup(id, currentUser?._id);
+  const studentIds = await runFinanceTxn(async (session) => {
+    // 1) MAJBURIY: depozitdan qoplangan to'lovlarni o'quvchi depozitiga QAYTARAMIZ.
+    const covers = await PaymentTransaction.find(
+      { group: toObjectId(id), source: "deposit", isDeleted: { $ne: true } },
+      { student: 1, amount: 1 },
+    ).session(session || null);
+    const perStudent = new Map();
+    for (const c of covers) {
+      if (!c.student) continue;
+      const key = String(c.student);
+      perStudent.set(key, (perStudent.get(key) || 0) + (c.amount || 0));
+    }
+    for (const [sid, total] of perStudent) {
+      if (total > 0) {
+        await depositService.refundToDeposit(sid, total, {
+          session,
+          note: "Guruh o'chirildi - depozitga qaytarildi",
+        });
+      }
+    }
+
+    // 2) Guruhga oid BARCHA yozuvlarni fizik o'chiramiz + guruhning o'zini.
+    const sids = await hardDeleteGroupData(id, { session });
+    await Group.deleteOne({ _id: id }, session ? { session } : undefined);
+    return sids;
+  });
+
+  // A'zolik o'chgani uchun o'quvchilar yakunlash sanasini qayta hisoblaymiz (best-effort).
+  for (const sid of studentIds) {
+    await safeRecomputeStudentCompletion(sid);
+  }
+
+  // Owner uchun tizim bildirishnomasi (best-effort).
+  try {
+    await systemNotificationsService.create({
+      message: `${name} guruhi tizimdan butunlay o'chirildi`,
+    });
+  } catch {
+    // bildirishnoma yozilmasa ham o'chirish buzilmasin
+  }
+
   return { _id: id };
 };
 
