@@ -39,6 +39,20 @@ export const registerUserSchema = z.object({
             });
           }
         }
+        // Ishga olingan sana o'qituvchi uchun MAJBURIY (maosh davri shunga bog'liq).
+        if (b.hiredAt == null) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["hiredAt"],
+            message: "Ishga olingan sana majburiy",
+          });
+        } else if (b.hiredAt.getTime() > Date.now()) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["hiredAt"],
+            message: "Ishga olingan sana kelajakda bo'lmasin",
+          });
+        }
       }
       if (b.role === ROLES.STUDENT) {
         for (const f of TEACHER_FIELDS) {

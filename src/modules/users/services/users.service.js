@@ -189,8 +189,12 @@ export const update = async (id, body) => {
   // Teacher-specific
   if (user.role === ROLES.TEACHER) {
     if (body.hiredAt !== undefined) {
-      const d = body.hiredAt ? new Date(body.hiredAt) : null;
-      if (d && d.getTime() > Date.now()) {
+      // Ishga olingan sana o'qituvchi uchun MAJBURIY - bo'shatib bo'lmaydi.
+      if (!body.hiredAt) {
+        throw new ApiError(400, "Ishga olingan sana majburiy");
+      }
+      const d = new Date(body.hiredAt);
+      if (d.getTime() > Date.now()) {
         throw new ApiError(400, "Ishga olingan sana kelajakda bo'lmasin");
       }
       user.hiredAt = d;

@@ -39,7 +39,7 @@ export const computeGroupRevenue = async (group, year, month) => {
 // bir o'qituvchining bir nechta davri (maosh o'zgarishi / qayta kelishi) yig'iladi.
 // { snap, groupRevenue, rate } qaytaradi - rate = aktiv (oxirgi) davr stavkasi.
 const buildSnapshot = async (salary) => {
-  const [groupRevenue, periods] = await Promise.all([
+  const [groupRevenue, periods, group] = await Promise.all([
     computeGroupRevenue(salary.group, salary.year, salary.month),
     teacherGroupPeriodService.periodsForMonth(
       salary.teacher,
@@ -47,6 +47,7 @@ const buildSnapshot = async (salary) => {
       salary.year,
       salary.month,
     ),
+    Group.findById(salary.group, { startDate: 1, endDate: 1 }).lean(),
   ]);
 
   const snap = computePeriodsSnapshot({
@@ -54,6 +55,9 @@ const buildSnapshot = async (salary) => {
     groupRevenue,
     year: salary.year,
     month: salary.month,
+    // Guruh kurs oynasiga qisamiz - guruhdan tashqari kunlarga maosh berilmaydi.
+    groupStartDate: group?.startDate || null,
+    groupEndDate: group?.endDate || null,
   });
 
   const rate = {

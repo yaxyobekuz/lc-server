@@ -3,6 +3,7 @@ import {
   deriveStatus,
   daysInMonth,
 } from "../../finance/services/proration.helper.js";
+import { toUtcMidnight } from "../../../helpers/attendance.helper.js";
 
 export { computeProration, deriveStatus, daysInMonth };
 
@@ -20,11 +21,20 @@ export const computePeriodsSnapshot = ({
   groupRevenue = 0,
   year,
   month,
+  // Guruh kurs oynasi - davr shu chegaraga qisiladi (guruhdan tashqari kunlarga
+  // maosh berilmaydi). group.endDate INKLYUZIV oxirgi kun → EKSKLYUZIV chegara +1 kun.
+  groupStartDate = null,
+  groupEndDate = null,
 }) => {
   const totalDays = daysInMonth(year, month);
   const sorted = [...periods].sort(
     (a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime(),
   );
+
+  const gStart = groupStartDate ? toUtcMidnight(groupStartDate).getTime() : -Infinity;
+  const gEndExcl = groupEndDate
+    ? toUtcMidnight(groupEndDate).getTime() + DAY
+    : Infinity;
 
   let proratedFixed = 0;
   let percentAmount = 0;
@@ -38,11 +48,19 @@ export const computePeriodsSnapshot = ({
   let activePercent = 0;
 
   for (const p of sorted) {
+    // Davrni guruh kurs oynasiga qisamiz (guruhdan oldin/keyingi kunlar sanalmaydi).
+    const pStart = new Date(p.startDate).getTime();
+    const pEndExcl = p.endDate ? new Date(p.endDate).getTime() : Infinity;
+    const effStart = Math.max(pStart, gStart);
+    const effEndExcl = Math.min(pEndExcl, gEndExcl);
+    // Guruh oynasidan butunlay tashqarida - hissa qo'shmaydi.
+    if (effStart >= effEndExcl) continue;
+
     const { factor, payableDays: pd } = computeProration({
       year,
       month,
-      joinedAt: p.startDate || null,
-      leftAt: p.endDate || null,
+      joinedAt: new Date(effStart),
+      leftAt: effEndExcl === Infinity ? null : new Date(effEndExcl),
       leftExclusive: true,
     });
 
@@ -60,11 +78,11 @@ export const computePeriodsSnapshot = ({
     activeFixed = Number(p.fixedAmount) || 0;
     activePercent = Number(p.percentRate) || 0;
 
-    const s = new Date(p.startDate);
+    const s = new Date(effStart);
     if (!minStart || s.getTime() < minStart.getTime()) minStart = s;
-    if (!p.endDate) hasOpen = true;
+    if (effEndExcl === Infinity) hasOpen = true;
     else {
-      const e = new Date(p.endDate);
+      const e = new Date(effEndExcl);
       if (!maxEndExcl || e.getTime() > maxEndExcl.getTime()) maxEndExcl = e;
     }
   }

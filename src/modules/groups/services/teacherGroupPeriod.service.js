@@ -24,6 +24,48 @@ const toObjectId = (id) => {
   return new mongoose.Types.ObjectId(String(id));
 };
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const fmtDate = (d) => {
+  const x = new Date(d);
+  const dd = String(x.getUTCDate()).padStart(2, "0");
+  const mm = String(x.getUTCMonth() + 1).padStart(2, "0");
+  return `${dd}.${mm}.${x.getUTCFullYear()}`;
+};
+
+// Dars davri guruhning kurs oynasidan chiqmasligini ta'minlaydi:
+//  - davr boshlanishi >= guruh boshlanish sanasi (guruhdan oldin dars bo'lmaydi);
+//  - davr boshlanishi <= guruh tugash sanasi (kurs tugagach yangi davr ochilmaydi);
+//  - davr tugashi (EXCLUSIVE) guruh tugash sanasi + 1 kundan oshmaydi
+//    (guruh endDate INKLYUZIV oxirgi kun, davr endDate EKSKLYUZIV).
+// group.startDate/endDate bo'sh bo'lsa (eski guruhlar) - tegishli chegara tekshirilmaydi.
+const assertWithinGroupBounds = (candidate, group) => {
+  if (group?.startDate) {
+    const gStart = toUtcMidnight(group.startDate).getTime();
+    if (candidate.startDate.getTime() < gStart) {
+      throw new ApiError(
+        400,
+        `Dars davri guruh boshlanish sanasidan (${fmtDate(gStart)}) oldin bo'lishi mumkin emas`,
+      );
+    }
+  }
+  if (group?.endDate) {
+    const gEndIncl = toUtcMidnight(group.endDate).getTime();
+    if (candidate.startDate.getTime() > gEndIncl) {
+      throw new ApiError(
+        400,
+        `Dars davri guruh tugash sanasidan (${fmtDate(gEndIncl)}) keyin boshlanishi mumkin emas`,
+      );
+    }
+    if (candidate.endDate && candidate.endDate.getTime() > gEndIncl + DAY_MS) {
+      throw new ApiError(
+        400,
+        `Dars davri guruh tugash sanasidan (${fmtDate(gEndIncl)}) keyin tugashi mumkin emas`,
+      );
+    }
+  }
+};
+
 // --- RESOLVERLAR ---
 
 // Berilgan sanada (default bugun) guruhda dars berayotgan o'qituvchi id'lari.
@@ -185,6 +227,7 @@ export const create = async (
   };
   const existing = await loadScope(teacher, group);
   assertPeriodInvariants(candidate, existing, "date");
+  assertWithinGroupBounds(candidate, grp);
 
   const doc = await TeacherGroupPeriod.create({
     teacher,
@@ -203,7 +246,8 @@ export const create = async (
 export const update = async (id, patch, currentUser) => {
   const doc = await TeacherGroupPeriod.findById(id);
   if (!doc || doc.isDeleted) throw new ApiError(404, "Dars berish davri topilmadi");
-  assertGroupActive(await Group.findById(doc.group));
+  const grp = await Group.findById(doc.group);
+  assertGroupActive(grp);
 
   const next = {
     startDate: patch.startDate ? toUtcMidnight(patch.startDate) : doc.startDate,
@@ -216,6 +260,7 @@ export const update = async (id, patch, currentUser) => {
   };
   const existing = await loadScope(doc.teacher, doc.group, doc._id);
   assertPeriodInvariants(next, existing, "date");
+  assertWithinGroupBounds(next, grp);
 
   const oldStart = doc.startDate;
   const oldEnd = doc.endDate;
