@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { ROLES } from "../../../constants/roles.js";
 
-const STUDENT_FIELDS = ["enrolledAt"];
+// gender faqat o'quvchi uchun - o'qituvchida jins so'ralmaydi.
+const STUDENT_FIELDS = ["enrolledAt", "gender"];
 const TEACHER_FIELDS = ["hiredAt"];
 
 export const registerUserSchema = z.object({

@@ -194,10 +194,11 @@ export const registerUser = async (body) => {
     role: body.role,
     isActive: true,
     birthDate: body.birthDate ? new Date(body.birthDate) : null,
-    gender: body.gender || null,
   };
 
   if (body.role === ROLES.STUDENT) {
+    // Jins faqat o'quvchi uchun saqlanadi (o'qituvchida yo'q).
+    doc.gender = body.gender || null;
     doc.enrolledAt = body.enrolledAt ? new Date(body.enrolledAt) : new Date();
   }
 

@@ -1,5 +1,8 @@
 import Holiday, { HOLIDAY_AUDIENCES } from "../../../models/holiday.model.js";
+import User from "../../../models/user.model.js";
 import ApiError from "../../../utils/ApiError.js";
+import { ROLES } from "../../../constants/roles.js";
+import * as notificationsService from "../../notifications/services/notifications.service.js";
 import {
   dateKeyOf,
   toUtcMidnight,
@@ -172,6 +175,118 @@ export const getTodayHolidays = async (now = new Date()) => {
 
 export const markSent = async (id, now = new Date()) => {
   await Holiday.updateOne({ _id: id }, { $set: { lastSentAt: now } });
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// O'qituvchilar tug'ilgan kunlari (bildirishnomalar/bayramlar bo'limi uchun)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Berilgan yildagi tug'ilgan kun (UTC yarim tun timestamp'i).
+// 29-fevralda tug'ilganlar kabisa bo'lmagan yilda oyning oxirgi kuniga (28-fev)
+// tushiriladi - aks holda Date.UTC keyingi oyga "ko'chib" ketardi.
+const birthdayTsForYear = (year, bMonth, bDay) => {
+  const ts = Date.UTC(year, bMonth, bDay);
+  if (new Date(ts).getUTCMonth() !== bMonth) {
+    return Date.UTC(year, bMonth + 1, 0); // shu oyning oxirgi kuni
+  }
+  return ts;
+};
+
+// O'qituvchilarning yaqinlashib kelayotgan tug'ilgan kunlari - eng yaqinidan
+// eng uzog'igacha tartiblab qaytaradi. "Bugun" Asia/Tashkent mahalliy kuni.
+// Ro'yxat har kuni o'zgaradi (bugungi kunga nisbatan qolgan kunlar hisoblanadi).
+export const listTeacherBirthdays = async (now = new Date()) => {
+  const teachers = await User.find(
+    {
+      role: ROLES.TEACHER,
+      isActive: true,
+      isDeleted: { $ne: true },
+      birthDate: { $ne: null },
+    },
+    { firstName: 1, lastName: 1, phone: 1, username: 1, birthDate: 1 },
+  ).lean();
+
+  const today = localTodayMidnight(now);
+  const todayTs = today.getTime();
+  const ty = today.getUTCFullYear();
+
+  const items = teachers.map((t) => {
+    const b = new Date(t.birthDate);
+    const bMonth = b.getUTCMonth();
+    const bDay = b.getUTCDate();
+
+    let year = ty;
+    let nextTs = birthdayTsForYear(year, bMonth, bDay);
+    if (nextTs < todayTs) {
+      year += 1;
+      nextTs = birthdayTsForYear(year, bMonth, bDay);
+    }
+
+    const daysUntil = Math.round((nextTs - todayTs) / DAY_MS);
+    return {
+      _id: t._id,
+      firstName: t.firstName,
+      lastName: t.lastName,
+      phone: t.phone || null,
+      username: t.username,
+      birthDate: t.birthDate,
+      nextBirthday: new Date(nextTs),
+      daysUntil,
+      isToday: daysUntil === 0,
+      turningAge: year - b.getUTCFullYear(),
+    };
+  });
+
+  items.sort(
+    (a, b) =>
+      a.daysUntil - b.daysUntil ||
+      (a.lastName || "").localeCompare(b.lastName || "") ||
+      (a.firstName || "").localeCompare(b.firstName || ""),
+  );
+  return items;
+};
+
+const DEFAULT_BIRTHDAY_TITLE = "Tug'ilgan kun muborak!";
+
+const defaultBirthdayBody = (name) =>
+  `Hurmatli ${name}, tug'ilgan kuningiz muborak bo'lsin! ` +
+  `Sizga mustahkam salomatlik, tinimsiz muvaffaqiyat va baxt tilaymiz. ` +
+  `Bayyina jamoasi.`;
+
+// Bitta o'qituvchiga tabrik (tug'ilgan kun) bildirishnomasini yuboradi.
+// channels: ["telegram"] (tg orqali), ["inapp"] (platforma) yoki ikkalasi.
+export const congratulateTeacher = async (
+  teacherId,
+  { channels, message, title },
+  currentUser,
+) => {
+  const teacher = await User.findOne({
+    _id: teacherId,
+    role: ROLES.TEACHER,
+    isActive: true,
+    isDeleted: { $ne: true },
+  });
+  if (!teacher) throw new ApiError(404, "O'qituvchi topilmadi");
+
+  const finalChannels = channels?.length
+    ? [...new Set(channels)]
+    : ["inapp", "telegram"];
+  const displayName = teacher.firstName || `${teacher.firstName} ${teacher.lastName}`.trim();
+  const body = message?.trim() || defaultBirthdayBody(displayName);
+
+  return notificationsService.send(
+    {
+      title: title?.trim() || DEFAULT_BIRTHDAY_TITLE,
+      body,
+      category: "holiday",
+      channels: finalChannels,
+      audience: { type: "individual", userIds: [String(teacherId)] },
+      isAuto: false,
+    },
+    currentUser,
+  );
 };
 
 export const isAlreadySentToday = (holiday, now = new Date()) =>
