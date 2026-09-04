@@ -92,7 +92,8 @@ export const topup = async (studentId, { amount, method, paidAt, note }, current
   });
 
   // Pul qo'yilishi bilan mavjud qarzlarni darhol qoplaymiz (eng eskisidan).
-  await autoApply(studentId);
+  // Yangi pul kelishi - ataylab qilingan amal, shu sababli to'xtatish bayrog'i yechiladi.
+  await autoApply(studentId, currentUser, { force: true });
   return getOrCreate(studentId);
 };
 
@@ -131,7 +132,8 @@ export const withdraw = async (studentId, { amount, method, paidAt, note }, curr
 // balans -= + PaymentTransaction(source:"deposit", DAROMAD). Haqiqatda qo'llangan
 // summani qaytaradi (cap tufayli kamroq bo'lishi mumkin).
 const applyToPayment = async (deposit, payment, amount, currentUser) => {
-  const remaining = Math.max(0, (payment.expectedAmount || 0) - (payment.paidAmount || 0));
+  // Hisobdan chiqarilgan (umidsiz) ulush qoplanmaydi - garov unga sarflanmaydi.
+  const remaining = studentPaymentService.remainingOf(payment);
   const amt = Math.min(amount, remaining);
   if (amt <= 0) return 0;
 
@@ -172,15 +174,29 @@ const applyToPayment = async (deposit, payment, amount, currentUser) => {
 };
 
 // O'quvchi depozitidan barcha qoldiq planlarni ENG ESKISIDAN boshlab qoplaydi.
-export const autoApply = async (studentId, currentUser) => {
-  const deposit = await getOrCreate(studentId);
-  if ((deposit.balance || 0) <= 0) return { applied: 0 };
+// Balansi yo'q (yoki depozit hujjati umuman yo'q) bo'lsa - darhol chiqadi va bo'sh
+// StudentDeposit hujjati YARATMAYDI: bu funksiya endi ommaviy avto-qoplash
+// yo'llaridan (guruh tarifi, chegirma, a'zolik) ham chaqiriladi.
+//
+// force=true - ATAYLAB qilingan amal (to'ldirish yoki "Qarzga qoplash" tugmasi):
+// autoApplyHold bayrog'ini e'tiborsiz qoldiradi va uni yechadi.
+export const autoApply = async (studentId, currentUser, { force = false } = {}) => {
+  const deposit = await StudentDeposit.findOne({ student: toObjectId(studentId) });
+  if (!deposit || (deposit.balance || 0) <= 0) return { applied: 0 };
 
-  // Qoldiq (expected>paid) planlar, eng eski oy avval.
+  if (deposit.autoApplyHold) {
+    if (!force) return { applied: 0, held: true };
+    await StudentDeposit.updateOne(
+      { _id: deposit._id },
+      { $set: { autoApplyHold: false } },
+    );
+  }
+
+  // Undiriladigan qoldig'i bor planlar, eng eski oy avval.
   const plans = await StudentPayment.find({
     student: deposit.student,
     isDeleted: { $ne: true },
-    $expr: { $gt: ["$expectedAmount", "$paidAmount"] },
+    ...studentPaymentService.OUTSTANDING_FILTER,
   }).sort({ year: 1, month: 1, createdAt: 1 });
 
   let applied = 0;
@@ -199,7 +215,7 @@ export const autoApplyForMonth = async (year, month) => {
     year,
     month,
     isDeleted: { $ne: true },
-    $expr: { $gt: ["$expectedAmount", "$paidAmount"] },
+    ...studentPaymentService.OUTSTANDING_FILTER,
   });
   let applied = 0;
   for (const sid of studentIds) {
@@ -211,6 +227,66 @@ export const autoApplyForMonth = async (year, month) => {
     }
   }
   return { students: studentIds.length, applied };
+};
+
+// --- AVTO-QOPLASH ILGAKLARI (qarz paydo bo'lgan/oshgan joylardan chaqiriladi) ---
+//
+// Qarz YARATILADIGAN yoki OSHADIGAN har bir yo'l shu ilgaklardan birini chaqiradi:
+// guruh tarifi o'zgarishi, chegirma berilishi/olib tashlanishi, a'zolik oylarini
+// yaratish/qayta hisoblash, arxivlash, to'lovni bekor qilish. Shundagina depozitdagi
+// pul "Qarzga qoplash" tugmasini kutmasdan darhol qarzga tushadi.
+//
+// BARCHASI best-effort: qoplama xatosi asosiy amalni (tarifni saqlash, o'quvchini
+// guruhga qo'shish) bekor qilib yubormasligi kerak - xato yutiladi va log'ga yoziladi.
+
+export const safeAutoApply = async (studentId, currentUser, options) => {
+  try {
+    return await autoApply(studentId, currentUser, options);
+  } catch (err) {
+    logger.warn({ err, student: studentId }, "Deposit auto-apply failed");
+    return { applied: 0 };
+  }
+};
+
+// Bir nechta o'quvchi uchun. Avval BITTA so'rov bilan balansi bor o'quvchilarni
+// ajratamiz - aks holda 30 kishilik guruhda 30 ta keraksiz depozit so'rovi ketardi.
+export const safeAutoApplyMany = async (studentIds = [], currentUser) => {
+  const ids = [...new Set((studentIds || []).filter(Boolean).map(String))];
+  if (!ids.length) return { students: 0, applied: 0 };
+
+  const funded = await StudentDeposit.find(
+    { student: { $in: ids.map(toObjectId) }, balance: { $gt: 0 } },
+    { student: 1 },
+  ).lean();
+  if (!funded.length) return { students: 0, applied: 0 };
+
+  let applied = 0;
+  for (const row of funded) {
+    const r = await safeAutoApply(row.student, currentUser);
+    applied += r.applied || 0;
+  }
+  return { students: funded.length, applied };
+};
+
+// Guruh tarifi o'zgarganda: shu guruh+oyda plani bor barcha o'quvchilar.
+export const safeAutoApplyForGroupMonth = async (group, year, month, currentUser) => {
+  const studentIds = await StudentPayment.distinct("student", { group, year, month });
+  return safeAutoApplyMany(studentIds, currentUser);
+};
+
+// Kunlik xavfsizlik to'ri: balansi bor BARCHA o'quvchilarni qarziga qoplaydi.
+// Yuqoridagi ilgaklardan biri o'tkazib yuborilgan taqdirda ham pul bir kundan
+// ortiq qarz yonida bo'sh turmaydi.
+export const autoApplySweep = async () => {
+  const funded = await StudentDeposit.find({ balance: { $gt: 0 } }, { student: 1 }).lean();
+  let applied = 0;
+  let touched = 0;
+  for (const row of funded) {
+    const r = await safeAutoApply(row.student);
+    if (r.applied > 0) touched += 1;
+    applied += r.applied || 0;
+  }
+  return { scanned: funded.length, students: touched, applied };
 };
 
 // Bir refund yozuvi: plan.paidAmount -= take, balans += take, refund ledger yozuvi.
@@ -291,11 +367,20 @@ export const reconcileDepositOverpay = async (paymentId) => {
 export const refundToDeposit = async (
   studentId,
   amount,
-  { session, note } = {},
+  { session, note, hold = false } = {},
 ) => {
   const deposit = await getOrCreate(studentId, { session });
   const upd = await applyBalanceDelta(deposit._id, amount, { session });
   if (!upd) throw new ApiError(500, "Depozitga qaytarib bo'lmadi");
+  // hold=true - qoplama ATAYLAB bekor qilindi: qaytgan pul avto-qoplash orqali
+  // (jumladan kunlik job'da) o'sha qarzga qayta tushib ketmasligi kerak.
+  if (hold) {
+    await StudentDeposit.updateOne(
+      { _id: deposit._id },
+      { $set: { autoApplyHold: true } },
+      { session: session || undefined },
+    );
+  }
   await DepositTransaction.create(
     [
       {
@@ -336,6 +421,12 @@ export const removeDepositTxn = async (id, currentUser) => {
   txn.deletedAt = new Date();
   txn.deletedBy = currentUser?._id || null;
   await txn.save();
+
+  // Yechib olish bekor qilinsa balans oshadi - ochiq qarz bo'lsa darhol qoplaymiz.
+  // Bu ham ataylab qilingan amal, shuning uchun force.
+  if (txn.type === "withdraw") {
+    await safeAutoApply(txn.student, currentUser, { force: true });
+  }
   return { _id: txn._id };
 };
 
