@@ -26,6 +26,9 @@ import defineGenerateMonthlySalary, {
 import defineAutoEndGroups, {
   JOB_NAME as AUTO_END_GROUPS_JOB,
 } from "./autoEndGroups.job.js";
+import defineDepositAutoApply, {
+  JOB_NAME as DEPOSIT_AUTO_APPLY_JOB,
+} from "./depositAutoApply.job.js";
 import { catchUpMonthlyGeneration } from "./catchUpMonthly.js";
 import * as groupsService from "../modules/groups/services/groups.service.js";
 
@@ -47,6 +50,7 @@ export const startJobs = async () => {
   defineGenerateMonthlyFinance(agenda);
   defineGenerateMonthlySalary(agenda);
   defineAutoEndGroups(agenda);
+  defineDepositAutoApply(agenda);
 
   await agenda.start();
 
@@ -71,6 +75,9 @@ export const startJobs = async () => {
 
   // Tugash sanasi yetgan kurslarni avto-arxivlash - har kuni 00:10 da
   await every("10 0 * * *", AUTO_END_GROUPS_JOB);
+
+  // Depozitdan qarzga avto-qoplash (xavfsizlik to'ri) - har kuni 00:20 da
+  await every("20 0 * * *", DEPOSIT_AUTO_APPLY_JOB);
 
   logger.info({ timezone: TZ }, "Agenda ishga tushirildi");
 
