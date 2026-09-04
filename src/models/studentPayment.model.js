@@ -40,6 +40,22 @@ const studentPaymentSchema = new mongoose.Schema(
       index: true,
     },
     recalculatedAt: { type: Date, default: null },
+
+    // Undirib bo'lmaydigan qarz hisobdan chiqarilgan summa (umidsiz qarz).
+    // expectedAmount/paidAmount TEGILMAYDI - "qancha hisoblangan" va "qancha
+    // yig'ilgan" haqiqati saqlanadi. Undiriladigan qoldiq esa:
+    //   expectedAmount - paidAmount - writtenOffAmount
+    // Shu sababli hisobdan chiqarilgan oy qarzdorlar ro'yxatidan ham,
+    // depozitdan avto-qoplashdan ham chiqib ketadi, lekin hisobotlarda
+    // alohida "yo'qotilgan" ko'rsatkich bo'lib qoladi.
+    writtenOffAmount: { type: Number, default: 0, min: 0 },
+    writtenOffAt: { type: Date, default: null },
+    writtenOffBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    writeOffReason: { type: String, trim: true, default: "" },
   },
   { timestamps: true },
 );
@@ -51,6 +67,8 @@ studentPaymentSchema.index(
 );
 // Hisobotlar uchun
 studentPaymentSchema.index({ year: 1, month: 1, status: 1 });
+// Qarzdorlar agregatsiyasi: hisobdan chiqarilgan oylarni tez ajratish uchun.
+studentPaymentSchema.index({ writtenOffAt: 1 });
 
 const StudentPayment = mongoose.model("StudentPayment", studentPaymentSchema);
 

@@ -13,6 +13,15 @@ const studentDepositSchema = new mongoose.Schema(
       index: true,
     },
     balance: { type: Number, default: 0, min: 0 },
+
+    // Depozitdan qoplash BEKOR qilinganda (PaymentTransaction source:"deposit"
+    // o'chirilganda) pul depozitga qaytadi va uni DARHOL o'sha qarzga qayta
+    // qoplash bekor qilishning ma'nosini yo'qotardi. Shu sababli avto-qoplash
+    // shu o'quvchi uchun to'xtatib turiladi. Bayroq DOIMIY - aks holda kunlik
+    // avto-qoplash job'i tunda ownerning qarorini jimgina bekor qilardi.
+    // Keyingi ataylab qilingan amal (to'ldirish, yechish yoki "Qarzga qoplash"
+    // tugmasi) uni yechadi.
+    autoApplyHold: { type: Boolean, default: false },
   },
   { timestamps: true },
 );
