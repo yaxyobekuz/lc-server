@@ -19,6 +19,8 @@ import {
 import { logAction as logArchiveAction } from "../../archiveReasons/services/archiveReasons.service.js";
 import * as financePaymentService from "../../finance/services/studentPayment.service.js";
 import * as teacherSalaryService from "../../teacherSalary/services/teacherSalary.service.js";
+import * as depositService from "../../deposits/services/deposit.service.js";
+import * as debtService from "../../finance/services/debt.service.js";
 import * as systemNotificationsService from "../../systemNotifications/services/systemNotifications.service.js";
 import { runFinanceTxn } from "../../finance/services/financeTxn.helper.js";
 import logger from "../../../config/logger.js";
@@ -239,7 +241,13 @@ export const setPassword = async (id, newPassword) => {
   return { username: user.username, password: newPassword };
 };
 
-export const softRemove = async (id, { reasonId, archiveDate, by } = {}) => {
+// Summani xabar matniga chiroyli qo'yish uchun ("450 000 so'm").
+const formatSum = (n) => Number(n || 0).toLocaleString("ru-RU").replace(/ /g, " ");
+
+export const softRemove = async (
+  id,
+  { reasonId, archiveDate, confirmDebt, by } = {},
+) => {
   const user = await getById(id);
   if (user.role === ROLES.OWNER) {
     throw new ApiError(403, "Owner foydalanuvchini o'chirib bo'lmaydi");
@@ -285,6 +293,35 @@ export const softRemove = async (id, { reasonId, archiveDate, by } = {}) => {
       );
     }
 
+    // QARZ QULFI. O'quvchi qarzini to'lamay "yo'q bo'lib ketishi" aynan shu
+    // nuqtada sodir bo'lardi: arxivlash qarzni umuman tekshirmasdi. Endi avval
+    // depozitdagi garov qarzga qoplanadi, keyin qolgan qarz tekshiriladi -
+    // qarz qolsa owner ataylab tasdiqlashi (confirmDebt) yoki qarzni hisobdan
+    // chiqarishi kerak. Tekshiruv HECH NARSA o'zgartirilmasdan OLDIN bo'ladi,
+    // shuning uchun rad etilganda o'quvchi yarim-arxivlangan holatda qolmaydi.
+    await depositService.safeAutoApply(user._id, by);
+    if (!confirmDebt) {
+      const settings = await debtService.getSettings();
+      if (settings.archiveDebtLock) {
+        // Arxivlashda joriy oy leftAt bo'yicha qayta proratsiya qilinadi, ya'ni
+        // kutilayotgan summa kamayadi. Shuning uchun HOZIRGI qoldiqni emas,
+        // arxivdan KEYIN qoladigan qarzni tekshiramiz - aks holda oy boshida
+        // chiqayotgan o'quvchi uchun aslida bo'lmaydigan to'liq oylik qarz
+        // ko'rsatilib, owner keraksiz tasdiqlashga majbur bo'lardi.
+        const debt = await financePaymentService.projectedRemainingIfLeftAt(
+          user._id,
+          archivedAt,
+        );
+        if (debt > 0) {
+          throw new ApiError(
+            409,
+            `O'quvchida ${formatSum(debt)} so'm to'lanmagan qarz bor. Arxivlash uchun tasdiqlang yoki qarzni hisobdan chiqaring.`,
+            { code: "STUDENT_HAS_DEBT", details: { debt } },
+          );
+        }
+      }
+    }
+
     user.isActive = false;
     user.archivedAt = archivedAt;
     await user.save();
@@ -312,6 +349,9 @@ export const softRemove = async (id, { reasonId, archiveDate, by } = {}) => {
     // Yopilgan a'zoliklar bo'yicha to'lovlar leftAt bilan qayta proratsiya bo'lsin (C1)
     try {
       await financePaymentService.recalcForStudent(user._id);
+      // Ketayotgan o'quvchining garovi avval qolgan qarzini yopsin - aks holda
+      // depozitdagi pul arxivda "osilib" qoladi, qarz esa undirilmagan bo'lib turadi.
+      await depositService.safeAutoApply(user._id, by);
     } catch (err) {
       logger.warn({ err }, "Arxivlashda o'quvchi to'lovlari qayta hisoblanmadi");
     }
