@@ -7,6 +7,7 @@ import logger from "../../../config/logger.js";
 import { localTodayMidnight } from "../../../helpers/attendance.helper.js";
 import * as studentPaymentService from "./studentPayment.service.js";
 import * as teacherSalaryService from "../../teacherSalary/services/teacherSalary.service.js";
+import * as depositService from "../../deposits/services/deposit.service.js";
 
 const toObjectId = (id) => {
   if (id instanceof mongoose.Types.ObjectId) return id;
@@ -143,6 +144,9 @@ export const upsert = async ({ groupId, year, month, amount }, currentUser) => {
 
   // Avval o'quvchilar (billed manbai), keyin o'qituvchi foiz maoshi
   await studentPaymentService.recalcForGroupMonth(groupId, year, month);
+  // Tarif oshsa shu guruhning HAR BIR o'quvchisida qarz paydo bo'ladi -
+  // depoziti borlarga darhol qoplaymiz (qo'lda tugma kutilmaydi).
+  await depositService.safeAutoApplyForGroupMonth(groupId, year, month, currentUser);
   try {
     await teacherSalaryService.recalcForGroupMonth(groupId, year, month);
   } catch (err) {

@@ -1,6 +1,8 @@
 import { Router } from "express";
 import requireAuth from "../../middleware/auth.js";
 import requirePermission from "../../middleware/requirePermission.js";
+import requireRole from "../../middleware/requireRole.js";
+import { ROLES } from "../../constants/roles.js";
 import validate from "../../middleware/validate.js";
 import { PERMISSIONS } from "../../constants/permissions.js";
 
@@ -20,6 +22,12 @@ import {
   idParamSchema as transactionIdSchema,
 } from "./validators/transaction.validator.js";
 import {
+  debtorsListSchema,
+  studentIdParamSchema as debtStudentIdSchema,
+  writeOffSchema,
+  settingsUpdateSchema as debtSettingsUpdateSchema,
+} from "./validators/debt.validator.js";
+import {
   listSchema as discountListSchema,
   createSchema as discountCreateSchema,
   updateSchema as discountUpdateSchema,
@@ -38,6 +46,11 @@ import discountList from "./handlers/discount.list.handler.js";
 import discountCreate from "./handlers/discount.create.handler.js";
 import discountUpdate from "./handlers/discount.update.handler.js";
 import discountRemove from "./handlers/discount.remove.handler.js";
+import debtorsList from "./handlers/debtors.list.handler.js";
+import debtorsWriteOff from "./handlers/debtors.writeOff.handler.js";
+import debtorsWriteOffCancel from "./handlers/debtors.writeOffCancel.handler.js";
+import debtSettingsGet from "./handlers/debt.settings.get.handler.js";
+import debtSettingsUpdate from "./handlers/debt.settings.update.handler.js";
 
 const router = Router();
 
@@ -93,6 +106,47 @@ router.get(
   requirePermission(PERMISSIONS.FINANCE_READ),
   validate(paymentIdSchema),
   paymentGetById,
+);
+
+// ── Qarz nazorati (qarzdorlar + sozlamalar) ──
+// "/debt/settings" "/debtors" dan alohida prefiksda - yo'l to'qnashuvi yo'q.
+router.get(
+  "/debt/settings",
+  requireAuth,
+  requirePermission(PERMISSIONS.FINANCE_READ),
+  debtSettingsGet,
+);
+router.patch(
+  "/debt/settings",
+  requireAuth,
+  requireRole(ROLES.OWNER),
+  requirePermission(PERMISSIONS.FINANCE_MANAGE),
+  validate(debtSettingsUpdateSchema),
+  debtSettingsUpdate,
+);
+router.get(
+  "/debtors",
+  requireAuth,
+  requirePermission(PERMISSIONS.FINANCE_READ),
+  validate(debtorsListSchema),
+  debtorsList,
+);
+// Qarzni hisobdan chiqarish (umidsiz qarz) - pulga teng qaror, faqat owner.
+router.post(
+  "/debtors/:studentId/write-off",
+  requireAuth,
+  requireRole(ROLES.OWNER),
+  requirePermission(PERMISSIONS.FINANCE_MANAGE),
+  validate(writeOffSchema),
+  debtorsWriteOff,
+);
+router.delete(
+  "/debtors/:studentId/write-off",
+  requireAuth,
+  requireRole(ROLES.OWNER),
+  requirePermission(PERMISSIONS.FINANCE_MANAGE),
+  validate(debtStudentIdSchema),
+  debtorsWriteOffCancel,
 );
 
 // ── Kirim (tranzaksiyalar) ──

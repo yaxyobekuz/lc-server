@@ -28,7 +28,7 @@ const buildAllocationOrder = async (selected) => {
     group: selected.group,
     _id: { $ne: selected._id },
     isDeleted: { $ne: true },
-    $expr: { $gt: ["$expectedAmount", "$paidAmount"] },
+    ...studentPaymentService.OUTSTANDING_FILTER,
   }).sort({ year: 1, month: 1, createdAt: 1 });
   return [selected, ...others];
 };
@@ -80,7 +80,7 @@ export const create = async (
 
   for (const plan of order) {
     if (left <= 0) break;
-    const remaining = Math.max(0, (plan.expectedAmount || 0) - (plan.paidAmount || 0));
+    const remaining = studentPaymentService.remainingOf(plan);
     const take = Math.min(left, remaining);
     if (take <= 0) continue;
 
@@ -147,7 +147,7 @@ export const create = async (
 // bo'lib (isDeleted=true), lekin paidAmount qaytarilmay qolardi - kassadan pul
 // chiqqani holda yozuv "to'langan" ko'rinib, audit izsiz pul yo'qolardi (#1A, #1B).
 export const remove = async (id, currentUser) => {
-  return runFinanceTxn(async (session) => {
+  const { student, hadDepositSource, ...result } = await runFinanceTxn(async (session) => {
     const trx = await PaymentTransaction.findOne({
       _id: id,
       isDeleted: { $ne: true },
@@ -162,6 +162,7 @@ export const remove = async (id, currentUser) => {
       : [trx];
 
     const removed = [];
+    let depositSourced = false;
     for (const t of batch) {
       t.isDeleted = true;
       t.deletedAt = new Date();
@@ -171,10 +172,24 @@ export const remove = async (id, currentUser) => {
       // Depozitdan qoplangan to'lov bekor qilinsa - pul DEPOZITGA qaytadi (naqdga emas).
       // Refund void bilan bir xil tranzaksiyada - tashqi abort'da double-credit bo'lmasin.
       if (t.source === "deposit") {
-        await depositService.refundToDeposit(t.student, t.amount, { session });
+        depositSourced = true;
+        // hold: qaytgan pul avto-qoplash (jumladan kunlik job) orqali darhol
+        // o'sha qarzga qayta tushib ketmasin - bekor qilish ma'noli qolsin.
+        await depositService.refundToDeposit(t.student, t.amount, {
+          session,
+          hold: true,
+        });
       }
       removed.push(t._id);
     }
-    return { _id: id, removed };
+    return { _id: id, removed, student: trx.student, hadDepositSource: depositSourced };
   });
+
+  // Bekor qilingach qarz qayta ochiladi - depozitda pul bo'lsa uni darhol qoplaymiz.
+  // DEPOZIT-qoplama bekor qilinganda esa ATAYLAB qoplamaymiz: pul depozitga qaytib
+  // shu zahoti yana o'sha qarzga tushib ketsa, bekor qilishning ma'nosi qolmasdi.
+  if (!hadDepositSource && student) {
+    await depositService.safeAutoApply(student, currentUser);
+  }
+  return result;
 };

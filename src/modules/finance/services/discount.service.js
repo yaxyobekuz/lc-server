@@ -8,6 +8,11 @@ import { assertGroupActive } from "../../../helpers/group.helper.js";
 import { ROLES } from "../../../constants/roles.js";
 import * as studentPaymentService from "./studentPayment.service.js";
 import * as teacherSalaryService from "../../teacherSalary/services/teacherSalary.service.js";
+import * as depositService from "../../deposits/services/deposit.service.js";
+
+// Chegirma kamaysa/olib tashlansa expected oshadi - ya'ni qarz paydo bo'ladi.
+// Shu sababli har bir qayta hisoblashdan keyin depozitdan avto-qoplaymiz.
+const autoApplyAfterRecalc = (studentId) => depositService.safeAutoApply(studentId);
 
 // Chegirma o'quvchi expected'ini → guruh billed tushumini → o'qituvchi foiz maoshini o'zgartiradi.
 const recalcTeacherForDiscount = async (doc) => {
@@ -102,6 +107,7 @@ export const create = async (body, currentUser) => {
     year: doc.year,
     month: doc.month,
   });
+  await autoApplyAfterRecalc(doc.student);
   await recalcTeacherForDiscount(doc);
   return doc;
 };
@@ -142,6 +148,7 @@ export const update = async (id, body) => {
     year: doc.year,
     month: doc.month,
   });
+  await autoApplyAfterRecalc(doc.student);
   await recalcTeacherForDiscount(doc);
   return doc;
 };
@@ -155,6 +162,7 @@ export const remove = async (id, currentUser) => {
     year: doc.year,
     month: doc.month,
   });
+  await autoApplyAfterRecalc(doc.student);
   await recalcTeacherForDiscount(doc);
   return { _id: id };
 };

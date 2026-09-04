@@ -23,6 +23,53 @@ const toObjectId = (id) => {
   return new mongoose.Types.ObjectId(String(id));
 };
 
+// --- UNDIRILADIGAN QOLDIQ (yagona manba) ---
+//
+// Qoldiq = hisoblangan - to'langan - hisobdan chiqarilgan (umidsiz qarz).
+// Qarzdorlik nazarda tutilgan HAR BIR joy (qarzdorlar ro'yxati, depozitdan
+// avto-qoplash, to'lovni taqsimlash, moliya hisoboti) shu ifodadan foydalanadi -
+// aks holda hisobdan chiqarilgan qarz bir joyda yo'qolib, boshqasida qolib ketardi.
+
+// Agregatsiya bosqichlari uchun ifoda (manfiy bo'lmaydi).
+export const remainingExpr = {
+  $max: [
+    {
+      $subtract: [
+        { $ifNull: ["$expectedAmount", 0] },
+        {
+          $add: [
+            { $ifNull: ["$paidAmount", 0] },
+            { $ifNull: ["$writtenOffAmount", 0] },
+          ],
+        },
+      ],
+    },
+    0,
+  ],
+};
+
+// find() filtri uchun: qoldig'i bor yozuvlar.
+export const OUTSTANDING_FILTER = {
+  $expr: {
+    $gt: [
+      { $ifNull: ["$expectedAmount", 0] },
+      {
+        $add: [
+          { $ifNull: ["$paidAmount", 0] },
+          { $ifNull: ["$writtenOffAmount", 0] },
+        ],
+      },
+    ],
+  },
+};
+
+// Bitta hujjat uchun qoldiq (JS tomonida).
+export const remainingOf = (p) =>
+  Math.max(
+    0,
+    (p?.expectedAmount || 0) - (p?.paidAmount || 0) - (p?.writtenOffAmount || 0),
+  );
+
 // Oy oralig'iga tegishli o'quvchi+guruh a'zolik davrlarini yuklaydi.
 // Rejoin (bir oyda ketib qayta qo'shilish) bo'lsa bir nechta davr qaytadi -
 // proratsiya har birini alohida sanab kunlarni qo'shadi.
@@ -99,7 +146,20 @@ export const applyPaidDelta = async (
 ) => {
   const newPaid = { $add: [{ $ifNull: ["$paidAmount", 0] }, delta] };
   const filter = { _id: paymentId };
-  if (capToRemaining) filter.$expr = { $lte: [newPaid, "$expectedAmount"] };
+  // Cap - hisobdan chiqarilgan ulushdan keyingi undiriladigan qoldiqqacha.
+  if (capToRemaining) {
+    filter.$expr = {
+      $lte: [
+        newPaid,
+        {
+          $subtract: [
+            { $ifNull: ["$expectedAmount", 0] },
+            { $ifNull: ["$writtenOffAmount", 0] },
+          ],
+        },
+      ],
+    };
+  }
   return StudentPayment.findOneAndUpdate(filter, [paidStatusStage(newPaid)], {
     new: true,
     session: session || undefined,
@@ -159,6 +219,22 @@ export const recalc = async (paymentId, { session } = {}) => {
           prorationFactor: snap.prorationFactor,
           discountApplied: snap.discountApplied,
           expectedAmount: snap.expectedAmount,
+          // Hisobdan chiqarilgan ulush YANGI hisoblangan qoldiqdan oshib
+          // ketmasligi shart. Aks holda (masalan qarz hisobdan chiqarilgach
+          // o'quvchi arxivlanib, oy leftAt bo'yicha qayta proratsiya qilinsa)
+          // hisobotlarda umuman hisoblanmagan summa "yo'qotilgan" bo'lib
+          // ko'rinardi va yig'ilgan pul o'sha miqdorda kamayib ko'rsatilardi.
+          writtenOffAmount: {
+            $max: [
+              0,
+              {
+                $min: [
+                  { $ifNull: ["$writtenOffAmount", 0] },
+                  { $subtract: [snap.expectedAmount, paidExpr] },
+                ],
+              },
+            ],
+          },
           status: {
             $switch: {
               branches: [
@@ -233,6 +309,42 @@ export const earliestPaidMonthBefore = async (student, group, { year, month }) =
     }
   }
   return best;
+};
+
+// Arxivlash (leftAt = archivedAt) qo'llanganda QOLISHI KUTILAYOTGAN undiriladigan
+// qarz. Hech narsa YOZMAYDI. Arxivlash qulfi mutatsiyadan OLDIN shuni tekshiradi:
+// oddiy remainingDebtFor hali proratsiya qilinmagan TO'LIQ oylik summani berar edi,
+// ya'ni oy boshida chiqib ketayotgan o'quvchi uchun aslida bo'lmaydigan qarzni
+// ko'rsatib, ownerni keraksiz tasdiqlashga (yoki ortiqcha hisobdan chiqarishga)
+// majburlardi.
+export const projectedRemainingIfLeftAt = async (student, leftAt) => {
+  const plans = await StudentPayment.find({ student });
+  let total = 0;
+
+  for (const p of plans) {
+    const periods = (
+      await loadMembershipPeriods(p.student, p.group, p.year, p.month)
+    ).map((r) => ({
+      joinedAt: r.joinedAt,
+      // Ochiq (leftAt=null) yoki kechroq yopilgan davrlar arxiv sanasida yopiladi.
+      leftAt: r.leftAt && r.leftAt.getTime() <= leftAt.getTime() ? r.leftAt : leftAt,
+    }));
+
+    const snap = await buildSnapshot({
+      student: p.student,
+      group: p.group,
+      year: p.year,
+      month: p.month,
+      periods,
+    });
+
+    total += Math.max(
+      0,
+      (snap.expectedAmount || 0) - (p.paidAmount || 0) - (p.writtenOffAmount || 0),
+    );
+  }
+
+  return total;
 };
 
 // O'quvchining tegishli barcha guruh/oy to'lovlarini qayta hisoblaydi.
@@ -347,13 +459,15 @@ export const obligations = async ({ groupId, year, month }) => {
   if (month) filter.month = Number(month);
   if (groupId) filter.group = toObjectId(groupId);
 
-  const items = await StudentPayment.find(filter)
+  const items = await StudentPayment.find({ ...filter, ...OUTSTANDING_FILTER })
     .populate("student", safeStudentProjection)
     .populate("group", { name: 1 })
     .sort({ month: 1, createdAt: -1 });
 
+  // Qoldiqdan hisobdan chiqarilgan (umidsiz) qarz ayirilgan - bunday oy
+  // qarzdorlar ro'yxatida ko'rinmaydi.
   return items
-    .map((p) => ({ ...p.toJSON(), remaining: Math.max(0, p.expectedAmount - p.paidAmount) }))
+    .map((p) => ({ ...p.toJSON(), remaining: remainingOf(p) }))
     .filter((p) => p.remaining > 0);
 };
 
