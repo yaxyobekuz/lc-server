@@ -123,6 +123,15 @@ export const withdraw = async (studentId, { amount, method, paidAt, note }, curr
     paidAt: day,
     createdBy: currentUser?._id || null,
   });
+
+  // Pulni yechib olish - ataylab qilingan amal: avto-qoplashni to'xtatib turish
+  // o'z vazifasini o'tadi, bayroqni yechamiz.
+  if (deposit.autoApplyHold) {
+    await StudentDeposit.updateOne(
+      { _id: deposit._id },
+      { $set: { autoApplyHold: false } },
+    );
+  }
   return getOrCreate(studentId);
 };
 
@@ -457,6 +466,9 @@ export const summaryFor = async (studentId) => {
   return {
     student,
     balance: deposit.balance || 0,
+    // Avto-qoplash to'xtatilgan (qoplama bekor qilingan) - UI buni ko'rsatishi
+    // kerak, aks holda "nega qoplanmayapti" degan savol javobsiz qolardi.
+    autoApplyHold: !!deposit.autoApplyHold,
     totalTopup: ledger?.topup || 0,
     totalWithdraw: ledger?.withdraw || 0,
     totalRefund: ledger?.refund || 0,

@@ -74,7 +74,17 @@ export const updateSettings = async (body) => {
 // view="written_off" - hisobdan chiqarilgan (umidsiz) summa.
 const aggregateByStudent = async (view) => {
   const match =
-    view === "written_off" ? { writtenOffAmount: { $gt: 0 } } : OUTSTANDING_FILTER;
+    view === "written_off"
+      ? {
+          // Amaldagi qiymat proratsiya tufayli vaqtincha 0 ga cheklangan bo'lishi
+          // mumkin - bunday kechirim ham ro'yxatda ko'rinsin, aks holda uni
+          // bekor qilishning yo'li qolmasdi.
+          $or: [
+            { writtenOffAmount: { $gt: 0 } },
+            { writeOffRequested: { $gt: 0 } },
+          ],
+        }
+      : OUTSTANDING_FILTER;
   const amount =
     view === "written_off" ? { $ifNull: ["$writtenOffAmount", 0] } : remainingExpr;
 
@@ -355,33 +365,49 @@ export const writeOff = async (studentId, { reason } = {}, currentUser) => {
   }
 
   // Avval depozitdagi REAL pulni qarzga qoplaymiz - hisobdan chiqarishdan oldin
-  // undirilishi mumkin bo'lgan hamma narsa undirilsin.
+  // undirilishi mumkin bo'lgan hamma narsa undirilsin. force: hisobdan chiqarish
+  // ownerning ATAYLAB qilgan qarori, shuning uchun avto-qoplash to'xtatilgan
+  // bo'lsa ham bajariladi - aks holda depozitdagi haqiqiy pul ishlatilmasdan
+  // qarz "umidsiz" deb yozilib, o'sha pul osilib qolardi.
   const { applied: appliedFromDeposit } = await depositService.safeAutoApply(
     sid,
     currentUser,
+    { force: true },
   );
+
+  // Qoplashdan KEYINGI qoldiq - aynan shu summa kechiriladi.
+  const amount = await remainingDebtFor(sid);
+  if (amount <= 0) {
+    return { student: sid, months: 0, amount: 0, appliedFromDeposit };
+  }
 
   // Qolgan qoldiqni ATOMIK yozamiz: summa serverda, hujjatning JORIY qiymatlaridan
   // hisoblanadi. "O'qib ol → hisobla → yoz" bo'lganda oradagi kassa to'lovi
   // hisobdan chiqarilgan summaga qo'shilib, aslida bo'lmagan yo'qotish yozilardi.
-  const at = new Date();
+  const remainingNow = {
+    $max: [
+      0,
+      {
+        $subtract: [
+          { $ifNull: ["$expectedAmount", 0] },
+          { $ifNull: ["$paidAmount", 0] },
+        ],
+      },
+    ],
+  };
+
   const res = await StudentPayment.updateMany(
     { student: sid, ...OUTSTANDING_FILTER },
     [
       {
         $set: {
-          writtenOffAmount: {
-            $max: [
-              0,
-              {
-                $subtract: [
-                  { $ifNull: ["$expectedAmount", 0] },
-                  { $ifNull: ["$paidAmount", 0] },
-                ],
-              },
-            ],
+          writtenOffAmount: remainingNow,
+          // Asliy (kechirilgan) summa hech qachon kamaymaydi - proratsiya
+          // qarzni vaqtincha kamaytirgan bo'lsa ham kechirim saqlanadi.
+          writeOffRequested: {
+            $max: [{ $ifNull: ["$writeOffRequested", 0] }, remainingNow],
           },
-          writtenOffAt: at,
+          writtenOffAt: new Date(),
           writtenOffBy: { $literal: currentUser?._id || null },
           // $literal SHART: agregatsiya pipeline'ida "$" bilan boshlanadigan satr
           // maydon yo'li deb talqin qilinadi - sabab matni shunday boshlansa
@@ -392,23 +418,10 @@ export const writeOff = async (studentId, { reason } = {}, currentUser) => {
     ],
   );
 
-  // Depozit qarzni to'liq yopib qo'ygan bo'lishi mumkin - bu XATO emas,
-  // aksincha eng yaxshi natija. Chaqiruvchi buni xabar matnida ajratadi.
-  if (!res.matchedCount) {
-    return { student: sid, months: 0, amount: 0, appliedFromDeposit };
-  }
-
-  const [agg] = await StudentPayment.aggregate([
-    { $match: { student: sid, writtenOffAt: at } },
-    {
-      $group: { _id: null, total: { $sum: "$writtenOffAmount" }, months: { $sum: 1 } },
-    },
-  ]);
-
   return {
     student: sid,
-    months: agg?.months || 0,
-    amount: agg?.total || 0,
+    months: res.modifiedCount || 0,
+    amount,
     appliedFromDeposit,
   };
 };
@@ -417,10 +430,17 @@ export const writeOff = async (studentId, { reason } = {}, currentUser) => {
 export const cancelWriteOff = async (studentId, currentUser) => {
   const sid = toObjectId(studentId);
   const res = await StudentPayment.updateMany(
-    { student: sid, writtenOffAmount: { $gt: 0 } },
+    {
+      student: sid,
+      // Amaldagi qiymat proratsiya tufayli 0 ga cheklangan bo'lishi mumkin -
+      // bunday yozuv ham bekor qilinishi kerak, aks holda kechirim "ko'rinmas"
+      // holda qolib, qarz keyinroq qaytganda o'z-o'zidan tiklanardi.
+      $or: [{ writtenOffAmount: { $gt: 0 } }, { writeOffRequested: { $gt: 0 } }],
+    },
     {
       $set: {
         writtenOffAmount: 0,
+        writeOffRequested: 0,
         writtenOffAt: null,
         writtenOffBy: null,
         writeOffReason: "",

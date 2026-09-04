@@ -48,7 +48,14 @@ const studentPaymentSchema = new mongoose.Schema(
     // Shu sababli hisobdan chiqarilgan oy qarzdorlar ro'yxatidan ham,
     // depozitdan avto-qoplashdan ham chiqib ketadi, lekin hisobotlarda
     // alohida "yo'qotilgan" ko'rsatkich bo'lib qoladi.
+    // AMALDAGI qiymat - har doim qoldiqdan (expected - paid) oshmaydi, recalc'da
+    // cheklanadi. Hisobotlar va qarzdorlar ro'yxati shuni ishlatadi.
     writtenOffAmount: { type: Number, default: 0, min: 0 },
+    // Owner kechirishga qaror qilgan ASLIY summa. Saqlanmasa: proratsiya qarzni
+    // vaqtincha kamaytirib (arxivlash), keyin u qaytganda (arxivdan chiqarish,
+    // a'zolik sanasini tuzatish) kechirilgan qism yana undiriladigan bo'lib
+    // qolardi va o'quvchi qarzdorlar ro'yxatida qayta paydo bo'lardi.
+    writeOffRequested: { type: Number, default: 0, min: 0 },
     writtenOffAt: { type: Date, default: null },
     writtenOffBy: {
       type: mongoose.Schema.Types.ObjectId,

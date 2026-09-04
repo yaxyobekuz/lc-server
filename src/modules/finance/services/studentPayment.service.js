@@ -210,6 +210,12 @@ export const recalc = async (paymentId, { session } = {}) => {
   });
 
   const paidExpr = { $ifNull: ["$paidAmount", 0] };
+  const writeOffRequestedExpr = {
+    $max: [
+      { $ifNull: ["$writeOffRequested", 0] },
+      { $ifNull: ["$writtenOffAmount", 0] },
+    ],
+  };
   const updated = await StudentPayment.findByIdAndUpdate(
     paymentId,
     [
@@ -224,12 +230,18 @@ export const recalc = async (paymentId, { session } = {}) => {
           // o'quvchi arxivlanib, oy leftAt bo'yicha qayta proratsiya qilinsa)
           // hisobotlarda umuman hisoblanmagan summa "yo'qotilgan" bo'lib
           // ko'rinardi va yig'ilgan pul o'sha miqdorda kamayib ko'rsatilardi.
+          //
+          // Cheklash ASLIY summani (writeOffRequested) buzmaydi: u saqlanib
+          // qoladi va qarz qaytib oshsa kechirim ham qayta tiklanadi. Eski
+          // (maydonsiz) hujjatlar uchun asliy summa writtenOffAmount'dan
+          // to'ldiriladi.
+          writeOffRequested: writeOffRequestedExpr,
           writtenOffAmount: {
             $max: [
               0,
               {
                 $min: [
-                  { $ifNull: ["$writtenOffAmount", 0] },
+                  writeOffRequestedExpr,
                   { $subtract: [snap.expectedAmount, paidExpr] },
                 ],
               },
@@ -319,15 +331,19 @@ export const earliestPaidMonthBefore = async (student, group, { year, month }) =
 // majburlardi.
 export const projectedRemainingIfLeftAt = async (student, leftAt) => {
   const plans = await StudentPayment.find({ student });
-  let total = 0;
+  let remaining = 0;
+  let overpay = 0;
 
   for (const p of plans) {
     const periods = (
       await loadMembershipPeriods(p.student, p.group, p.year, p.month)
     ).map((r) => ({
       joinedAt: r.joinedAt,
-      // Ochiq (leftAt=null) yoki kechroq yopilgan davrlar arxiv sanasida yopiladi.
-      leftAt: r.leftAt && r.leftAt.getTime() <= leftAt.getTime() ? r.leftAt : leftAt,
+      // FAQAT ochiq davrlar arxiv sanasida yopiladi - softRemove ham aynan
+      // shularni (leftAt: null) yopadi. Yopilgan davrni ham arxiv sanasiga
+      // "qisib" qo'ysak, orqaga surilgan arxiv sanasi bilan qarz 0 bo'lib
+      // ko'rinardi va qulf ochilib ketardi, holbuki haqiqiy leftAt o'zgarmaydi.
+      leftAt: r.leftAt || leftAt,
     }));
 
     const snap = await buildSnapshot({
@@ -338,13 +354,16 @@ export const projectedRemainingIfLeftAt = async (student, leftAt) => {
       periods,
     });
 
-    total += Math.max(
-      0,
-      (snap.expectedAmount || 0) - (p.paidAmount || 0) - (p.writtenOffAmount || 0),
-    );
+    const expected = snap.expectedAmount || 0;
+    const paid = p.paidAmount || 0;
+    remaining += Math.max(0, expected - paid - (p.writtenOffAmount || 0));
+    // Proratsiya tufayli ortiqcha qolgan to'lov depozitga qaytadi va u yerdan
+    // qolgan qarzga qoplanadi - shuning uchun uni qarzdan ayiramiz, aks holda
+    // qulf aslida yopiladigan qarz uchun ham ogohlantirish berardi.
+    overpay += Math.max(0, paid - expected);
   }
 
-  return total;
+  return Math.max(0, remaining - overpay);
 };
 
 // O'quvchining tegishli barcha guruh/oy to'lovlarini qayta hisoblaydi.
@@ -566,6 +585,7 @@ export const historyByStudent = async (studentId) => {
 
   const totalExpected = items.reduce((s, p) => s + (p.expectedAmount || 0), 0);
   const totalPaid = items.reduce((s, p) => s + (p.paidAmount || 0), 0);
+  const totalWrittenOff = items.reduce((s, p) => s + (p.writtenOffAmount || 0), 0);
 
   return {
     student,
@@ -574,7 +594,10 @@ export const historyByStudent = async (studentId) => {
       months: items.length,
       totalExpected,
       totalPaid,
-      totalRemaining: Math.max(0, totalExpected - totalPaid),
+      totalWrittenOff,
+      // Hisobdan chiqarilgan qarz undirilmaydi - "Qoldiq" da ko'rinmasligi kerak,
+      // aks holda bu sahifa qarzdorlar ro'yxati bilan qarama-qarshi bo'lardi.
+      totalRemaining: Math.max(0, totalExpected - totalPaid - totalWrittenOff),
     },
   };
 };
