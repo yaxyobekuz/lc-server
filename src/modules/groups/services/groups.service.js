@@ -623,6 +623,9 @@ export const permanentRemove = async (id, currentUser, { confirmName } = {}) => 
     await safeRecomputeStudentCompletion(sid);
   }
 
+  // Qaytarilgan garov boshqa guruhlardagi ochiq qarzlarni qoplasin (best-effort).
+  await depositService.safeAutoApplyMany(studentIds, currentUser);
+
   // Owner uchun tizim bildirishnomasi (best-effort).
   try {
     await systemNotificationsService.create({
@@ -672,6 +675,11 @@ const ensureFinanceForMembershipRange = async (groupId, membership) => {
         year += 1;
       }
     }
+
+    // Yangi yaratilgan oylar qarz bo'lib turadi - o'quvchining depoziti bo'lsa
+    // darhol qoplaymiz. Bu yagona kanal: guruhga qo'shish, a'zolik sanasini
+    // tahrirlash va yopilgan a'zolikni qayta ochish - hammasi shu yerdan o'tadi.
+    await depositService.safeAutoApply(membership.student);
   } catch (err) {
     logger.warn({ err }, "A'zolik uchun oylik to'lovlar yaratilmadi");
   }
@@ -903,6 +911,7 @@ export const removeMembershipById = async (groupId, membershipId) => {
   await membership.softDelete();
   try {
     await financePaymentService.recalcForStudentScope(membership.student, groupId, {});
+    await depositService.safeAutoApply(membership.student);
   } catch (err) {
     logger.warn({ err }, "O'qish davri o'chirilganda to'lovlar qayta hisoblanmadi");
   }
@@ -916,6 +925,8 @@ export const removeMembershipById = async (groupId, membershipId) => {
 const recalcFinanceOnLeave = async (groupId, studentId) => {
   try {
     await financePaymentService.recalcForStudentScope(studentId, groupId, {});
+    // Chiqib ketayotgan o'quvchining garovi qolgan qarzini yopsin.
+    await depositService.safeAutoApply(studentId);
     const today = localTodayMidnight();
     await teacherSalaryService.recalcForGroupMonth(
       groupId,
