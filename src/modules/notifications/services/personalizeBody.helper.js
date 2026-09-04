@@ -1,12 +1,30 @@
+import mongoose from "mongoose";
 import User from "../../../models/user.model.js";
 import GroupMembership from "../../../models/groupMembership.model.js";
+import StudentPayment from "../../../models/studentPayment.model.js";
+import { remainingExpr } from "../../finance/services/studentPayment.service.js";
 
 // O'quv markazi nomi (brend). Hozircha statik - kelajakda config'dan olinishi mumkin.
 const CENTER_NAME = "Bayyina";
 
 // Xabar matnidagi o'zgaruvchilar (placeholder). Frontend MESSAGE_VARIABLES bilan mos.
-// Eslatma: {qarz} uchun real to'lov ma'lumoti tizimda yo'q - bo'sh qoldiriladi.
+// {qarz} - o'quvchining undiriladigan umumiy qarzi (barcha guruh va oylar bo'yicha,
+// hisobdan chiqarilgani ayirilgan holda), "450 000 so'm" ko'rinishida.
 const TOKENS = ["{ism}", "{familiya}", "{guruh}", "{qarz}", "{markaz}"];
+
+const formatSum = (n) =>
+  `${Number(n || 0)
+    .toLocaleString("ru-RU")
+    .replace(/ /g, " ")} so'm`;
+
+// Berilgan o'quvchilarning undiriladigan qarzi - bitta agregatsiya (N+1 yo'q).
+const resolveDebts = async (ids) => {
+  const rows = await StudentPayment.aggregate([
+    { $match: { student: { $in: ids.map((id) => new mongoose.Types.ObjectId(String(id))) } } },
+    { $group: { _id: "$student", total: { $sum: remainingExpr } } },
+  ]);
+  return new Map(rows.map((r) => [String(r._id), r.total || 0]));
+};
 
 // Matnda almashtirish kerak bo'lgan token bormi? (bo'lmasa - keraksiz DB so'rovini o'tkazib yuboramiz)
 export const hasTokens = (text = "") => {
@@ -17,12 +35,12 @@ export const hasTokens = (text = "") => {
 const replaceAll = (text, token, value) => text.split(token).join(value ?? "");
 
 // Berilgan qiymatlar bilan matndagi {token}larni almashtiradi.
-const applyValues = (text, { firstName, lastName, groupName }) => {
+const applyValues = (text, { firstName, lastName, groupName, debt }) => {
   let out = String(text || "");
   out = replaceAll(out, "{ism}", firstName);
   out = replaceAll(out, "{familiya}", lastName);
   out = replaceAll(out, "{guruh}", groupName);
-  out = replaceAll(out, "{qarz}", ""); // to'lov tizimi yo'q
+  out = replaceAll(out, "{qarz}", formatSum(debt));
   out = replaceAll(out, "{markaz}", CENTER_NAME);
   return out;
 };
@@ -55,10 +73,14 @@ export const personalizeManyForUser = async (texts, userId, recipientUser = null
   const needsGroup = texts.some((t) => String(t).includes("{guruh}"));
   const groupName = needsGroup ? await resolveGroupName(userId) : "";
 
+  const needsDebt = texts.some((t) => String(t).includes("{qarz}"));
+  const debt = needsDebt ? (await resolveDebts([userId])).get(String(userId)) || 0 : 0;
+
   const values = {
     firstName: user?.firstName || "",
     lastName: user?.lastName || "",
     groupName,
+    debt,
   };
   return texts.map((t) => (hasTokens(t) ? applyValues(t, values) : t));
 };
@@ -101,6 +123,10 @@ export const personalizeBulk = async (text, userIds) => {
     }
   }
 
+  const debtByUser = String(text).includes("{qarz}")
+    ? await resolveDebts(ids)
+    : new Map();
+
   const result = new Map();
   for (const id of ids) {
     const u = userById.get(id);
@@ -110,6 +136,7 @@ export const personalizeBulk = async (text, userIds) => {
         firstName: u?.firstName || "",
         lastName: u?.lastName || "",
         groupName: groupByUser.get(id) || "",
+        debt: debtByUser.get(id) || 0,
       }),
     );
   }
