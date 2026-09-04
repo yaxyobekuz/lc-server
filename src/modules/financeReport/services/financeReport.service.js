@@ -56,6 +56,10 @@ const sumByMethod = async (start, end) => {
 
 // Hisoblangan (billed) summa va qoldiq - oylik snapshotlar bo'yicha.
 // Model: StudentPayment yoki TeacherSalary (ikkalasida ham expectedAmount/paidAmount bor).
+// StudentPayment'da qo'shimcha writtenOffAmount bor - undirib bo'lmagani uchun
+// HISOBDAN CHIQARILGAN (umidsiz) qarz. U "outstanding" ga KIRMAYDI (chunki uni
+// undirish rejasi yo'q), lekin alohida "writtenOff" bo'lib qaytariladi - yo'qotish
+// ko'rinmay qolmasin. TeacherSalary'da bunday maydon yo'q, $ifNull uni 0 qiladi.
 const billedAndOutstanding = async (Model, year, month) => {
   const [row] = await Model.aggregate([
     { $match: { year: Number(year), month: Number(month) } },
@@ -64,9 +68,23 @@ const billedAndOutstanding = async (Model, year, month) => {
         _id: null,
         billed: { $sum: "$expectedAmount" },
         paid: { $sum: "$paidAmount" },
+        writtenOff: { $sum: { $ifNull: ["$writtenOffAmount", 0] } },
         outstanding: {
           $sum: {
-            $max: [{ $subtract: ["$expectedAmount", "$paidAmount"] }, 0],
+            $max: [
+              {
+                $subtract: [
+                  "$expectedAmount",
+                  {
+                    $add: [
+                      { $ifNull: ["$paidAmount", 0] },
+                      { $ifNull: ["$writtenOffAmount", 0] },
+                    ],
+                  },
+                ],
+              },
+              0,
+            ],
           },
         },
       },
@@ -75,6 +93,7 @@ const billedAndOutstanding = async (Model, year, month) => {
   return {
     billed: row?.billed || 0,
     paid: row?.paid || 0,
+    writtenOff: row?.writtenOff || 0,
     outstanding: row?.outstanding || 0,
   };
 };
@@ -115,6 +134,7 @@ export const getSummary = async ({ year, month } = {}) => {
       collected: incomeCash.total,
       billed: studentBilled.billed,
       outstanding: studentBilled.outstanding,
+      writtenOff: studentBilled.writtenOff,
       rate: pct(studentBilled.paid, studentBilled.billed),
       delta: delta(incomeCash.total, incomeCashPrev.total),
       count: incomeCash.count,
