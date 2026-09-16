@@ -9,22 +9,47 @@ import { ROLES } from "../../../constants/roles.js";
 import * as studentPaymentService from "./studentPayment.service.js";
 import * as teacherSalaryService from "../../teacherSalary/services/teacherSalary.service.js";
 import * as depositService from "../../deposits/services/deposit.service.js";
+import {
+  PERIOD_KEYS,
+  discountsInMonthFilter,
+  normalizePeriod,
+  periodError,
+  periodOf,
+  samePeriod,
+} from "./discountPeriod.helper.js";
 
 // Chegirma kamaysa/olib tashlansa expected oshadi - ya'ni qarz paydo bo'ladi.
 // Shu sababli har bir qayta hisoblashdan keyin depozitdan avto-qoplaymiz.
 const autoApplyAfterRecalc = (studentId) => depositService.safeAutoApply(studentId);
 
 // Chegirma o'quvchi expected'ini → guruh billed tushumini → o'qituvchi foiz maoshini o'zgartiradi.
-const recalcTeacherForDiscount = async (doc) => {
+const recalcTeacherForMonths = async (group, months) => {
   try {
-    if (doc.scope === "monthly" && doc.year && doc.month) {
-      await teacherSalaryService.recalcForGroupMonth(doc.group, doc.year, doc.month);
-    } else {
-      await teacherSalaryService.recalcForGroup(doc.group);
+    for (const { year, month } of months) {
+      await teacherSalaryService.recalcForGroupMonth(group, year, month);
     }
   } catch (err) {
     logger.warn({ err }, "Chegirma o'zgarishida o'qituvchi maoshi qayta hisoblanmadi");
   }
+};
+
+// Faqat davrga tushgan oylar qayta hisoblanadi - boshqa oylarga chegirma tegmaydi.
+const recalcForDiscount = async (doc, periods) => {
+  const months = await studentPaymentService.recalcForStudentScope(
+    doc.student,
+    doc.group,
+    periods,
+  );
+  await autoApplyAfterRecalc(doc.student);
+  await recalcTeacherForMonths(doc.group, months);
+};
+
+const assertValid = ({ type, value, ...period }) => {
+  if (type === "percent" && value > 100) {
+    throw new ApiError(400, "Foiz 100 dan oshmasligi kerak");
+  }
+  const message = periodError(period);
+  if (message) throw new ApiError(400, message);
 };
 
 const toObjectId = (id) => {
@@ -39,12 +64,8 @@ export const list = async ({ studentId, groupId, year, month, page = 1, limit = 
   const filter = { isDeleted: { $ne: true } };
   if (studentId) filter.student = toObjectId(studentId);
   if (groupId) filter.group = toObjectId(groupId);
-  // Oy filtri: o'sha oyga tegishli monthly + barcha permanent
   if (year && month) {
-    filter.$or = [
-      { scope: "permanent" },
-      { scope: "monthly", year: Number(year), month: Number(month) },
-    ];
+    Object.assign(filter, discountsInMonthFilter(Number(year), Number(month)));
   }
 
   const skip = (page - 1) * limit;
@@ -71,6 +92,8 @@ const ensureStudentAndGroup = async (studentId, groupId) => {
 };
 
 export const create = async (body, currentUser) => {
+  const period = normalizePeriod(body);
+  assertValid({ type: body.type, value: body.value, ...period });
   await ensureStudentAndGroup(body.student, body.group);
 
   // Double-submit himoyasi: aynan bir xil faol chegirma ikki marta yozilmasin
@@ -80,9 +103,7 @@ export const create = async (body, currentUser) => {
     group: body.group,
     type: body.type,
     value: body.value,
-    scope: body.scope,
-    year: body.scope === "monthly" ? body.year : null,
-    month: body.scope === "monthly" ? body.month : null,
+    ...period,
     isActive: true,
     isDeleted: { $ne: true },
   });
@@ -95,20 +116,12 @@ export const create = async (body, currentUser) => {
     group: body.group,
     type: body.type,
     value: body.value,
-    scope: body.scope,
-    year: body.scope === "monthly" ? body.year : null,
-    month: body.scope === "monthly" ? body.month : null,
+    ...period,
     reason: body.reason || "",
     createdBy: currentUser?._id || null,
   });
 
-  await studentPaymentService.recalcForStudentScope(doc.student, doc.group, {
-    scope: doc.scope,
-    year: doc.year,
-    month: doc.month,
-  });
-  await autoApplyAfterRecalc(doc.student);
-  await recalcTeacherForDiscount(doc);
+  await recalcForDiscount(doc, period);
   return doc;
 };
 
@@ -116,40 +129,27 @@ export const update = async (id, body) => {
   const doc = await Discount.findOne({ _id: id, isDeleted: { $ne: true } });
   if (!doc) throw new ApiError(404, "Chegirma topilmadi");
 
-  // Mutatsiyadan OLDINGI qamrov - scope/oy o'zgarsa eski oy(lar) snapshot'ida
+  // Mutatsiyadan OLDINGI davr - davr o'zgarsa eski oy(lar) snapshot'ida
   // chegirma "muzlab" qolmasligi uchun ularni ham qayta hisoblaymiz (H4).
-  const prevScope = { scope: doc.scope, year: doc.year, month: doc.month };
+  const prevPeriod = periodOf(doc);
+  const merged = { ...prevPeriod };
+  for (const key of PERIOD_KEYS) {
+    if (body[key] !== undefined) merged[key] = body[key];
+  }
+  const nextPeriod = normalizePeriod(merged);
+  const type = body.type ?? doc.type;
+  const value = body.value ?? doc.value;
+  assertValid({ type, value, ...nextPeriod });
 
-  if (body.type !== undefined) doc.type = body.type;
-  if (body.value !== undefined) doc.value = body.value;
-  if (body.scope !== undefined) doc.scope = body.scope;
+  doc.set({ type, value, ...nextPeriod });
   if (body.reason !== undefined) doc.reason = body.reason;
   if (body.isActive !== undefined) doc.isActive = body.isActive;
-  if (doc.scope === "monthly") {
-    if (body.year !== undefined) doc.year = body.year;
-    if (body.month !== undefined) doc.month = body.month;
-  } else {
-    doc.year = null;
-    doc.month = null;
-  }
   await doc.save();
 
-  const scopeChanged =
-    prevScope.scope !== doc.scope ||
-    prevScope.year !== doc.year ||
-    prevScope.month !== doc.month;
-  if (scopeChanged) {
-    await studentPaymentService.recalcForStudentScope(doc.student, doc.group, prevScope);
-    await recalcTeacherForDiscount({ group: doc.group, ...prevScope });
-  }
-
-  await studentPaymentService.recalcForStudentScope(doc.student, doc.group, {
-    scope: doc.scope,
-    year: doc.year,
-    month: doc.month,
-  });
-  await autoApplyAfterRecalc(doc.student);
-  await recalcTeacherForDiscount(doc);
+  await recalcForDiscount(
+    doc,
+    samePeriod(prevPeriod, nextPeriod) ? nextPeriod : [prevPeriod, nextPeriod],
+  );
   return doc;
 };
 
@@ -157,12 +157,6 @@ export const remove = async (id, currentUser) => {
   const doc = await Discount.findOne({ _id: id, isDeleted: { $ne: true } });
   if (!doc) throw new ApiError(404, "Chegirma topilmadi");
   await doc.softDelete(currentUser?._id);
-  await studentPaymentService.recalcForStudentScope(doc.student, doc.group, {
-    scope: doc.scope,
-    year: doc.year,
-    month: doc.month,
-  });
-  await autoApplyAfterRecalc(doc.student);
-  await recalcTeacherForDiscount(doc);
+  await recalcForDiscount(doc, periodOf(doc));
   return { _id: id };
 };

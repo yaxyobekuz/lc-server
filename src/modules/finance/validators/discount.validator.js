@@ -1,4 +1,8 @@
 import { z } from "zod";
+import { DISCOUNT_SCOPES } from "../../../constants/discountScopes.js";
+
+const yearField = z.coerce.number().int().min(2000).max(3000).nullable().optional();
+const monthField = z.coerce.number().int().min(1).max(12).nullable().optional();
 
 export const listSchema = z.object({
   query: z.object({
@@ -17,9 +21,11 @@ export const createSchema = z.object({
     group: z.string({ required_error: "Guruh kerak" }).min(1),
     type: z.enum(["fixed", "percent"], { required_error: "Chegirma turi kerak" }),
     value: z.coerce.number().min(0, "Manfiy bo'lmasligi kerak"),
-    scope: z.enum(["permanent", "monthly"], { required_error: "Amal qilish doirasi kerak" }),
-    year: z.coerce.number().int().min(2000).max(3000).optional(),
-    month: z.coerce.number().int().min(1).max(12).optional(),
+    scope: z.enum(DISCOUNT_SCOPES, { required_error: "Amal qilish davri kerak" }),
+    year: yearField,
+    month: monthField,
+    endYear: yearField,
+    endMonth: monthField,
     reason: z.string().trim().max(300).optional(),
   }),
 });
@@ -29,9 +35,11 @@ export const updateSchema = z.object({
   body: z.object({
     type: z.enum(["fixed", "percent"]).optional(),
     value: z.coerce.number().min(0).optional(),
-    scope: z.enum(["permanent", "monthly"]).optional(),
-    year: z.coerce.number().int().min(2000).max(3000).optional(),
-    month: z.coerce.number().int().min(1).max(12).optional(),
+    scope: z.enum(DISCOUNT_SCOPES).optional(),
+    year: yearField,
+    month: monthField,
+    endYear: yearField,
+    endMonth: monthField,
     reason: z.string().trim().max(300).optional(),
     isActive: z.boolean().optional(),
   }),
