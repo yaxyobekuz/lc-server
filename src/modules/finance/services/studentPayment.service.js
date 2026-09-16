@@ -9,6 +9,7 @@ import User from "../../../models/user.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import logger from "../../../config/logger.js";
 import { computePaymentSnapshot, deriveStatus } from "./proration.helper.js";
+import { discountsInMonthFilter, monthsInPeriodFilter } from "./discountPeriod.helper.js";
 
 const safeStudentProjection = {
   firstName: 1,
@@ -99,7 +100,7 @@ const buildSnapshot = async ({ student, group, year, month, joinedAt, leftAt = n
       group,
       isActive: true,
       isDeleted: { $ne: true },
-      $or: [{ scope: "permanent" }, { scope: "monthly", year, month }],
+      ...discountsInMonthFilter(year, month),
     }),
   ]);
 
@@ -286,19 +287,19 @@ export const recalcForGroupMonth = async (group, year, month) => {
   return payments.length;
 };
 
-// O'quvchi+guruh chegirmasi o'zgarganda tegishli oylarni qayta hisoblaydi.
-// monthly chegirma → faqat shu oy; permanent → barcha mavjud oylar.
-export const recalcForStudentScope = async (student, group, { scope, year, month } = {}) => {
+// O'quvchi+guruh chegirmasi o'zgarganda faqat chegirma davriga tushgan oylarni qayta hisoblaydi.
+// periods - bitta davr yoki massiv (tahrirda eski + yangi); bo'sh davr → barcha oylar.
+export const recalcForStudentScope = async (student, group, periods = {}) => {
+  const filters = [].concat(periods).map(monthsInPeriodFilter);
   const filter = { student, group };
-  if (scope === "monthly" && year && month) {
-    filter.year = year;
-    filter.month = month;
+  if (filters.length && filters.every((f) => Object.keys(f).length)) {
+    filter.$or = filters;
   }
-  const payments = await StudentPayment.find(filter, { _id: 1 });
+  const payments = await StudentPayment.find(filter, { _id: 1, year: 1, month: 1 });
   for (const p of payments) {
     await recalc(p._id);
   }
-  return payments.length;
+  return payments.map((p) => ({ year: p.year, month: p.month }));
 };
 
 // Berilgan (year,month) chegarasidan OLDINGI oylarda o'quvchining shu guruhda
