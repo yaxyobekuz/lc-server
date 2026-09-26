@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 
 // O'quvchining bir guruh, bir oy uchun oylik to'lovi. Snapshot maydonlar
-// (baseFee/prorationFactor/discountApplied/expectedAmount) fee/chegirma/muzlatish
+// (baseFee/monthlyFee/prorationFactor/discountApplied/expectedAmount) fee/chegirma/muzlatish
 // o'zgarganda recalc() orqali yangilanadi. O'chirilmaydi (softDelete yo'q).
 const studentPaymentSchema = new mongoose.Schema(
   {
@@ -27,6 +27,10 @@ const studentPaymentSchema = new mongoose.Schema(
 
     // Snapshot (recalc paytida yangilanadi)
     baseFee: { type: Number, required: true, default: 0 },
+    // Chegirmadan keyingi to'liq oylik narx (proratsiyadan oldin).
+    // default null - migratsiyadan oldingi yozuvlarni ajratish uchun (0 emas:
+    // 100% chegirmada haqiqiy qiymat ham 0 bo'ladi).
+    monthlyFee: { type: Number, default: null },
     prorationFactor: { type: Number, default: 1 },
     discountApplied: { type: Number, default: 0 },
     expectedAmount: { type: Number, required: true, default: 0 },

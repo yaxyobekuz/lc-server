@@ -223,6 +223,7 @@ export const recalc = async (paymentId, { session } = {}) => {
       {
         $set: {
           baseFee: snap.baseFee,
+          monthlyFee: snap.monthlyFee,
           prorationFactor: snap.prorationFactor,
           discountApplied: snap.discountApplied,
           expectedAmount: snap.expectedAmount,

@@ -59,8 +59,9 @@ export const computeProration = ({
   };
 };
 
-// Chegirmalarni proratsiyalangan fee ga nisbatan yechadi (percent + fixed, capped).
-export const resolveDiscountAmount = (discounts, proratedFee) => {
+// Chegirmalarni TO'LIQ oylik narxdan yechadi (percent + fixed, capped).
+// Proratsiya keyin - chegirmadan keyingi narxga qo'llanadi (computePaymentSnapshot).
+export const resolveDiscountAmount = (discounts, monthlyFee) => {
   let pct = 0;
   let fixed = 0;
   for (const d of discounts || []) {
@@ -68,8 +69,15 @@ export const resolveDiscountAmount = (discounts, proratedFee) => {
     else fixed += Number(d.value) || 0;
   }
   pct = clamp(pct, 0, 100);
-  const percentCut = Math.round((proratedFee * pct) / 100);
-  return clamp(percentCut + fixed, 0, proratedFee);
+  const percentCut = Math.round((monthlyFee * pct) / 100);
+  return clamp(percentCut + fixed, 0, monthlyFee);
+};
+
+// Chegirmadan keyingi oylik narx = o'quvchining TO'LIQ oy uchun to'lovi.
+// Proratsiya doim shu narxdan hisoblanadi.
+export const discountedMonthlyFee = (baseFee, discounts) => {
+  const fee = Number(baseFee) || 0;
+  return Math.max(0, fee - resolveDiscountAmount(discounts, fee));
 };
 
 // Bir nechta a'zolik davri (periods) bo'yicha to'lanadigan kunlar yig'indisi.
@@ -94,7 +102,8 @@ const sumPayableDays = ({ year, month, periods }) => {
   return { payableDays, totalDays };
 };
 
-// To'liq snapshot hisobi - baseFee, proratsiya va chegirmalardan.
+// To'liq snapshot hisobi - baseFee, chegirma va proratsiyadan.
+// Hisob tartibi: baseFee - chegirma = oylik to'lov → × (kunlar/oydagi kunlar).
 // periods: o'quvchining shu oydagi a'zolik davrlari [{joinedAt, leftAt(EXCLUSIVE)}].
 // Bir nechta davr (rejoin) bo'lsa kunlar qo'shiladi. Orqaga-moslik uchun
 // joinedAt/leftAt to'g'ridan-to'g'ri ham qabul qilinadi (bitta davr).
@@ -112,18 +121,29 @@ export const computePaymentSnapshot = ({
 }) => {
   const effPeriods = periods === null ? [{ joinedAt, leftAt }] : periods;
 
+  const fullFee = Number(baseFee) || 0;
   const main = sumPayableDays({ year, month, periods: effPeriods });
   const totalDays = main.totalDays || daysInMonth(year, month);
-
-  const proratedFee = Math.round(
-    ((Number(baseFee) || 0) * main.payableDays) / totalDays,
-  );
   const factor = clamp(main.payableDays / totalDays, 0, 1);
 
-  const discountApplied = resolveDiscountAmount(discounts, proratedFee);
-  const expectedAmount = Math.max(0, proratedFee - discountApplied);
+  // TARTIB MUHIM: chegirma to'liq oylik narxdan yechiladi, proratsiya esa hosil
+  // bo'lgan narxga. Teskarisida (prorata summadan fixed chegirma) chegirma butun
+  // summani yeb, oy o'rtasida qo'shilgan chegirmali o'quvchiga 0 to'lov chiqardi.
+  const monthlyFee = discountedMonthlyFee(fullFee, discounts);
+  const expectedAmount = Math.max(
+    0,
+    Math.round((monthlyFee * main.payableDays) / totalDays),
+  );
+
+  // Breakdown uchun: baseFee - proratsiya ulushi - discountApplied = expectedAmount.
+  const proratedFee = Math.round((fullFee * main.payableDays) / totalDays);
+  const discountApplied = Math.max(0, proratedFee - expectedAmount);
+
   return {
-    baseFee: Number(baseFee) || 0,
+    baseFee: fullFee,
+    // O'quvchining shu oydagi TO'LIQ oylik to'lovi (chegirmadan keyin, proratsiyadan
+    // oldin) - modaldagi hisob-kitobni ko'rsatish uchun saqlanadi.
+    monthlyFee,
     prorationFactor: factor,
     discountApplied,
     expectedAmount,
