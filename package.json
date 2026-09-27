@@ -23,6 +23,10 @@
     "migrate:group-enddate": "node src/seeds/migrateGroupEndDate.seed.js",
     "migrate:student-completedat": "node src/seeds/backfillStudentCompletedAt.seed.js",
     "migrate:discount-proration": "node src/seeds/migrateDiscountProration.seed.js",
+    "report:group-delete-refunds": "node src/seeds/reportGroupDeleteRefunds.seed.js",
+    "inspect:deleted-groups": "node src/seeds/inspectDeletedGroups.seed.js",
+    "restore:group": "node src/seeds/restoreDeletedGroup.seed.js",
+    "recover:oplog": "node src/seeds/recoverFromOplog.seed.js",
     "seed:all": "npm run seed:permissions && npm run seed:owner && npm run seed:communication && npm run seed:fake-data && npm run seed:fake-extras && npm run seed:fake-extras2"
   },
   "dependencies": {
