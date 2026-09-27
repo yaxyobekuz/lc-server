@@ -3,6 +3,7 @@ import Group from "../../../models/group.model.js";
 import GroupMembership from "../../../models/groupMembership.model.js";
 import StudentPayment from "../../../models/studentPayment.model.js";
 import PaymentTransaction from "../../../models/paymentTransaction.model.js";
+import SalaryTransaction from "../../../models/salaryTransaction.model.js";
 import User from "../../../models/user.model.js";
 import BotUser from "../../../models/botUser.model.js";
 import ArchiveReason from "../../../models/archiveReason.model.js";
@@ -244,6 +245,8 @@ export const getById = async (id) => {
     ...groupJson,
     students,
     studentsCount: students.length,
+    // Frontend "O'chirish" amalini shu bayroq bo'yicha yashiradi.
+    hasFinanceHistory: await hasFinanceHistory(group._id),
   };
 };
 
@@ -582,6 +585,16 @@ export const processDueGroupEnds = async () => {
 // depozitdan qoplangan (source:"deposit") to'lovlarni o'quvchi depozitiga qaytarish
 // (aks holda garov izsiz yo'qolardi). Boshqa guruhlar/o'qituvchilar moliyasi o'zaro
 // bog'liq emas, shu sababli qo'shimcha recalc kerak emas.
+// Guruhda haqiqiy pul harakati (qabul qilingan to'lov yoki berilgan maosh) bormi.
+export const hasFinanceHistory = async (groupId) => {
+  const gid = toObjectId(groupId);
+  const [payments, salaries] = await Promise.all([
+    PaymentTransaction.countDocuments({ group: gid, isDeleted: { $ne: true } }),
+    SalaryTransaction.countDocuments({ group: gid, isDeleted: { $ne: true } }),
+  ]);
+  return payments > 0 || salaries > 0;
+};
+
 export const permanentRemove = async (id, currentUser, { confirmName } = {}) => {
   const group = await Group.findById(id);
   if (!group) throw new ApiError(404, "Guruh topilmadi");
@@ -589,6 +602,16 @@ export const permanentRemove = async (id, currentUser, { confirmName } = {}) => 
   const name = (group.name || "").trim();
   if (!confirmName || confirmName.trim() !== name) {
     throw new ApiError(400, "Tasdiqlash uchun guruh nomini to'g'ri kiriting");
+  }
+
+  // Pul tarixi bor guruhni o'chirish taqiqlanadi: kirim hisobotdan yo'qoladi,
+  // depozitdan qoplangan ulush esa o'quvchi garoviga qaytib, allaqachon
+  // to'langan oylar uchun "qayta ishlatiladigan" fantom pulga aylanardi.
+  if (await hasFinanceHistory(id)) {
+    throw new ApiError(
+      400,
+      "Bu guruhda to'lov tarixi bor - butunlay o'chirib bo'lmaydi. Kursni yakunlash uchun guruh tahririda \"Tugash sanasi\"ni qo'ying: guruh arxivga o'tadi, to'lovlar tarixi saqlanib qoladi.",
+    );
   }
 
   const studentIds = await runFinanceTxn(async (session) => {
